@@ -1,0 +1,85 @@
+{
+  "name": "campaign-engine",
+  "productName": "Campaign Engine",
+  "version": "1.0.1",
+  "description": "A local-first command center for tabletop RPG campaigns.",
+  "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "electron/main.cjs",
+  "author": "Campaign Engine",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "configure:release": "node scripts/configure-release.mjs",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis portable --publish never && node scripts/generate-portable-update.mjs"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.campaignengine.desktop",
+    "productName": "Campaign Engine",
+    "asar": true,
+    "electronDownload": {
+      "cache": ".electron-cache"
+    },
+    "files": [
+      "index.html",
+      "styles.css",
+      "workspace.css",
+      "app.js",
+      "features.js",
+      "icon.svg",
+      "manifest.webmanifest",
+      "service-worker.js",
+      "systems/**/*",
+      "release-config*.json",
+      "electron/**/*",
+      "package.json",
+      {
+        "from": "release-assets",
+        "to": ".",
+        "filter": [
+          "archivist-data.js",
+          "archivist-details.js"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName} Portable ${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://updates.invalid/campaign-engine"
+      }
+    ]
+  }
+}

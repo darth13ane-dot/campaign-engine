@@ -1,0 +1,17 @@
+{
+  "name": "Campaign Engine",
+  "short_name": "Campaign Engine",
+  "description": "A local-first command center for tabletop RPG campaigns.",
+  "start_url": "./index.html#dashboard",
+  "display": "standalone",
+  "background_color": "#11141d",
+  "theme_color": "#11141d",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

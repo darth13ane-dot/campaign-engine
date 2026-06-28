@@ -1,0 +1,172 @@
+/* Pathfinder 2e toolkit styles. Shared application styling remains in /styles.css. */
+.pf2e-tabs { border-bottom: 1px solid var(--line); display: flex; gap: 4px; margin: -2px 0 18px; padding-bottom: 11px; }
+.pf2e-tab { background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--muted); font: 600 11px var(--font-mono); padding: 8px 11px; }
+.pf2e-tab:hover, .pf2e-tab.active { background: rgba(119,199,196,.09); border-color: rgba(119,199,196,.24); color: #c8efeb; }
+.pf2e-builder-grid, .pf2e-treasure-layout { align-items: start; display: grid; gap: 16px; grid-template-columns: minmax(0, 1.42fr) minmax(260px, .58fr); }
+.pf2e-encounter-card, .pf2e-budget-card, .pf2e-treasure-card, .pf2e-reference-card { padding: 21px; }
+.pf2e-encounter-card h2, .pf2e-treasure-card h2, .pf2e-reference-card h2 { font: 600 25px var(--font-display); letter-spacing: -.55px; margin: 6px 0 0; }
+.pf2e-intro { color: #b8bdc9; font-size: 12px; line-height: 1.7; margin: 12px 0 17px; max-width: 720px; }
+.pf2e-form, .pf2e-treasure-form { display: grid; gap: 14px; }
+.pf2e-config-grid, .pf2e-add-creature { display: grid; gap: 10px 12px; grid-template-columns: minmax(160px, 1.45fr) repeat(3, minmax(92px, .7fr)); }
+.pf2e-add-creature { border-top: 1px solid var(--line); padding-top: 14px; grid-template-columns: minmax(150px, 1.45fr) repeat(2, minmax(110px, .7fr)) auto; }
+.pf2e-form label, .pf2e-treasure-form label { color: #d4d7df; display: grid; font-size: 10px; font-weight: 700; gap: 6px; }
+.pf2e-form input, .pf2e-form select, .pf2e-treasure-form input, .pf2e-treasure-form select { background: rgba(255,255,255,.045); border: 1px solid var(--line); border-radius: 7px; color: var(--paper); font-size: 12px; min-width: 0; outline: 0; padding: 9px 10px; }
+.pf2e-form input:focus, .pf2e-form select:focus, .pf2e-treasure-form input:focus, .pf2e-treasure-form select:focus { border-color: rgba(119,199,196,.65); }
+.pf2e-add-creature .secondary-button { align-self: end; white-space: nowrap; }
+.pf2e-empty-list { border: 1px dashed rgba(255,255,255,.17); border-radius: 7px; color: var(--muted); font-size: 11px; padding: 15px; text-align: center; }
+.pf2e-creature-list { display: grid; gap: 7px; list-style: none; margin: 0; padding: 0; }
+.pf2e-creature-list li { align-items: center; background: rgba(255,255,255,.035); border-radius: 7px; display: grid; gap: 11px; grid-template-columns: 28px minmax(0, 1fr) auto auto; padding: 9px; }
+.pf2e-creature-mark { color: var(--teal); font: 10px var(--font-mono); }
+.pf2e-creature-list strong { color: var(--gold-pale); display: block; font: 600 14px var(--font-display); }
+.pf2e-creature-list small { color: var(--muted); display: block; font-size: 9px; margin-top: 3px; }
+.pf2e-creature-list small small { color: #ecb5ac; display: inline; margin-left: 4px; }
+.pf2e-creature-list b { color: #c9efea; font: 500 11px var(--font-mono); }
+.pf2e-form-actions { align-items: center; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px; padding-top: 14px; }
+.pf2e-budget-card { position: sticky; top: 18px; }
+.pf2e-budget-number { align-items: baseline; display: flex; gap: 8px; margin: 11px 0 9px; }
+.pf2e-budget-number strong { color: var(--gold-pale); font: 600 48px/1 var(--font-display); letter-spacing: -2px; }
+.pf2e-budget-number span { color: var(--muted); font: 10px var(--font-mono); }
+.pf2e-meter { background: rgba(255,255,255,.075); border-radius: 999px; height: 7px; overflow: hidden; }
+.pf2e-meter span { background: linear-gradient(90deg, var(--teal), var(--gold)); display: block; height: 100%; transition: width .18s ease; }
+.pf2e-status { border-left: 2px solid var(--teal); display: grid; gap: 3px; margin: 18px 0; padding: 9px 11px; }
+.pf2e-status strong { color: #c7ece8; font: 600 12px var(--font-display); }
+.pf2e-status span { color: var(--muted); font-size: 10px; }
+.pf2e-status.over { border-color: var(--red); }
+.pf2e-status.over strong { color: #f0bbb5; }
+.pf2e-status.under { border-color: var(--gold); }
+.pf2e-status.under strong { color: var(--gold-pale); }
+.pf2e-facts { border-top: 1px solid var(--line); display: grid; gap: 0; margin: 0; }
+.pf2e-facts > div { align-items: center; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; padding: 10px 0; }
+.pf2e-facts dt { color: var(--muted); font: 9px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
+.pf2e-facts dd { color: #d9dde4; font: 600 12px var(--font-display); margin: 0; }
+.pf2e-treasure-form { align-items: end; grid-template-columns: minmax(145px, .65fr) minmax(0, 1.35fr) auto; }
+.pf2e-treasure-result { align-items: center; background: rgba(119,199,196,.055); border: 1px solid rgba(119,199,196,.19); border-radius: 7px; color: #c4e6e3; display: flex; font-size: 11px; grid-column: 1 / -1; justify-content: space-between; gap: 12px; line-height: 1.5; padding: 10px; }
+.pf2e-treasure-result .secondary-button { flex: 0 0 auto; }
+.pf2e-parcel-grid { border-top: 1px solid var(--line); display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 20px; padding-top: 15px; }
+.pf2e-parcel-grid section { background: rgba(255,255,255,.026); border-radius: 7px; padding: 11px; }
+.pf2e-parcel-grid small { color: var(--gold); display: block; font: 9px var(--font-mono); letter-spacing: .05em; text-transform: uppercase; }
+.pf2e-parcel-grid ul { color: #c6cbd4; display: grid; font-size: 10px; gap: 6px; list-style: none; margin: 10px 0 0; padding: 0; }
+.pf2e-parcel-grid li { border-bottom: 1px solid rgba(255,255,255,.08); padding-bottom: 5px; }
+.pf2e-parcel-grid li:last-child { border: 0; padding-bottom: 0; }
+.pf2e-parcel-grid li span { color: var(--teal); font: 9px var(--font-mono); margin-right: 4px; }
+.pf2e-parcel-grid .currency { display: grid; align-content: start; gap: 7px; }
+.pf2e-parcel-grid .currency strong { color: var(--gold-pale); font: 600 25px var(--font-display); }
+.pf2e-parcel-grid .currency span { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.pf2e-reference-card { display: grid; gap: 10px; }
+.pf2e-reference-card > p:not(.eyebrow) { color: #b8bdc9; font-size: 11px; line-height: 1.7; margin: 0; }
+.pf2e-saved-section { margin-top: 22px; }
+.pf2e-saved-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); margin-top: 12px; }
+.pf2e-saved-card { align-items: start; display: grid; gap: 11px; grid-template-columns: minmax(0, 1fr) auto; padding: 16px; }
+.pf2e-saved-card h3 { color: var(--gold-pale); font: 600 19px var(--font-display); margin: 5px 0; }
+.pf2e-saved-card p:not(.eyebrow) { color: #bcc2cd; font-size: 10px; line-height: 1.55; margin: 0; }
+.pf2e-saved-card > .quiet-button { justify-self: end; }
+.pf2e-saved-meta { display: flex; flex-wrap: wrap; gap: 5px; grid-column: 1 / -1; }
+.pf2e-saved-meta span { border: 1px solid var(--line); border-radius: 999px; color: #abb1c1; font: 9px var(--font-mono); padding: 3px 7px; }
+.pf2e-source-link { color: var(--teal); font-weight: 700; text-decoration: none; }
+.pf2e-source-link:hover { color: var(--gold-pale); text-decoration: underline; }
+.pf2e-stat-layout { align-items: start; display: grid; gap: 16px; grid-template-columns: minmax(0, 1.35fr) minmax(290px, .65fr); }
+.pf2e-stat-search-card, .pf2e-stat-library { padding: 21px; }
+.pf2e-stat-search-card h2, .pf2e-stat-library h2 { font: 600 25px var(--font-display); letter-spacing: -.55px; margin: 6px 0 0; }
+.pf2e-stat-search-form { align-items: end; display: grid; gap: 10px 12px; grid-template-columns: minmax(180px, 1.3fr) minmax(120px, .5fr) minmax(170px, .75fr) auto; }
+.pf2e-stat-search-form label { color: #d4d7df; display: grid; font-size: 10px; font-weight: 700; gap: 6px; }
+.pf2e-stat-search-form input, .pf2e-stat-search-form select { background: rgba(255,255,255,.045); border: 1px solid var(--line); border-radius: 7px; color: var(--paper); font-size: 12px; min-width: 0; outline: 0; padding: 9px 10px; }
+.pf2e-stat-search-form input:focus, .pf2e-stat-search-form select:focus { border-color: rgba(119,199,196,.65); }
+.pf2e-stat-source-note { color: var(--muted); font-size: 10px; line-height: 1.6; margin: 10px 0 0; }
+.pf2e-stat-source-note a { color: var(--teal); text-decoration: none; }
+.pf2e-stat-source-note a:hover { color: var(--gold-pale); text-decoration: underline; }
+.pf2e-stat-status { background: rgba(119,199,196,.055); border: 1px solid rgba(119,199,196,.2); border-radius: 7px; color: #c7ece8; font: 10px var(--font-mono); margin: 15px 0; padding: 9px 10px; }
+.pf2e-stat-status.error, .pf2e-stat-warning { background: rgba(228,134,121,.08); border-color: rgba(228,134,121,.28); color: #f0bbb5; }
+.pf2e-stat-warning { border: 1px solid; border-radius: 7px; font-size: 10px; line-height: 1.55; margin: -5px 0 14px; padding: 9px 10px; }
+.pf2e-stat-results, .pf2e-stat-library-list { display: grid; gap: 10px; }
+.pf2e-stat-card { display: grid; gap: 11px; padding: 16px; }
+.pf2e-stat-card.loading { border-style: dashed; }
+.pf2e-stat-card-head { align-items: start; display: flex; gap: 12px; justify-content: space-between; }
+.pf2e-stat-card h3 { color: var(--gold-pale); font: 600 20px var(--font-display); letter-spacing: -.35px; margin: 5px 0 0; }
+.pf2e-stat-traits { display: flex; flex-wrap: wrap; gap: 5px; }
+.pf2e-stat-traits span { background: rgba(119,199,196,.055); border: 1px solid rgba(119,199,196,.2); border-radius: 999px; color: #c7ece8; font: 9px var(--font-mono); padding: 3px 7px; }
+.pf2e-stat-facts { border-top: 1px solid var(--line); display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); padding-top: 11px; }
+.pf2e-stat-facts span { color: var(--gold-pale); display: grid; font: 600 16px var(--font-display); gap: 3px; }
+.pf2e-stat-facts small { color: var(--muted); font: 8px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.pf2e-stat-summary, .pf2e-stat-library > p { color: #b8bdc9; font-size: 11px; line-height: 1.65; margin: 0; }
+.pf2e-stat-lines { border-top: 1px solid rgba(255,255,255,.08); display: grid; gap: 5px; padding-top: 10px; }
+.pf2e-stat-lines small { color: var(--gold); font: 9px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.pf2e-stat-lines p { color: #c6cbd5; font-size: 10px; line-height: 1.55; margin: 0; }
+.pf2e-stat-lines strong { color: #dce0e8; }
+.pf2e-stat-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.pf2e-stat-actions a.secondary-button { text-decoration: none; }
+.pf2e-creation-layout { align-items: start; display: grid; gap: 16px; grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr); }
+.pf2e-creation-editor, .pf2e-creation-preview { padding: 21px; }
+.pf2e-creation-editor h2, .pf2e-creation-preview h2, .pf2e-creation-rules h2 { font: 600 25px var(--font-display); letter-spacing: -.55px; margin: 6px 0 0; }
+.pf2e-creation-tabs { border-bottom: 1px solid var(--line); display: flex; gap: 5px; margin: 16px 0 0; padding-bottom: 11px; }
+.pf2e-creation-tab { background: transparent; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 11px; font-weight: 700; padding: 8px 11px; }
+.pf2e-creation-tab:hover, .pf2e-creation-tab.active { background: rgba(224,183,95,.1); border-color: rgba(224,183,95,.35); color: var(--gold-pale); }
+.pf2e-creation-form textarea { background: rgba(255,255,255,.045); border: 1px solid var(--line); border-radius: 7px; color: var(--paper); font-size: 12px; line-height: 1.55; min-width: 0; outline: 0; padding: 9px 10px; resize: vertical; }
+.pf2e-creation-form textarea:focus { border-color: rgba(119,199,196,.65); }
+.pf2e-creation-form label > small { color: var(--muted); font: 8px var(--font-mono); }
+.pf2e-creation-form > .primary-button { justify-self: start; margin-top: 2px; }
+.pf2e-creation-fields { display: grid; gap: 10px 12px; }
+.pf2e-creation-fields.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.pf2e-creation-preview { background: linear-gradient(155deg, rgba(61,49,33,.58), rgba(24,28,40,.9) 55%); position: sticky; top: 18px; }
+.pf2e-creation-preview-head { align-items: start; display: flex; gap: 15px; justify-content: space-between; }
+.pf2e-creation-preview-head > strong { align-items: center; background: rgba(224,183,95,.11); border: 1px solid rgba(224,183,95,.32); border-radius: 10px 3px 10px 3px; color: var(--gold-pale); display: flex; flex: 0 0 auto; font: 600 23px var(--font-display); height: 43px; justify-content: center; min-width: 43px; padding: 0 8px; }
+.pf2e-creation-preview-head.relic > strong { color: var(--gold); font-size: 21px; }
+.pf2e-creation-preview > .pf2e-stat-traits { margin-top: 13px; }
+.pf2e-preview-rule, .pf2e-relic-form { color: #c7cbd4; font-size: 10px; line-height: 1.6; margin: 13px 0; }
+.pf2e-creation-stat-grid { border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); display: grid; gap: 12px 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 14px 0 4px; padding: 13px 0; }
+.pf2e-creation-stat-grid span, .pf2e-item-benchmarks span { color: var(--gold-pale); display: grid; font: 600 20px var(--font-display); gap: 2px; }
+.pf2e-creation-stat-grid small, .pf2e-item-benchmarks small, .pf2e-preview-line > small { color: var(--muted); font: 8px var(--font-mono); letter-spacing: .07em; text-transform: uppercase; }
+.pf2e-creation-stat-grid em { color: var(--muted); font: normal 8px var(--font-mono); }
+.pf2e-preview-line { border-bottom: 1px solid rgba(255,255,255,.08); display: grid; gap: 6px; padding: 11px 0; }
+.pf2e-preview-line p { color: #cbd0da; font-size: 10px; line-height: 1.55; margin: 0; }
+.pf2e-preview-line strong { color: var(--paper); }
+.pf2e-preview-foot { color: var(--muted); font-size: 9px; line-height: 1.6; margin: 13px 0 0; }
+.pf2e-item-benchmarks { background: rgba(119,199,196,.055); border: 1px solid rgba(119,199,196,.18); border-radius: 8px; display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 15px 0 4px; padding: 12px; }
+.pf2e-item-benchmarks span { font-size: 18px; }
+.pf2e-relic-aspects { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.pf2e-relic-aspects span { background: rgba(224,183,95,.09); border: 1px solid rgba(224,183,95,.25); border-radius: 999px; color: var(--gold-pale); font: 10px var(--font-mono); padding: 6px 9px; }
+.pf2e-relic-aspects i { color: var(--muted); font: normal 10px var(--font-mono); }
+.pf2e-creation-rules { align-items: center; display: grid; gap: 25px; grid-template-columns: minmax(0, 1fr) auto; margin-top: 16px; padding: 20px 21px; }
+.pf2e-creation-rules p:not(.eyebrow) { color: #b8bdc9; font-size: 11px; line-height: 1.65; margin: 7px 0 0; max-width: 800px; }
+.pf2e-rule-links { display: grid; gap: 7px; }
+.pf2e-rule-links a { border: 1px solid var(--line); border-radius: 6px; color: var(--teal); font-size: 10px; font-weight: 700; padding: 8px 10px; text-decoration: none; white-space: nowrap; }
+.pf2e-rule-links a:hover { border-color: rgba(119,199,196,.42); color: #c8efeb; }
+.pf2e-creation-library-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); margin-top: 12px; }
+.pf2e-creation-card { display: grid; gap: 11px; padding: 17px; }
+.pf2e-creation-card h3 { color: var(--gold-pale); font: 600 20px var(--font-display); letter-spacing: -.35px; margin: 5px 0 0; }
+.pf2e-creation-card > p { color: #bcc2cd; font-size: 10px; line-height: 1.6; margin: 0; }
+.pf2e-creation-card .pf2e-stat-facts { grid-template-columns: repeat(4, minmax(52px, 1fr)); }
+.pf2e-creation-card .pf2e-stat-facts span { min-width: 0; }
+.pf2e-creation-card .pf2e-stat-facts span:last-child { overflow-wrap: anywhere; }
+.pf2e-relic-card-form { color: #ddd5c8 !important; font: 600 13px var(--font-display) !important; }
+
+:root[data-theme="parchment"] .pf2e-form input,
+:root[data-theme="parchment"] .pf2e-form select,
+:root[data-theme="parchment"] .pf2e-creation-form textarea,
+:root[data-theme="parchment"] .pf2e-treasure-form input,
+:root[data-theme="parchment"] .pf2e-treasure-form select,
+:root[data-theme="parchment"] .pf2e-stat-search-form input,
+:root[data-theme="parchment"] .pf2e-stat-search-form select {
+  background: rgba(78, 60, 31, .05);
+  color: var(--paper);
+}
+
+@media (max-width: 940px) {
+  .pf2e-builder-grid, .pf2e-treasure-layout, .pf2e-stat-layout, .pf2e-creation-layout { grid-template-columns: 1fr; }
+  .pf2e-stat-search-form { grid-template-columns: minmax(0, 1fr) minmax(120px, .4fr); }
+  .pf2e-stat-search-form .primary-button { justify-self: start; }
+  .pf2e-budget-card, .pf2e-creation-preview { position: static; }
+  .pf2e-creation-rules { grid-template-columns: 1fr; }
+  .pf2e-rule-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pf2e-rule-links a { white-space: normal; }
+}
+
+@media (max-width: 690px) {
+  .pf2e-config-grid, .pf2e-add-creature, .pf2e-treasure-form, .pf2e-parcel-grid, .pf2e-stat-search-form, .pf2e-creation-fields.two, .pf2e-creation-rules, .pf2e-rule-links { grid-template-columns: 1fr; }
+  .pf2e-add-creature .secondary-button, .pf2e-treasure-form > .primary-button { justify-self: start; }
+  .pf2e-treasure-result { align-items: start; flex-direction: column; }
+  .pf2e-tabs { overflow-x: auto; padding-bottom: 9px; }
+  .pf2e-tab { flex: 0 0 auto; }
+  .pf2e-creation-tabs { flex-wrap: wrap; }
+  .pf2e-creation-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pf2e-creation-card .pf2e-stat-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

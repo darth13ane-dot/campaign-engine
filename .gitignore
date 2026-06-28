@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.pnpm-store/
+.electron-cache/
+.electron-builder-cache/
+.agents/
+.codex/
+.publish-git/
+/release-output/
+release-config.generated.json
+/archivist-data.js
+/archivist-details.js
+*.log
+*.tmp

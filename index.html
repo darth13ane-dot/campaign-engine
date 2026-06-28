@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#11141d" />
+    <meta name="application-name" content="Campaign Engine" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <title>Campaign Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=9" />
+    <link rel="stylesheet" href="workspace.css?v=1" />
+    <link rel="stylesheet" href="systems/pf2e/styles.css?v=1" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Campaign navigation">
+        <a class="brand" href="#dashboard" aria-label="Campaign Engine home">
+          <span class="brand-mark">✦</span>
+          <span>Campaign<br /><em>Engine</em></span>
+        </a>
+
+        <button class="campaign-switcher" id="campaignSwitcher" type="button" aria-haspopup="true" aria-expanded="false">
+          <span class="campaign-rune" id="campaignRune">A</span>
+          <span class="campaign-switcher-copy"><small>Active campaign</small><strong id="activeCampaignName">Ashes of Veyr</strong></span>
+          <span class="chevron">⌄</span>
+        </button>
+        <div class="campaign-menu hidden" id="campaignMenu"></div>
+
+        <nav class="nav-list" id="primaryNav">
+          <button class="nav-link active" data-view="dashboard"><span>⌘</span> Overview</button>
+          <button class="nav-link" data-view="sessions"><span>◷</span> Sessions</button>
+          <button class="nav-link" data-view="characters"><span>♙</span> Characters</button>
+          <button class="nav-link" data-view="sheets"><span>▣</span> Sheets & stats</button>
+          <button class="nav-link" data-view="builder"><span>✧</span> Builder studio</button>
+          <div class="system-nav" id="systemNav"></div>
+          <button class="nav-link" data-view="sources"><span>▤</span> Rulebooks & PDFs</button>
+          <button class="nav-link" data-view="systems"><span>⌘</span> Game systems</button>
+          <button class="nav-link" data-view="quests"><span>◈</span> Quests</button>
+          <button class="nav-link" data-view="arcs"><span>⌁</span> Story arcs</button>
+          <button class="nav-link" data-view="connections"><span>↔</span> Connections</button>
+          <button class="nav-link" data-view="locations"><span>⌖</span> World</button>
+          <button class="nav-link" data-view="journal"><span>▤</span> Journal</button>
+          <button class="nav-link" data-view="copilot"><span>✺</span> GM inquiry</button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="settings-bar"><button class="nav-link" id="settingsButton" type="button" data-view="settings"><span>⚙</span> Settings</button></div>
+          <button class="new-campaign-link" id="newCampaignButton" type="button"><span>＋</span> New campaign</button>
+          <p>Built for the person behind the screen.</p>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <button class="mobile-menu" id="mobileMenu" type="button" aria-label="Open navigation">☰</button>
+          <div class="breadcrumb" id="breadcrumb">CAMPAIGN / OVERVIEW</div>
+          <div class="topbar-actions">
+            <button class="icon-button" id="searchButton" type="button" aria-label="Search campaign">⌕</button>
+            <button class="avatar" type="button" aria-label="Account menu">DM</button>
+          </div>
+        </header>
+        <section id="viewRoot" class="view-root" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <dialog class="modal" id="campaignModal">
+      <form method="dialog" id="campaignForm">
+        <div class="modal-heading"><div><p class="eyebrow">A fresh chapter</p><h2>Start a campaign</h2></div><button class="close-button" type="button" data-close-modal aria-label="Close">×</button></div>
+        <label>Campaign title<input required name="title" maxlength="60" placeholder="The Sunken Archive" /></label>
+        <div class="form-row">
+          <label>Game system<select required name="system"><option>D&D 5e</option><option>Pathfinder 2e</option><option>WFRP 4th Edition</option><option>Call of Cthulhu</option><option>Blades in the Dark</option><option>Custom</option></select></label>
+          <label>Genre<input name="genre" maxlength="40" placeholder="Sword & sorcery" /></label>
+        </div>
+        <label>Campaign premise<textarea required name="summary" rows="3" maxlength="240" placeholder="What is this story about?"></textarea></label>
+        <div class="form-row">
+          <label>Players<input required name="players" type="number" min="1" max="12" value="4" /></label>
+          <label>First session<input name="sessionDate" type="date" /></label>
+        </div>
+        <button class="primary-button submit-button" type="submit">Forge campaign <span>→</span></button>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="recordModal">
+      <form method="dialog" id="recordForm">
+        <div class="modal-heading"><div><p class="eyebrow" id="recordKicker">NEW RECORD</p><h2 id="recordTitle">Add record</h2></div><button class="close-button" type="button" data-close-modal aria-label="Close">×</button></div>
+        <div id="recordFields"></div>
+        <button class="primary-button submit-button" type="submit">Save record <span>→</span></button>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="connectionModal">
+      <form method="dialog" id="connectionForm">
+        <div class="modal-heading"><div><p class="eyebrow">RELATIONSHIP MAP</p><h2>Connect records</h2></div><button class="close-button" type="button" data-close-modal aria-label="Close">×</button></div>
+        <p class="modal-intro">Connections stay local to this campaign. Journal references are listed automatically; use this form for the relationships that need a deliberate label.</p>
+        <div id="connectionFields"></div>
+        <button class="primary-button submit-button" type="submit">Save connection <span>→</span></button>
+      </form>
+    </dialog>
+
+    <dialog class="modal arc-modal" id="arcModal">
+      <form method="dialog" id="arcForm">
+        <div class="modal-heading"><div><p class="eyebrow">FUTURE STORY</p><h2>Plan a story arc</h2></div><button class="close-button" type="button" data-close-modal aria-label="Close">×</button></div>
+        <p class="modal-intro">Write the pressure, the likely change, and the next decision. This is a planning horizon, not a script for the players.</p>
+        <div id="arcFields"></div>
+        <button class="primary-button submit-button" type="submit">Save story arc <span>→</span></button>
+      </form>
+    </dialog>
+
+    <dialog class="modal guide-modal" id="storyScoutModal">
+      <div id="storyScoutContent"></div>
+    </dialog>
+
+    <dialog class="modal guide-modal" id="aiGuideModal">
+      <div id="aiGuideContent"></div>
+    </dialog>
+
+    <dialog class="modal search-modal" id="searchModal">
+      <form method="dialog">
+        <div class="modal-heading"><div><p class="eyebrow">FIND SOMETHING</p><h2>Search this campaign</h2></div><button class="close-button" type="button" data-close-modal aria-label="Close">×</button></div>
+        <label class="search-field"><span>⌕</span><input autofocus id="searchInput" placeholder="Characters, places, quests, notes…" /></label>
+        <div id="searchResults" class="search-results"><p class="empty-copy">Start typing to search the living record.</p></div>
+      </form>
+    </dialog>
+
+    <dialog class="modal sheet-modal" id="sheetModal">
+      <div id="sheetModalContent"></div>
+    </dialog>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="archivist-data.js"></script>
+    <script src="archivist-details.js"></script>
+    <script src="systems/registry.js?v=1"></script>
+    <script src="systems/dnd5e/definition.js?v=1"></script>
+    <script src="systems/pf2e/definition.js?v=1"></script>
+    <script src="systems/wfrp4e/definition.js?v=1"></script>
+    <script src="systems/blades-in-the-dark/definition.js?v=1"></script>
+    <script src="systems/call-of-cthulhu/definition.js?v=1"></script>
+    <script src="systems/custom/definition.js?v=1"></script>
+    <script src="systems/campaign-system-state.js?v=1"></script>
+    <script src="app.js?v=11"></script>
+    <script src="features.js?v=9"></script>
+    <script src="systems/pf2e/toolkit.js?v=1"></script>
+    <script>
+      if ("serviceWorker" in navigator && location.protocol !== "file:") {
+        window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js"));
+      }
+    </script>
+  </body>
+</html>
