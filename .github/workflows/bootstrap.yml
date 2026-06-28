@@ -1,0 +1,94 @@
+name: Publish Campaign Engine 1.0.1
+
+on:
+  push:
+    paths:
+      - ".github/workflows/bootstrap.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out staged source
+        uses: actions/checkout@v4
+
+      - name: Expand audited source and publish normal tree
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "campaign-engine-source.zip"
+          $bytes = [Convert]::FromBase64String((Get-Content ".bootstrap/source.b64" -Raw).Trim())
+          [IO.File]::WriteAllBytes($zip, $bytes)
+          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+          $expected = "0C40B787561424869F8896A43985437CFE2C4B81D7591E5B09549FD242B77CA3"
+          if ($actual -ne $expected) {
+            throw "Staged source checksum mismatch."
+          }
+          Expand-Archive -LiteralPath $zip -DestinationPath . -Force
+          Remove-Item -LiteralPath ".bootstrap" -Recurse -Force
+          Remove-Item -LiteralPath ".github/workflows/bootstrap.yml" -Force
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Release Campaign Engine 1.0.1 with portable self-updates"
+          git push origin HEAD:main
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Verify release version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($version -ne "1.0.1") {
+            throw "Expected package version 1.0.1, found $version."
+          }
+
+      - name: Configure update feed
+        shell: pwsh
+        env:
+          CAMPAIGN_ENGINE_UPDATE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/latest/download
+        run: pnpm run configure:release
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Build installer and portable app
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: pnpm run dist
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: campaign-engine-windows-v1.0.1
+          path: |
+            dist/*.exe
+            dist/*.yml
+            dist/*.json
+            dist/*.blockmap
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = Get-ChildItem dist -File |
+            Where-Object { $_.Extension -in ".exe", ".yml", ".json", ".blockmap" } |
+            ForEach-Object { $_.FullName }
+          gh release create v1.0.1 $files --target main --generate-notes --title "Campaign Engine v1.0.1"
