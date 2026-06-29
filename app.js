@@ -85,6 +85,7 @@ let foundryToken = "";
 let copilotToken = loadSessionApiKey();
 let keyVaultUnlocked = false;
 let desktopUpdateState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading desktop update settings…" : "Use the installable web app or Windows package." };
+let archivistBridgeState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading Archivist bridge settings…" : "The internal bridge is available in the Windows desktop app." };
 let desktopWorkspaceInfo = { mode: DESKTOP_API ? "loading" : "browser", savedAt: null, workspacePath: "" };
 let desktopSaveQueue = Promise.resolve();
 let builderTab = "character";
@@ -107,9 +108,12 @@ const aiGuideModal = document.querySelector("#aiGuideModal");
 const connectionModal = document.querySelector("#connectionModal");
 const arcModal = document.querySelector("#arcModal");
 const storyScoutModal = document.querySelector("#storyScoutModal");
+const revisionModal = document.querySelector("#revisionModal");
+const revisionContent = document.querySelector("#revisionContent");
 let recordEditing = null;
 let guideState = null;
 let storyScoutState = null;
+let revisionState = null;
 
 function createInitialState() {
   if (Array.isArray(ARCHIVIST_SNAPSHOT) && ARCHIVIST_SNAPSHOT.length) {
@@ -306,6 +310,8 @@ const ENTRY_TYPES = {
 };
 const CONNECTION_TYPES = ["Allied with", "Depends on", "Hunts", "Is tied to", "Knows about", "Leads to", "Opposes", "Protects", "Reveals", "Seeks"];
 const ARC_STATUSES = ["Planned", "Active", "On hold", "Complete"];
+const RECORD_ENTRY_TYPES = { session: "session", characters: "character", quests: "quest", locations: "location", journal: "journal" };
+const ENTRY_RECORD_TYPES = { session: "session", character: "characters", quest: "quests", location: "locations", journal: "journal" };
 function campaignEntries(campaign) {
   return [
     ...campaign.characters.map(item => ({ type: "character", name: item.name })),
@@ -324,10 +330,54 @@ function decodeEntryRef(value) {
 function findCampaignEntry(campaign, entry) {
   return campaignEntries(campaign).find(candidate => entryKey(candidate) === entryKey(entry));
 }
+function entryLinkLabel(entry) { return ENTRY_TYPES[entry.type] || entry.type; }
+function entryLinkToken(entry) { return `[[${entryLinkLabel(entry)}: ${entry.name}]]`; }
+function entryFromLinkText(campaign, text) {
+  const value = String(text || "").trim();
+  const labelled = value.match(/^([^:]+):\s*(.+)$/);
+  if (labelled) {
+    const label = labelled[1].trim().toLocaleLowerCase();
+    const name = labelled[2].trim();
+    const type = Object.entries(ENTRY_TYPES).find(([, title]) => title.toLocaleLowerCase() === label)?.[0] || (ENTRY_RECORD_TYPES[label] ? label : "");
+    if (type) return findCampaignEntry(campaign, { type, name });
+  }
+  return campaign.journal.map(entry => ({ type: "journal", name: entry.title })).find(entry => entry.name.toLocaleLowerCase() === value.toLocaleLowerCase()) || findCampaignEntry(campaign, { type: "journal", name: value });
+}
+function internalLinkMatches(text = "") {
+  return [...String(text || "").matchAll(/\[\[([^\]]+)\]\]/g)];
+}
+function recordSourceEntry(type, item) {
+  if (!item) return null;
+  const entryType = RECORD_ENTRY_TYPES[type] || type;
+  return { type: entryType, name: item.name || item.title };
+}
+function recordTextForLinks(type, item) {
+  if (!item) return "";
+  if (type === "session") return item.recap || "";
+  if (type === "characters") return item.description || "";
+  if (type === "quests") return item.detail || "";
+  if (type === "locations") return item.detail || "";
+  if (type === "journal") return item.body || "";
+  return "";
+}
 function journalReferenceConnections(campaign) {
-  return campaign.journal.flatMap(entry => {
-    const references = [...String(entry.body || "").matchAll(/\[\[([^\]]+)\]\]/g)].map(match => journalEntryByTitle(campaign, match[1])).filter(Boolean);
-    return references.map(target => ({ id: `journal:${entry.title}:${target.title}`, from: { type: "journal", name: entry.title }, to: { type: "journal", name: target.title }, type: "References", inferred: true }));
+  const sources = [
+    ...campaign.sessions.map(item => ({ type: "session", item })),
+    ...campaign.characters.map(item => ({ type: "characters", item })),
+    ...campaign.quests.map(item => ({ type: "quests", item })),
+    ...campaign.locations.map(item => ({ type: "locations", item })),
+    ...campaign.journal.map(item => ({ type: "journal", item }))
+  ];
+  const seen = new Set();
+  return sources.flatMap(source => {
+    const from = recordSourceEntry(source.type, source.item);
+    if (!from) return [];
+    return internalLinkMatches(recordTextForLinks(source.type, source.item)).map(match => entryFromLinkText(campaign, match[1])).filter(Boolean).filter(to => entryKey(to) !== entryKey(from)).map(to => {
+      const key = `${entryKey(from)}>${entryKey(to)}`;
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return { id: `reference:${key}`, from, to, type: "References", inferred: true };
+    }).filter(Boolean);
   });
 }
 function campaignConnections(campaign) {
@@ -449,7 +499,7 @@ function tagSection(title, values, kind = "") {
   return `<section class="record-section"><h3>${esc(title)}</h3><div class="detail-tags">${values.map(value => `<span class="tag ${kind}">${esc(value)}</span>`).join("")}</div></section>`;
 }
 function stripJournalLinks(text = "") {
-  return String(text).replace(/\[\[([^\]]+)\]\]/g, "$1");
+  return String(text).replace(/\[\[([^\]:]+):\s*([^\]]+)\]\]/g, "$2").replace(/\[\[([^\]]+)\]\]/g, "$1");
 }
 function escapeRegExp(value = "") { return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function journalEntryByTitle(campaign, title) {
@@ -460,8 +510,8 @@ function renderJournalContent(campaign, text = "") {
   return String(text).split(/(\[\[[^\]]+\]\])/g).map(part => {
     const match = part.match(/^\[\[([^\]]+)\]\]$/);
     if (!match) return esc(part).replace(/\n/g, "<br>");
-    const linkedEntry = journalEntryByTitle(campaign, match[1]);
-    return linkedEntry ? `<button class="journal-link" type="button" data-open-entity data-entity-type="journal" data-entity-name="${esc(linkedEntry.title)}">${esc(linkedEntry.title)}</button>` : esc(part);
+    const linkedEntry = entryFromLinkText(campaign, match[1]);
+    return linkedEntry ? `<button class="journal-link" type="button" data-open-entity data-entity-type="${esc(linkedEntry.type)}" data-entity-name="${esc(linkedEntry.name)}">${esc(linkedEntry.name)}</button>` : esc(part);
   }).join("");
 }
 function journalBodySection(campaign, entry) {
@@ -472,10 +522,11 @@ function connectionDetailSection(campaign, entry) {
   if (!related.length) return "";
   return `<section class="record-section record-connections"><h3>Connections</h3><div>${related.map(connection => { const other = entryKey(connection.from) === entryKey(entry) ? connection.to : connection.from; return `<button type="button" data-open-entity data-entity-type="${esc(other.type)}" data-entity-name="${esc(other.name)}"><small>${esc(connection.type)}</small><strong>${esc(other.name)}</strong></button>`; }).join("")}</div></section>`;
 }
-function journalLinkPicker(excludeTitle = "") {
-  const articles = activeCampaign().journal.filter(entry => entry.title !== excludeTitle);
-  if (!articles.length) return `<p class="field-help">Create a second journal entry to link articles together.</p>`;
-  return `<div class="article-link-picker"><small>Link an existing article</small><div>${articles.map(entry => `<button type="button" data-insert-journal-link="${esc(entry.title)}">${esc(entry.title)}</button>`).join("")}</div><p>Or type <code>[[Article title]]</code> anywhere in the entry.</p></div>`;
+function journalLinkPicker(excludeEntry = null) {
+  const excludeKey = excludeEntry ? entryKey(excludeEntry) : "";
+  const entries = campaignEntries(activeCampaign()).filter(entry => entryKey(entry) !== excludeKey);
+  if (!entries.length) return `<p class="field-help">Create another campaign record before adding internal links.</p>`;
+  return `<div class="article-link-picker" data-internal-link-tools><small>Internal links</small><div>${entries.map(entry => `<button type="button" data-insert-internal-link="${esc(encodeEntryRef(entry))}">${esc(entryLinkLabel(entry))}: ${esc(entry.name)}</button>`).join("")}</div><div class="link-assist-controls"><label class="consent-check"><input name="linkAssistConsent" type="checkbox" /> Send this text and the campaign index for AI link suggestions</label><button class="secondary-button" type="button" data-suggest-internal-links>Suggest links with AI</button><button class="quiet-button" type="button" data-apply-suggested-links hidden>Insert selected</button></div><div class="link-suggestion-list" data-link-suggestions></div></div>`;
 }
 function structuredSections(type, source) {
   if (!source) return `<section class="record-section muted-section"><h3>Imported record</h3><p>This entry has its directory notes, but no expanded Archivist record was available.</p></section>`;
@@ -513,7 +564,7 @@ function entityDetailView(campaign) {
   return `
     ${header(definition.title(item), definition.label, "A focused view of this campaign record.", `<button class="secondary-button" data-view-jump="${definition.back}">← Back to ${definition.back}</button>`)}
     <article class="card entity-detail">
-      <div class="entity-detail-top"><div class="record-emblem entity-emblem">${esc(initials(definition.title(item)))}</div><div><p class="eyebrow">${definition.label}</p><h2>${esc(definition.title(item))}</h2><p>${esc(overview)}</p></div></div>
+      <div class="entity-detail-top"><div class="record-emblem entity-emblem">${esc(initials(definition.title(item)))}</div><div><p class="eyebrow">${definition.label}</p><h2>${esc(definition.title(item))}</h2><p>${renderJournalContent(campaign, overview)}</p></div></div>
       <div class="detail-facts">${fields}</div>
        <div class="detail-sections">${connectionDetailSection(campaign, { type: detailTarget.type, name: definition.title(item) })}${structuredSections(detailTarget.type, source)}</div>
       <div class="detail-actions">${characterAction}<button class="secondary-button" data-view-jump="${definition.back}">Return to directory</button></div>
@@ -670,6 +721,30 @@ async function createDesktopSafetyBackup() {
     showToast(error.message || "The safety backup could not be created.");
   }
 }
+async function deleteActiveCampaign() {
+  const campaign = activeCampaign();
+  if (!campaign || state.campaigns.length <= 1) { showToast("Create or import another campaign before deleting this one."); return; }
+  if (!confirm(`Delete "${campaign.title}" and all of its local campaign records? This cannot be undone from inside the app.`)) return;
+  try {
+    if (DESKTOP_API?.createSafetyBackup) {
+      await flushDesktopSaves();
+      const result = await DESKTOP_API.createSafetyBackup();
+      desktopWorkspaceInfo = result.info || desktopWorkspaceInfo;
+    }
+  } catch (error) {
+    showToast(error.message || "A safety backup could not be created, so the campaign was not deleted.");
+    return;
+  }
+  state.campaigns = state.campaigns.filter(item => item.id !== campaign.id);
+  if (state.copilot?.conversations) delete state.copilot.conversations[campaign.id];
+  state.activeCampaignId = state.campaigns[0]?.id || null;
+  currentView = "dashboard";
+  detailTarget = null;
+  activeFilter = "All";
+  saveState();
+  render();
+  showToast(`${campaign.title} has been deleted.`);
+}
 function settingsView() {
   const copilot = getCopilotState();
   const keyReady = Boolean(copilotToken);
@@ -693,6 +768,11 @@ function settingsView() {
         </div>
         ${DESKTOP_API && desktopWorkspaceInfo.workspacePath ? `<p class="workspace-path"><small>Workspace file</small><code>${esc(desktopWorkspaceInfo.workspacePath)}</code></p>` : ""}
         <p class="quiet-copy">Backups contain campaign records and Archivist detail data. Your encrypted AI-key vault is deliberately excluded.</p>
+      </section>
+      <section class="card settings-card settings-danger-card">
+        <div class="section-title"><h2>Campaign management</h2><span class="tag">${state.campaigns.length} campaigns</span></div>
+        <p>Delete the active campaign from this workspace. Desktop mode creates a safety backup first.</p>
+        <div class="workspace-actions"><button class="secondary-button danger-button" type="button" data-delete-active-campaign ${state.campaigns.length <= 1 ? "disabled" : ""}>Delete ${esc(activeCampaign().title)}</button></div>
       </section>
     </div>`;
 }
@@ -765,12 +845,92 @@ function archivistView(campaign) {
   const importedAt = ARCHIVIST_DETAILS_ROOT.importedAt ? new Date(ARCHIVIST_DETAILS_ROOT.importedAt).toLocaleString() : "Unknown";
   const allCampaigns = Object.values(ARCHIVIST_DETAILS);
   const totals = allCampaigns.reduce((sum, entry) => sum + Object.keys(entry.sessions || {}).length + Object.keys(entry.characters || {}).length + Object.keys(entry.quests || {}).length + Object.keys(entry.world?.location || {}).length + Object.keys(entry.world?.faction || {}).length + Object.keys(entry.world?.item || {}).length + Object.keys(entry.journals || {}).length, 0);
+  const bridge = archivistBridgeState.settings || {};
+  const toolOptions = archivistBridgeState.result?.tools?.length ? `<div class="bridge-tool-list"><small>Detected tools</small>${archivistBridgeState.result.tools.map(tool => `<button type="button" data-fill-archivist-tool="${esc(tool.name)}"><strong>${esc(tool.name)}</strong>${tool.description ? `<span>${esc(tool.description)}</span>` : ""}</button>`).join("")}</div>` : "";
   return `${header("Archivist data", "PRIVATE CAMPAIGN SOURCE", "The structured campaign records stored with this private workspace.")}
     <div class="sync-grid">
       <section class="card sync-lead"><p class="eyebrow">LAST SNAPSHOT</p><h2>${esc(importedAt)}</h2><p>${state.campaigns.length} campaigns are available in the engine, with ${totals} structured records ready for detail pages and planning context.</p><div><button class="primary-button" type="button" data-refresh-snapshot>Reload workspace <span>↻</span></button><button class="secondary-button" type="button" data-view-jump="copilot">Open GM inquiry</button></div></section>
       <section class="card sync-card"><div class="section-title"><h2>Private snapshot</h2><span class="status">Local</span></div><p>Archivist detail data now travels with your private workspace backup instead of the public Windows installer. Restore a newer workspace backup whenever you want to replace the snapshot.</p><ul><li>Campaigns, sessions, characters, quests, world records, and journals</li><li>Quest objectives, progress history, aliases, and full journal text</li><li>Your local additions remain in the same private workspace</li></ul></section>
       <section class="card sync-card"><div class="section-title"><h2>Current campaign</h2><span class="tag">${esc(campaign.system)}</span></div><p><strong>${esc(campaign.title)}</strong> currently has ${campaign.sessions.length} session records, ${campaign.characters.length} characters, ${campaign.quests.length} quests, and ${campaign.locations.length} world entries loaded from Archivist.</p><button class="text-link" type="button" data-view-jump="dashboard">Return to overview</button></section>
+      <section class="card sync-card archivist-bridge-card"><div class="section-title"><h2>Archivist Nexus MCP bridge</h2><span class="tag">${DESKTOP_API ? esc(archivistBridgeState.status || "Ready") : "Desktop only"}</span></div>${DESKTOP_API ? `<p>The Windows app can run a local Archivist Nexus MCP server directly from Campaign Engine. Configure the command once, test it, then call the import tool without relying on Codex.</p><form id="archivistBridgeForm" class="compact-form"><label>MCP command<input required name="command" value="${esc(bridge.command || "")}" placeholder="node, npx, uvx, or full path" /></label><label>Arguments<input name="args" value="${esc(Array.isArray(bridge.args) ? bridge.args.join(" ") : bridge.args || "")}" placeholder="path/to/archivist-server.js --flag" /></label><div class="form-row"><label>Import tool<input name="toolName" value="${esc(bridge.toolName || "")}" placeholder="Tool that returns Campaign Engine data" /></label><label>Timeout ms<input name="timeoutMs" type="number" min="2000" max="120000" value="${esc(bridge.timeoutMs || 15000)}" /></label></div><label>Tool arguments<textarea name="toolArguments" rows="5" placeholder="{&quot;campaignId&quot;:&quot;...&quot;}">${esc(typeof bridge.toolArguments === "string" ? bridge.toolArguments : JSON.stringify(bridge.toolArguments || {}, null, 2))}</textarea></label><div><button class="secondary-button" type="submit" name="bridgeAction" value="save">Save bridge</button><button class="secondary-button" type="submit" name="bridgeAction" value="test">Test/list tools</button><button class="primary-button" type="submit" name="bridgeAction" value="sync">Import from bridge <span>↓</span></button></div></form>${toolOptions}<p class="quiet-copy">${esc(bridge.lastStatus || archivistBridgeState.message || "No bridge run yet.")}${bridge.lastSync ? ` Last import: ${esc(new Date(bridge.lastSync).toLocaleString())}` : ""}</p>` : `<p>The internal MCP bridge runs from Electron so Campaign Engine can own the Archivist Nexus connection. Open the Windows desktop build to configure it.</p>`}</section>
     </div>`;
+}
+function archivistBridgeSettingsFromForm(form) {
+  const data = new FormData(form);
+  return {
+    command: data.get("command"),
+    args: data.get("args"),
+    toolName: data.get("toolName"),
+    toolArguments: data.get("toolArguments"),
+    timeoutMs: data.get("timeoutMs")
+  };
+}
+function applyArchivistBridgePayload(payload) {
+  if (!payload || typeof payload !== "object") return false;
+  if (payload.workspace) return applyArchivistBridgePayload(payload.workspace);
+  if (payload.state?.campaigns) {
+    applyWorkspace({ ...payload, archivist: payload.archivist || payload.details || payload.archivistDetails || {} });
+    return true;
+  }
+  let changed = false;
+  if (Array.isArray(payload.campaigns)) {
+    state = { ...state, source: "archivist", activeCampaignId: payload.activeCampaignId || payload.campaigns[0]?.id || state.activeCampaignId, campaigns: structuredClone(payload.campaigns) };
+    changed = true;
+  }
+  const details = payload.archivist || payload.details || payload.archivistDetails;
+  if (details && typeof details === "object") {
+    ARCHIVIST_DETAILS_ROOT = details.campaigns ? structuredClone(details) : { importedAt: payload.importedAt || new Date().toISOString(), campaigns: structuredClone(details) };
+    ARCHIVIST_DETAILS = ARCHIVIST_DETAILS_ROOT.campaigns || {};
+    changed = true;
+  }
+  if (changed) {
+    hydrateCampaignState();
+    if (!state.campaigns.some(item => item.id === state.activeCampaignId)) state.activeCampaignId = state.campaigns[0]?.id || null;
+  }
+  return changed;
+}
+async function initializeArchivistBridge() {
+  if (!DESKTOP_API?.getArchivistBridgeState) return;
+  try {
+    archivistBridgeState = await DESKTOP_API.getArchivistBridgeState();
+  } catch (error) {
+    archivistBridgeState = { status: "error", message: error.message || "Archivist bridge settings are unavailable.", settings: {} };
+  }
+  if (currentView === "archivist") render();
+}
+async function runArchivistBridgeAction(form, action) {
+  if (!DESKTOP_API?.saveArchivistBridgeSettings) return;
+  const settings = archivistBridgeSettingsFromForm(form);
+  try {
+    if (action === "save") {
+      archivistBridgeState = await DESKTOP_API.saveArchivistBridgeSettings(settings);
+      showToast("Archivist bridge settings saved.");
+    }
+    if (action === "test") {
+      archivistBridgeState = await DESKTOP_API.testArchivistBridge(settings);
+      showToast("Archivist bridge responded.");
+    }
+    if (action === "sync") {
+      await flushDesktopSaves();
+      archivistBridgeState = await DESKTOP_API.syncArchivistBridge(settings);
+      if (applyArchivistBridgePayload(archivistBridgeState.payload)) {
+        if (DESKTOP_API?.replaceWorkspace) {
+          const result = await DESKTOP_API.replaceWorkspace(workspacePayload(), "before-archivist-bridge");
+          desktopWorkspaceInfo = result.info || desktopWorkspaceInfo;
+        } else {
+          saveState();
+        }
+        showToast("Archivist bridge data imported.");
+      } else {
+        showToast("The bridge ran, but did not return a Campaign Engine payload.");
+      }
+    }
+    render();
+  } catch (error) {
+    archivistBridgeState = { ...archivistBridgeState, status: "error", message: error.message || "Archivist bridge action failed.", settings };
+    render();
+    showToast(error.message || "Archivist bridge action failed.");
+  }
 }
 function desktopUpdateView() {
   if (!DESKTOP_API) {
@@ -851,12 +1011,13 @@ function render() {
     const heading = root.querySelector(".page-heading");
     if (heading) heading.insertAdjacentHTML("beforeend", `<button class="secondary-button ai-create-button" type="button" data-open-ai-guide="${guideType}">Guided interview <span>✦</span></button>`);
   }
-  if (currentView === "detail" && detailTarget?.type === "journal") {
-    const entry = campaign.journal.find(item => item.title === detailTarget.name);
+  if (currentView === "detail" && detailTarget) {
+    const recordType = ENTRY_RECORD_TYPES[detailTarget.type];
+    const entry = recordType ? findRecordItem(campaign, recordType, detailTarget.name) : null;
     const sections = root.querySelector(".detail-sections");
-    if (entry && sections) sections.insertAdjacentHTML("afterbegin", journalBodySection(campaign, entry));
+    if (detailTarget.type === "journal" && entry && sections) sections.insertAdjacentHTML("afterbegin", journalBodySection(campaign, entry));
     const actions = root.querySelector(".detail-actions");
-    if (entry && actions) actions.insertAdjacentHTML("afterbegin", `<button class="secondary-button" type="button" data-edit-journal="${esc(entry.title)}">Edit article</button>`);
+    if (entry && actions) actions.insertAdjacentHTML("afterbegin", `<button class="secondary-button" type="button" data-edit-record="${esc(encodeEntryRef(detailTarget))}">Edit record</button><button class="secondary-button" type="button" data-revise-record="${esc(encodeEntryRef(detailTarget))}">AI revise</button>`);
   }
 }
 
@@ -1016,22 +1177,128 @@ function recordFields(type, values = {}) {
   const tags = Array.isArray(values.tags) ? values.tags.join(", ") : values.tags || "";
   const title = esc(values.title || "");
   const description = esc(values.description || "");
+  const currentEntry = values.title ? { type: RECORD_ENTRY_TYPES[type] || "journal", name: values.title } : null;
+  const linkTools = journalLinkPicker(currentEntry);
   if (type === "session") {
     const directions = Array.isArray(values.directions) ? values.directions.join("\n") : values.directions || "";
     const tropes = Array.isArray(values.tropes) ? values.tropes.join(", ") : values.tropes || "";
     const gaps = Array.isArray(values.threadGaps) ? values.threadGaps.join("\n") : values.threadGaps || "";
     const compass = `<fieldset class="planning-insights-fields"><legend>Story compass</legend><p class="field-help">These are planning possibilities, never required player outcomes.</p><label>Potential directions <span class="field-help">One per line.</span><textarea name="directions" rows="4">${esc(directions)}</textarea></label><div class="form-row"><label>Narrative archetype<textarea name="archetype" rows="2" placeholder="A useful pattern, if the thread needs one">${esc(values.archetype || "")}</textarea></label><label>Tropes to use or subvert<textarea name="tropes" rows="2" placeholder="false ally, ticking clock">${esc(tropes)}</textarea></label></div><label>Threads still missing a story engine <span class="field-help">One per line.</span><textarea name="threadGaps" rows="3">${esc(gaps)}</textarea></label></fieldset>`;
-    return `<label>Session title<input required name="title" value="${title}" placeholder="The Name of This Session" /></label><div class="form-row"><label>Session number<input required name="number" type="number" min="1" value="${esc(values.number || activeCampaign().sessions.length + 1)}" /></label><label>Date<input name="date" type="date" value="${esc(values.date || "")}" /></label></div><label>Playable session plan<textarea required name="description" rows="10" placeholder="Opening situation, pressures, discoveries, meaningful choices, and useful contingencies.">${description}</textarea></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="mystery, faction" /></label>${compass}`;
+    return `<label>Session title<input required name="title" value="${title}" placeholder="The Name of This Session" /></label><div class="form-row"><label>Session number<input required name="number" type="number" min="1" value="${esc(values.number || activeCampaign().sessions.length + 1)}" /></label><label>Date<input name="date" type="date" value="${esc(values.date || "")}" /></label></div><label>Playable session plan<textarea required name="description" rows="10" placeholder="Opening situation, pressures, discoveries, meaningful choices, and useful contingencies.">${description}</textarea></label>${linkTools}<label>Tags<input name="tags" value="${esc(tags)}" placeholder="mystery, faction" /></label>${compass}`;
   }
-  if (type === "characters") return `<label>Character name<input required name="title" value="${title}" placeholder="Name" /></label><div class="form-row"><label>Role<select name="role"><option${selectedOption(values.role || "NPC · Ally", "PC · Adventurer")}>PC · Adventurer</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Ally")}>NPC · Ally</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Antagonist")}>NPC · Antagonist</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Contact")}>NPC · Contact</option></select></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="ally, secret" /></label></div><label>Notes<textarea required name="description" rows="5" placeholder="What should you remember about them?">${description}</textarea></label>`;
-  if (type === "quests") return `<label>Quest title<input required name="title" value="${title}" placeholder="What needs doing?" /></label><div class="form-row"><label>Status<select name="status"><option${selectedOption(values.status || "Active", "Active")}>Active</option><option${selectedOption(values.status || "Active", "Blocked")}>Blocked</option><option${selectedOption(values.status || "Active", "Done")}>Done</option></select></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="main, personal" /></label></div><label>Current objective<textarea required name="description" rows="5" placeholder="The next meaningful step.">${description}</textarea></label>`;
-  if (type === "locations") return `<label>Location name<input required name="title" value="${title}" placeholder="The place's name" /></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="city, faction, dungeon" /></label><label>Notes<textarea required name="description" rows="5" placeholder="What makes this place alive?">${description}</textarea></label>`;
-  return `<label>Entry title<input required name="title" value="${title}" placeholder="A secret worth recording" /></label><div class="form-row"><label>Visibility<select name="permission"><option${selectedOption(values.permission || "GM only", "GM only")}>GM only</option><option${selectedOption(values.permission || "GM only", "Player safe")}>Player safe</option></select></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="lore, faction" /></label></div><label>Entry<textarea required name="description" rows="7" placeholder="Preserve the important bit. Use [[Article title]] to link another article.">${description}</textarea></label>${journalLinkPicker(values.title || "")}`;
+  if (type === "characters") return `<label>Character name<input required name="title" value="${title}" placeholder="Name" /></label><div class="form-row"><label>Role<select name="role"><option${selectedOption(values.role || "NPC · Ally", "PC · Adventurer")}>PC · Adventurer</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Ally")}>NPC · Ally</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Antagonist")}>NPC · Antagonist</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Contact")}>NPC · Contact</option></select></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="ally, secret" /></label></div><label>Notes<textarea required name="description" rows="5" placeholder="What should you remember about them?">${description}</textarea></label>${linkTools}`;
+  if (type === "quests") return `<label>Quest title<input required name="title" value="${title}" placeholder="What needs doing?" /></label><div class="form-row"><label>Status<select name="status"><option${selectedOption(values.status || "Active", "Active")}>Active</option><option${selectedOption(values.status || "Active", "Blocked")}>Blocked</option><option${selectedOption(values.status || "Active", "Done")}>Done</option></select></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="main, personal" /></label></div><label>Current objective<textarea required name="description" rows="5" placeholder="The next meaningful step.">${description}</textarea></label>${linkTools}`;
+  if (type === "locations") return `<label>Location name<input required name="title" value="${title}" placeholder="The place's name" /></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="city, faction, dungeon" /></label><label>Notes<textarea required name="description" rows="5" placeholder="What makes this place alive?">${description}</textarea></label>${linkTools}`;
+  return `<label>Entry title<input required name="title" value="${title}" placeholder="A secret worth recording" /></label><div class="form-row"><label>Visibility<select name="permission"><option${selectedOption(values.permission || "GM only", "GM only")}>GM only</option><option${selectedOption(values.permission || "GM only", "Player safe")}>Player safe</option></select></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="lore, faction" /></label></div><label>Entry<textarea required name="description" rows="7" placeholder="Preserve the important bit. Use [[World: Cinderfall]] to link another record.">${description}</textarea></label>${linkTools}`;
+}
+function dateInputValue(value = "") {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return String(value);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+}
+function displayDateFromInput(value, fallback = "TBD") {
+  if (!value) return fallback || "TBD";
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? fallback || "TBD" : parsed.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+}
+function recordList(campaign, type) {
+  if (type === "session") return campaign.sessions;
+  if (type === "characters") return campaign.characters;
+  if (type === "quests") return campaign.quests;
+  if (type === "locations") return campaign.locations;
+  return campaign.journal;
+}
+function recordItemTitle(type, item) {
+  return type === "characters" ? item.name : item.title;
+}
+function findRecordItem(campaign, type, name) {
+  return recordList(campaign, type).find(item => recordItemTitle(type, item) === name);
+}
+function recordValuesFromItem(type, item) {
+  if (!item) return {};
+  if (type === "session") return { title: item.title, number: item.number, date: dateInputValue(item.date), description: item.recap, tags: item.tags || [], directions: item.directions || [], archetype: item.archetype || "", tropes: item.tropes || [], threadGaps: item.threadGaps || [] };
+  if (type === "characters") return { title: item.name, role: item.role, description: item.description, tags: item.tags || [] };
+  if (type === "quests") return { title: item.title, status: item.status, description: item.detail, tags: item.tags || [] };
+  if (type === "locations") return { title: item.title, description: item.detail, tags: item.tags || [] };
+  return { title: item.title, description: item.body, permission: item.permission, tags: item.tags || [] };
+}
+function recordValuesFromForm(type, form, existing = null) {
+  const data = form instanceof FormData ? form : new FormData(form);
+  const tags = String(data.get("tags") || "").split(",").map(tag => tag.trim()).filter(Boolean);
+  const title = String(data.get("title") || "").trim();
+  const description = String(data.get("description") || "").trim();
+  const directions = String(data.get("directions") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+  const tropes = String(data.get("tropes") || "").split(",").map(item => item.trim()).filter(Boolean);
+  const threadGaps = String(data.get("threadGaps") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean);
+  const common = { title, description, tags };
+  if (type === "session") return { ...common, number: data.get("number"), date: displayDateFromInput(data.get("date"), existing?.date), directions, archetype: String(data.get("archetype") || "").trim(), tropes, threadGaps };
+  if (type === "characters") return { ...common, role: String(data.get("role") || "NPC · Ally") };
+  if (type === "quests") return { ...common, status: String(data.get("status") || "Active") };
+  if (type === "journal") return { ...common, permission: String(data.get("permission") || "GM only") };
+  return common;
+}
+function updateTextReferences(campaign, oldEntry, newEntry) {
+  const oldToken = entryLinkToken(oldEntry);
+  const newToken = entryLinkToken(newEntry);
+  const replacements = [[oldToken, newToken]];
+  if (oldEntry.type === "journal") replacements.push([`[[${oldEntry.name}]]`, `[[${newEntry.name}]]`]);
+  const replaceTokens = text => replacements.reduce((value, [from, to]) => value.replace(new RegExp(escapeRegExp(from), "g"), to), String(text || ""));
+  campaign.sessions.forEach(item => { item.recap = replaceTokens(item.recap); });
+  campaign.characters.forEach(item => { item.description = replaceTokens(item.description); });
+  campaign.quests.forEach(item => { item.detail = replaceTokens(item.detail); });
+  campaign.locations.forEach(item => { item.detail = replaceTokens(item.detail); });
+  campaign.journal.forEach(item => { item.body = replaceTokens(item.body); });
+  campaign.connections.forEach(connection => {
+    if (entryKey(connection.from) === entryKey(oldEntry)) connection.from = { ...newEntry };
+    if (entryKey(connection.to) === entryKey(oldEntry)) connection.to = { ...newEntry };
+  });
+  campaign.arcs.forEach(arc => {
+    if (Array.isArray(arc.related)) arc.related = arc.related.map(entry => entryKey(entry) === entryKey(oldEntry) ? { ...newEntry } : entry);
+  });
+}
+function applyRecordValues(campaign, type, item, values, source = "manual") {
+  const previous = recordSourceEntry(type, item);
+  if (type === "session") {
+    item.title = values.title;
+    item.number = values.number;
+    item.date = values.date || item.date || "TBD";
+    item.recap = values.description || "";
+    item.tags = values.tags;
+    item.directions = values.directions || [];
+    item.archetype = values.archetype || "";
+    item.tropes = values.tropes || [];
+    item.threadGaps = values.threadGaps || [];
+    if (item.upcoming) campaign.nextSession = { number: item.number, date: item.date === "TBD" ? item.date : String(item.date).split(",")[0], title: item.title, prep: campaign.nextSession?.prep || "Session in progress" };
+  }
+  if (type === "characters") { item.name = values.title; item.role = values.role; item.description = values.description || ""; item.tags = values.tags; }
+  if (type === "quests") { item.title = values.title; item.status = values.status; item.detail = values.description || ""; item.tags = values.tags; }
+  if (type === "locations") { item.title = values.title; item.detail = values.description || ""; item.tags = values.tags; }
+  if (type === "journal") { item.title = values.title; item.body = values.description || ""; item.permission = values.permission || "GM only"; item.tags = values.tags; }
+  item.updatedAt = new Date().toISOString();
+  if (source) item.lastEditedBy = source;
+  const next = recordSourceEntry(type, item);
+  if (previous && next && entryKey(previous) !== entryKey(next)) updateTextReferences(campaign, previous, next);
+  return next;
+}
+function addRecordValues(campaign, type, values, source = "manual") {
+  if (type === "session") {
+    campaign.sessions.forEach(session => session.upcoming = false);
+    const item = { number: values.number, date: values.date || "TBD", title: values.title, recap: values.description || "No notes added yet.", tags: values.tags, directions: values.directions || [], archetype: values.archetype || "", tropes: values.tropes || [], threadGaps: values.threadGaps || [], upcoming: true, source };
+    campaign.sessions.unshift(item);
+    campaign.nextSession = { number: item.number, date: item.date === "TBD" ? item.date : String(item.date).split(",")[0], title: item.title, prep: source === "guided-creation" ? "Guided session plan ready" : "New session in the works" };
+    return item;
+  }
+  if (type === "characters") { const item = { name: values.title, role: values.role, description: values.description, tags: values.tags, source }; campaign.characters.unshift(item); return item; }
+  if (type === "quests") { const item = { title: values.title, status: values.status, detail: values.description, tags: values.tags, source }; campaign.quests.unshift(item); return item; }
+  if (type === "locations") { const item = { title: values.title, detail: values.description, tags: values.tags, source }; campaign.locations.unshift(item); return item; }
+  const item = { title: values.title, body: values.description, permission: values.permission, tags: values.tags, source };
+  campaign.journal.unshift(item);
+  return item;
 }
 function openRecordModal(type) {
   recordType = type;
-  const existing = recordEditing?.type === type && type === "journal" ? activeCampaign().journal.find(entry => entry.title === recordEditing.name) : null;
-  const draft = existing ? { title: existing.title, description: existing.body, permission: existing.permission, tags: existing.tags } : pendingRecordDraft?.type === type ? pendingRecordDraft.values : {};
+  const existing = recordEditing?.type === type ? findRecordItem(activeCampaign(), type, recordEditing.name) : null;
+  const draft = existing ? recordValuesFromItem(type, existing) : pendingRecordDraft?.type === type ? pendingRecordDraft.values : {};
   pendingRecordDraft = null;
   const title = { session: "Plan a session", characters: "Add a character", quests: "Add a quest", locations: "Add a location", journal: "Write a journal entry" }[type];
   document.querySelector("#recordTitle").textContent = existing ? "Edit journal entry" : draft?.title ? `Review ${title.toLowerCase()}` : title;
@@ -1108,6 +1375,98 @@ async function callCampaignAI(endpoint, model, messages) {
   const text = asAssistantText(payload.choices?.[0]?.message?.content) || asAssistantText(payload.output_text);
   if (!text) throw new Error("The AI endpoint returned no readable message.");
   return text;
+}
+function activeRecordFormType(form) {
+  if (form?.id === "guideDraftForm") return guideState?.type || "journal";
+  if (form?.id === "revisionApplyForm" || form?.id === "revisionSetupForm") return revisionState?.type || "journal";
+  return recordType || "journal";
+}
+function insertTokenIntoField(field, token, anchor = "") {
+  if (!field || !token || field.value.includes(token)) return;
+  if (anchor && field.value.includes(anchor)) {
+    field.value = field.value.replace(anchor, token);
+    return;
+  }
+  const start = field.selectionStart ?? field.value.length;
+  const end = field.selectionEnd ?? start;
+  const prefix = field.value && start > 0 && !/\s$/.test(field.value.slice(0, start)) ? " " : "";
+  const suffix = field.value.slice(end) && !/^\s/.test(field.value.slice(end)) ? " " : "";
+  field.value = `${field.value.slice(0, start)}${prefix}${token}${suffix}${field.value.slice(end)}`;
+  const cursor = start + prefix.length + token.length;
+  field.focus();
+  field.setSelectionRange(cursor, cursor);
+}
+function internalLinkCandidateSystem(campaign, type, title, text) {
+  const entries = campaignEntries(campaign).filter(entry => !(entry.type === RECORD_ENTRY_TYPES[type] && entry.name === title)).map(entry => `- ${entry.type}: ${entry.name}`).join("\n");
+  return `Identify internal campaign links that should be added to this tabletop RPG record. Only propose exact records from the index. Do not invent records, aliases, or external URLs.
+
+Return JSON only in this shape:
+{"links":[{"type":"character","name":"Exact record name","anchor":"existing phrase from the text","reason":"short reason"}]}
+
+Record type: ${type}
+Record title: ${title || "Untitled draft"}
+Text:
+${text}
+
+Campaign index:
+${entries || "- No other records."}`;
+}
+function sanitizeInternalLinkCandidates(campaign, payload) {
+  const source = Array.isArray(payload?.links) ? payload.links : [];
+  const seen = new Set();
+  return source.map(item => {
+    const entry = findCampaignEntry(campaign, { type: String(item.type || ""), name: String(item.name || "") });
+    if (!entry || seen.has(entryKey(entry))) return null;
+    seen.add(entryKey(entry));
+    return { entry, anchor: scoutText(item.anchor, 90), reason: scoutText(item.reason, 160) };
+  }).filter(Boolean).slice(0, 8);
+}
+function renderInternalLinkCandidates(container, suggestions) {
+  const list = container.querySelector("[data-link-suggestions]");
+  const apply = container.querySelector("[data-apply-suggested-links]");
+  if (!list || !apply) return;
+  if (!suggestions.length) {
+    list.innerHTML = `<p class="field-help">No exact internal-link candidates were found.</p>`;
+    apply.hidden = true;
+    return;
+  }
+  list.innerHTML = suggestions.map((suggestion, index) => `<label class="link-suggestion"><input type="checkbox" checked data-suggested-link="${esc(encodeEntryRef(suggestion.entry))}" data-link-anchor="${esc(suggestion.anchor)}" /><span><strong>${esc(entryLinkLabel(suggestion.entry))}: ${esc(suggestion.entry.name)}</strong>${suggestion.reason ? `<small>${esc(suggestion.reason)}</small>` : ""}</span></label>`).join("");
+  apply.hidden = false;
+}
+async function suggestInternalLinks(button, container) {
+  const form = button.closest("form");
+  const tools = button.closest("[data-internal-link-tools]");
+  const field = form?.querySelector('textarea[name="description"]');
+  const consent = tools?.querySelector('[name="linkAssistConsent"]');
+  const copilot = getCopilotState();
+  const text = String(field?.value || "").trim();
+  if (!text) { showToast("Add text before asking for link suggestions."); return; }
+  if (!consent?.checked) { showToast("Confirm the link-suggestion sending notice first."); return; }
+  if (!copilot.endpoint || !copilot.model || !copilotToken) { showToast("Configure AI settings and unlock an API key first."); return; }
+  button.disabled = true;
+  button.textContent = "Scanning...";
+  try {
+    const type = activeRecordFormType(form);
+    const title = String(new FormData(form).get("title") || "").trim();
+    const output = await callCampaignAI(copilot.endpoint, copilot.model, [{ role: "system", content: internalLinkCandidateSystem(activeCampaign(), type, title, text) }]);
+    renderInternalLinkCandidates(tools, sanitizeInternalLinkCandidates(activeCampaign(), parseAIJson(output)));
+  } catch (error) {
+    showToast(`Link suggestions could not complete: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Suggest links with AI";
+  }
+}
+function applySuggestedInternalLinks(button) {
+  const form = button.closest("form");
+  const tools = button.closest("[data-internal-link-tools]");
+  const field = form?.querySelector('textarea[name="description"]');
+  const checked = [...tools.querySelectorAll("[data-suggested-link]:checked")];
+  checked.forEach(input => {
+    const entry = decodeEntryRef(input.dataset.suggestedLink);
+    insertTokenIntoField(field, entryLinkToken(entry), input.dataset.linkAnchor || "");
+  });
+  if (checked.length) showToast(`${checked.length} internal link${checked.length === 1 ? "" : "s"} inserted.`);
 }
 function scoutText(value, limit = 320) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, limit); }
 function storyScoutContext(campaign) {
@@ -1394,6 +1753,97 @@ async function finishGuideDraft() {
   renderGuideModal();
 }
 
+function archivistSourceText(campaign, type, item) {
+  const source = archivistDetail(campaign, RECORD_ENTRY_TYPES[type] || type, item);
+  if (!source) return "";
+  return JSON.stringify(source, null, 2).slice(0, 7000);
+}
+function revisionSetupView() {
+  const copilot = getCopilotState();
+  return `<form id="revisionSetupForm" class="guide-dialog"><div class="modal-heading"><div><p class="eyebrow">AI RECORD REVISION</p><h2>Review new information</h2></div><button class="close-button" type="button" data-close-revision aria-label="Close">×</button></div><p class="guide-intro">The assistant can draft a conservative update from new information. You will review the complete record before anything is saved.</p><label>New information<textarea required name="newInfo" rows="8" placeholder="Paste new session facts, Archivist details, or notes that should be reconciled with this record.">${esc(revisionState?.sourceText || "")}</textarea></label>${aiConnectionFields(copilot, "I understand this record, the new information, and campaign context will be sent to this endpoint for a draft revision.")}<button class="primary-button submit-button" type="submit">Draft revision <span>→</span></button></form>`;
+}
+function revisionDraftView() {
+  return `<div class="guide-dialog"><div class="modal-heading"><div><p class="eyebrow">AI RECORD REVISION · REVIEW</p><h2>Approve the update</h2></div><button class="close-button" type="button" data-close-revision aria-label="Close">×</button></div><p class="guide-intro">Edit the proposed record, then apply it. Closing this window discards the draft.</p><form id="revisionApplyForm">${recordFields(revisionState.type, revisionState.draft)}<button class="primary-button submit-button" type="submit">Apply approved update <span>→</span></button></form></div>`;
+}
+function renderRevisionModal() {
+  revisionContent.innerHTML = revisionState?.loading
+    ? `<div class="guide-dialog guide-loading"><span>✦</span><h2>Drafting a careful update...</h2><p>Reconciling the existing record with the new information.</p></div>`
+    : revisionState?.draft ? revisionDraftView() : revisionSetupView();
+}
+function openRecordRevisionModal(type, name) {
+  const campaign = activeCampaign();
+  const item = findRecordItem(campaign, type, name);
+  if (!item) { showToast("That record could not be found."); return; }
+  revisionState = { type, name, campaignId: campaign.id, current: recordValuesFromItem(type, item), sourceText: archivistSourceText(campaign, type, item) };
+  renderRevisionModal();
+  revisionModal.showModal();
+}
+function recordRevisionSystem(campaign, revision, newInfo) {
+  const formats = {
+    session: '{"title":"","number":1,"date":"YYYY-MM-DD or empty","description":"","tags":[""],"directions":[""],"archetype":"","tropes":[""],"threadGaps":[""]}',
+    characters: '{"title":"","role":"NPC · Ally","description":"","tags":[""]}',
+    quests: '{"title":"","status":"Active","description":"","tags":[""]}',
+    locations: '{"title":"","description":"","tags":[""]}',
+    journal: '{"title":"","permission":"GM only","description":"","tags":[""]}'
+  };
+  const entries = campaignEntries(campaign).map(entry => `- ${entry.type}: ${entry.name}`).join("\n");
+  return `Revise one existing tabletop RPG campaign record using new information. Preserve correct existing details, incorporate only well-supported updates, and avoid inventing facts. Do not mark uncertain speculation as canon.
+
+Return JSON only, matching this exact shape: ${formats[revision.type]}. If internal links are useful, use [[Type: Exact record name]] only for exact records from the campaign index.
+
+Campaign: ${campaign.title}
+System: ${campaign.system}
+Record type: ${revision.type}
+Current record:
+${JSON.stringify(revision.current, null, 2)}
+
+New information:
+${newInfo}
+
+Campaign index:
+${entries || "- None."}`;
+}
+function sanitizeRecordRevisionDraft(campaign, revision, draft) {
+  const merged = { ...revision.current, ...(draft && typeof draft === "object" ? draft : {}) };
+  if (!Array.isArray(merged.tags)) merged.tags = revision.current.tags || [];
+  return sanitizeGuideDraft(campaign, { type: revision.type, track: "crafted" }, merged);
+}
+async function startRecordRevision(form) {
+  const data = new FormData(form);
+  const newInfo = String(data.get("newInfo") || "").trim();
+  const endpoint = String(data.get("endpoint") || "").trim();
+  const model = String(data.get("model") || "").trim();
+  const key = String(data.get("apiKey") || "").trim();
+  if (!newInfo || !endpoint || !model || !(key || copilotToken) || !data.get("consent")) { showToast("Add new information, model, API key, and sending confirmation first."); return; }
+  setCopilotToken(key || copilotToken);
+  const copilot = getCopilotState(); copilot.endpoint = endpoint; copilot.model = model;
+  revisionState = { ...revisionState, newInfo, endpoint, model, loading: true };
+  const request = revisionState;
+  renderRevisionModal();
+  try {
+    const output = await callCampaignAI(endpoint, model, [{ role: "system", content: recordRevisionSystem(activeCampaign(), request, newInfo) }]);
+    if (revisionState !== request || activeCampaign().id !== request.campaignId) return;
+    revisionState = { ...revisionState, loading: false, draft: sanitizeRecordRevisionDraft(activeCampaign(), request, parseAIJson(output)) };
+  } catch (error) {
+    revisionState = { ...request, loading: false };
+    showToast(`The revision draft could not be created: ${error.message}`);
+  }
+  renderRevisionModal();
+}
+function applyRecordRevision(form) {
+  const campaign = activeCampaign();
+  const item = findRecordItem(campaign, revisionState.type, revisionState.name);
+  if (!item) { showToast("That record could not be found."); return; }
+  const values = recordValuesFromForm(revisionState.type, form, item);
+  const next = applyRecordValues(campaign, revisionState.type, item, values, "ai-approved-update");
+  detailTarget = next;
+  saveState();
+  revisionState = null;
+  revisionModal.close();
+  render();
+  showToast("The approved AI update has been saved.");
+}
+
 campaignSwitcher.addEventListener("click", () => { campaignMenu.classList.toggle("hidden"); campaignSwitcher.setAttribute("aria-expanded", !campaignMenu.classList.contains("hidden")); });
 campaignMenu.addEventListener("click", event => { const button = event.target.closest("[data-campaign-id]"); if (!button) return; state.activeCampaignId = button.dataset.campaignId; saveState(); campaignMenu.classList.add("hidden"); currentView = "dashboard"; activeFilter = "All"; render(); });
 nav.addEventListener("click", event => { const button = event.target.closest("[data-view]"); if (!button) return; currentView = button.dataset.view; activeFilter = "All"; document.querySelector(".sidebar").classList.remove("open"); render(); });
@@ -1419,12 +1869,15 @@ root.addEventListener("click", event => {
     return;
   }
   if (event.target.closest("[data-workspace-safety-backup]")) { createDesktopSafetyBackup(); return; }
+  if (event.target.closest("[data-delete-active-campaign]")) { deleteActiveCampaign(); return; }
   if (event.target.closest("[data-workspace-open-folder]")) {
     DESKTOP_API?.openWorkspaceFolder().catch(error => showToast(error.message || "The data folder could not be opened."));
     return;
   }
   if (event.target.closest("[data-open-local-guide]")) { showToast("See PWA.md next to the app files for the hosting and install steps."); return; }
   const starter = event.target.closest("[data-copilot-prompt]"); if (starter) { const message = root.querySelector("#copilotForm textarea"); if (message) { message.value = starter.dataset.copilotPrompt; message.focus(); } return; }
+  const bridgeTool = event.target.closest("[data-fill-archivist-tool]");
+  if (bridgeTool) { const input = root.querySelector('#archivistBridgeForm [name="toolName"]'); if (input) { input.value = bridgeTool.dataset.fillArchivistTool; input.focus(); } return; }
   if (event.target.closest("[data-refresh-snapshot]")) { window.location.reload(); return; }
   const viewButton = event.target.closest("[data-view-jump]"); if (viewButton) { currentView = viewButton.dataset.viewJump; activeFilter = "All"; render(); return; }
   const recordButton = event.target.closest("[data-open-record]"); if (recordButton) { openRecordModal(recordButton.dataset.openRecord); return; }
@@ -1443,6 +1896,7 @@ root.addEventListener("submit", event => {
   if (event.target.matches("#desktopUpdateForm")) { event.preventDefault(); saveDesktopUpdateSettings(event.target); return; }
   if (event.target.matches("#aiSettingsForm")) { event.preventDefault(); saveAiSettings(event.target); return; }
   if (event.target.matches("#copilotForm")) { event.preventDefault(); askCopilot(event.target); return; }
+  if (event.target.matches("#archivistBridgeForm")) { event.preventDefault(); runArchivistBridgeAction(event.target, event.submitter?.value || "save"); return; }
   if (!event.target.matches("#foundryBridgeForm")) return;
   event.preventDefault();
   connectFoundryBridge(event.target, event.submitter?.value || "test");
@@ -1472,13 +1926,22 @@ document.querySelector("#campaignForm").addEventListener("submit", event => {
   state.activeCampaignId = id; saveState(); event.currentTarget.reset(); campaignModal.close(); currentView = "dashboard"; render(); showToast(`${title} has entered the engine.`);
 });
 document.querySelector("#recordForm").addEventListener("submit", event => {
-  event.preventDefault(); const form = new FormData(event.currentTarget); const campaign = activeCampaign(); const tags = (form.get("tags") || "").split(",").map(t => t.trim()).filter(Boolean); const title = form.get("title")?.trim();
-  if (recordType === "session") { const date = form.get("date") ? new Date(`${form.get("date")}T00:00:00`).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : "TBD"; const directions = String(form.get("directions") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean); const tropes = String(form.get("tropes") || "").split(",").map(item => item.trim()).filter(Boolean); const threadGaps = String(form.get("threadGaps") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean); campaign.sessions.forEach(s => s.upcoming = false); campaign.sessions.unshift({ number: form.get("number"), date, title, recap: form.get("description") || "No notes added yet.", tags, directions, archetype: String(form.get("archetype") || "").trim(), tropes, threadGaps, upcoming: true }); campaign.nextSession = { number: form.get("number"), date: date === "TBD" ? date : date.split(",")[0], title, prep: "New session in the works" }; }
-  if (recordType === "characters") campaign.characters.unshift({ name: title, role: form.get("role"), description: form.get("description"), tags });
-  if (recordType === "quests") campaign.quests.unshift({ title, status: form.get("status"), detail: form.get("description"), tags });
-  if (recordType === "locations") campaign.locations.unshift({ title, detail: form.get("description"), tags });
-  if (recordType === "journal") campaign.journal.unshift({ title, body: form.get("description"), permission: form.get("permission"), tags });
-  saveState(); event.currentTarget.reset(); recordModal.close(); render(); showToast("The record has been saved.");
+  event.preventDefault();
+  const campaign = activeCampaign();
+  const existing = recordEditing?.type === recordType ? findRecordItem(campaign, recordType, recordEditing.name) : null;
+  const values = recordValuesFromForm(recordType, event.currentTarget, existing);
+  if (!values.title) return;
+  if (existing) {
+    const next = applyRecordValues(campaign, recordType, existing, values, "manual-edit");
+    detailTarget = next;
+    recordEditing = null;
+    showToast("The record has been updated.");
+  } else {
+    const item = addRecordValues(campaign, recordType, values, "manual");
+    detailTarget = recordSourceEntry(recordType, item);
+    showToast("The record has been saved.");
+  }
+  saveState(); event.currentTarget.reset(); recordModal.close(); render();
 });
 document.querySelector("#connectionForm").addEventListener("submit", event => {
   event.preventDefault();
@@ -1545,10 +2008,18 @@ document.addEventListener("click", async event => {
 });
 
 root.addEventListener("click", event => {
-  const edit = event.target.closest("[data-edit-journal]");
-  if (!edit) return;
-  recordEditing = { type: "journal", name: edit.dataset.editJournal };
-  openRecordModal("journal");
+  const edit = event.target.closest("[data-edit-record]");
+  const revise = event.target.closest("[data-revise-record]");
+  if (!edit && !revise) return;
+  const entry = decodeEntryRef((edit || revise).dataset.editRecord || (edit || revise).dataset.reviseRecord);
+  const type = ENTRY_RECORD_TYPES[entry.type];
+  if (!type) return;
+  if (edit) {
+    recordEditing = { type, name: entry.name };
+    openRecordModal(type);
+    return;
+  }
+  openRecordRevisionModal(type, entry.name);
 });
 root.addEventListener("click", event => {
   const button = event.target.closest("[data-open-ai-guide]");
@@ -1559,16 +2030,16 @@ root.addEventListener("click", event => {
   aiGuideModal.showModal();
 });
 recordModal.addEventListener("click", event => {
-  const button = event.target.closest("[data-insert-journal-link]");
+  const suggest = event.target.closest("[data-suggest-internal-links]");
+  if (suggest) { suggestInternalLinks(suggest, recordModal); return; }
+  const apply = event.target.closest("[data-apply-suggested-links]");
+  if (apply) { applySuggestedInternalLinks(apply); return; }
+  const button = event.target.closest("[data-insert-internal-link], [data-insert-journal-link]");
   if (!button) return;
   const field = recordModal.querySelector('textarea[name="description"]');
   if (!field) return;
-  const link = `[[${button.dataset.insertJournalLink}]]`;
-  const start = field.selectionStart ?? field.value.length;
-  const end = field.selectionEnd ?? start;
-  field.value = `${field.value.slice(0, start)}${link}${field.value.slice(end)}`;
-  field.focus();
-  field.setSelectionRange(start + link.length, start + link.length);
+  const entry = button.dataset.insertInternalLink ? decodeEntryRef(button.dataset.insertInternalLink) : { type: "journal", name: button.dataset.insertJournalLink };
+  insertTokenIntoField(field, entryLinkToken(entry));
 });
 storyScoutModal.addEventListener("click", event => {
   if (event.target.closest("[data-close-story-scout]")) { storyScoutState = null; storyScoutModal.close(); return; }
@@ -1583,18 +2054,37 @@ storyScoutModal.addEventListener("submit", event => {
   if (event.target.matches("#storyScoutApplyForm")) applyStoryScout(event.target);
 });
 storyScoutModal.addEventListener("close", () => { storyScoutState = null; });
+revisionModal.addEventListener("click", event => {
+  if (event.target.closest("[data-close-revision]")) { revisionState = null; revisionModal.close(); return; }
+  const suggest = event.target.closest("[data-suggest-internal-links]");
+  if (suggest) { suggestInternalLinks(suggest, revisionModal); return; }
+  const apply = event.target.closest("[data-apply-suggested-links]");
+  if (apply) { applySuggestedInternalLinks(apply); return; }
+  const linkButton = event.target.closest("[data-insert-internal-link], [data-insert-journal-link]");
+  if (!linkButton) return;
+  const field = revisionModal.querySelector('textarea[name="description"]');
+  if (!field) return;
+  const entry = linkButton.dataset.insertInternalLink ? decodeEntryRef(linkButton.dataset.insertInternalLink) : { type: "journal", name: linkButton.dataset.insertJournalLink };
+  insertTokenIntoField(field, entryLinkToken(entry));
+});
+revisionModal.addEventListener("submit", event => {
+  event.preventDefault();
+  if (event.target.matches("#revisionSetupForm")) { startRecordRevision(event.target); return; }
+  if (event.target.matches("#revisionApplyForm")) applyRecordRevision(event.target);
+});
+revisionModal.addEventListener("close", () => { revisionState = null; });
 aiGuideModal.addEventListener("click", event => {
   if (event.target.closest("[data-retry-guide-draft]")) { delete guideState.draftError; finishGuideDraft(); return; }
-  const linkButton = event.target.closest("[data-insert-journal-link]");
+  const suggest = event.target.closest("[data-suggest-internal-links]");
+  if (suggest) { suggestInternalLinks(suggest, aiGuideModal); return; }
+  const apply = event.target.closest("[data-apply-suggested-links]");
+  if (apply) { applySuggestedInternalLinks(apply); return; }
+  const linkButton = event.target.closest("[data-insert-internal-link], [data-insert-journal-link]");
   if (linkButton) {
     const field = aiGuideModal.querySelector('textarea[name="description"]');
     if (!field) return;
-    const link = `[[${linkButton.dataset.insertJournalLink}]]`;
-    const start = field.selectionStart ?? field.value.length;
-    const end = field.selectionEnd ?? start;
-    field.value = `${field.value.slice(0, start)}${link}${field.value.slice(end)}`;
-    field.focus();
-    field.setSelectionRange(start + link.length, start + link.length);
+    const entry = linkButton.dataset.insertInternalLink ? decodeEntryRef(linkButton.dataset.insertInternalLink) : { type: "journal", name: linkButton.dataset.insertJournalLink };
+    insertTokenIntoField(field, entryLinkToken(entry));
     return;
   }
   const close = event.target.closest("[data-close-ai-guide]");
@@ -1652,33 +2142,9 @@ aiGuideModal.addEventListener("submit", event => {
   }
 });
 aiGuideModal.addEventListener("close", () => { guideState = null; });
-document.addEventListener("submit", event => {
-  if (!event.target.matches("#recordForm") || recordEditing?.type !== "journal") return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  const form = new FormData(event.target);
-  const entry = activeCampaign().journal.find(item => item.title === recordEditing.name);
-  if (!entry) { showToast("That journal entry could not be found."); return; }
-  const title = String(form.get("title") || "").trim();
-  if (!title) return;
-  const previousTitle = entry.title;
-  entry.title = title;
-  entry.body = String(form.get("description") || "").trim();
-  entry.permission = String(form.get("permission") || "GM only");
-  entry.tags = String(form.get("tags") || "").split(",").map(tag => tag.trim()).filter(Boolean);
-  if (previousTitle !== title) {
-    const oldLink = new RegExp(`\\[\\[${escapeRegExp(previousTitle)}\\]\\]`, "g");
-    activeCampaign().journal.forEach(article => { article.body = String(article.body || "").replace(oldLink, `[[${title}]]`); });
-  }
-  detailTarget = { type: "journal", name: title };
-  recordEditing = null;
-  saveState();
-  recordModal.close();
-  render();
-  showToast("The journal entry has been updated.");
-}, true);
 recordModal.addEventListener("close", () => { recordEditing = null; });
 
 initializeDesktopWorkspace();
 initializeDesktopUpdates();
+initializeArchivistBridge();
 render();

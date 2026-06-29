@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld("campaignEngineDesktop", {
   importWorkspace: () => ipcRenderer.invoke("desktop:workspace-import"),
   createSafetyBackup: () => ipcRenderer.invoke("desktop:workspace-create-safety-backup"),
   openWorkspaceFolder: () => ipcRenderer.invoke("desktop:workspace-open-folder"),
+  getArchivistBridgeState: () => ipcRenderer.invoke("desktop:archivist-bridge-state"),
+  saveArchivistBridgeSettings: settings => ipcRenderer.invoke("desktop:archivist-bridge-save", settings),
+  testArchivistBridge: settings => ipcRenderer.invoke("desktop:archivist-bridge-test", settings),
+  syncArchivistBridge: settings => ipcRenderer.invoke("desktop:archivist-bridge-sync", settings),
   onUpdateState: callback => {
     const listener = (_, state) => callback(state);
     ipcRenderer.on("desktop:update-state", listener);

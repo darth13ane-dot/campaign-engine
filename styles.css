@@ -236,6 +236,13 @@ button { cursor: pointer; }
 .sync-lead > div { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
 .sync-card ul { color: #bfc4cf; font-size: 11px; line-height: 1.7; margin: 14px 0 0; padding-left: 16px; }
 .sync-card:last-child { grid-column: span 2; }
+.archivist-bridge-card { grid-column: 1 / -1; }
+.bridge-tool-list { border-top: 1px solid var(--line); display: grid; gap: 6px; margin-top: 14px; padding-top: 12px; }
+.bridge-tool-list > small { color: var(--muted); font: 9px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.bridge-tool-list button { background: rgba(255,255,255,.035); border: 1px solid var(--line); border-radius: 6px; color: var(--paper); display: grid; gap: 3px; padding: 8px; text-align: left; }
+.bridge-tool-list button:hover { background: rgba(119,199,196,.08); border-color: rgba(119,199,196,.35); }
+.bridge-tool-list strong { font-size: 11px; }
+.bridge-tool-list span { color: var(--muted); font-size: 10px; line-height: 1.45; }
 .settings-grid { display: grid; gap: 16px; grid-template-columns: minmax(300px, 1.1fr) minmax(260px, .9fr); }
 .settings-card { padding: 22px; }
 .settings-card > p { color: #bcc1cd; font-size: 12px; line-height: 1.7; margin: 0; }
@@ -293,6 +300,15 @@ button { cursor: pointer; }
 .article-link-picker button:hover { background: rgba(224,183,95,.18); }
 .article-link-picker p { color: var(--muted); font-size: 10px; margin: 8px 0 0; }
 .article-link-picker code { color: #d5e7e5; font: 9px var(--font-mono); }
+.link-assist-controls { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.link-assist-controls .consent-check { align-items: center; color: var(--muted); display: flex; flex: 1 1 220px; font-size: 10px; font-weight: 500; gap: 7px; margin: 0; }
+.link-assist-controls input { width: auto; }
+.link-suggestion-list { display: grid; gap: 6px; margin-top: 9px; }
+.link-suggestion { align-items: start; background: rgba(119,199,196,.055); border: 1px solid rgba(119,199,196,.2); border-radius: 6px; display: grid !important; gap: 8px !important; grid-template-columns: auto minmax(0, 1fr); margin: 0 !important; padding: 8px; }
+.link-suggestion input { accent-color: var(--teal); margin-top: 2px; width: auto; }
+.link-suggestion span { display: grid; gap: 3px; }
+.link-suggestion strong { color: var(--paper); font-size: 11px; }
+.link-suggestion small { color: var(--muted); font: 10px/1.45 var(--font-sans); letter-spacing: 0; text-transform: none; }
 .journal-rendered-text { color: #bdc2cc; font-size: 12px; line-height: 1.75; white-space: normal; }
 .journal-link { background: rgba(224,183,95,.1); border: 0; border-bottom: 1px solid rgba(224,183,95,.55); color: var(--gold-pale); cursor: pointer; font: 600 12px var(--font-display); margin: 0 1px; padding: 0 2px; }
 .journal-link:hover { background: rgba(224,183,95,.2); color: #fff1c7; }
@@ -322,8 +338,11 @@ button { cursor: pointer; }
 .compact-form { display: grid; gap: 11px; margin-top: 16px; }
 .compact-form label { color: #d4d7df; display: grid; gap: 6px; font-size: 10px; font-weight: 700; }
 .compact-form input { background: rgba(255,255,255,.045); border: 1px solid var(--line); border-radius: 6px; color: var(--paper); outline: none; padding: 9px; font-size: 11px; }
-.compact-form input:focus { border-color: rgba(119,199,196,.65); }
+.compact-form textarea { background: rgba(255,255,255,.045); border: 1px solid var(--line); border-radius: 6px; color: var(--paper); outline: none; padding: 9px; resize: vertical; font-size: 11px; }
+.compact-form input:focus, .compact-form textarea:focus { border-color: rgba(119,199,196,.65); }
 .compact-form > div { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.danger-button { border-color: rgba(228,134,121,.4); color: #f0b4ac; }
+.danger-button:hover { background: rgba(228,134,121,.1); color: #ffd4ce; }
 .file-drop { border: 1px dashed rgba(119,199,196,.48); border-radius: 9px; color: #dcebe9; display: grid; justify-items: center; gap: 4px; margin-top: 17px; padding: 21px 14px; text-align: center; transition: .18s; }
 .file-drop:hover { background: rgba(119,199,196,.08); border-color: var(--teal); }
 .file-drop > span { color: var(--teal); font-size: 23px; }
