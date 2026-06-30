@@ -5,10 +5,12 @@ const path = require("node:path");
 const { createPortableUpdater } = require("./portable-updater.cjs");
 const { normalizeUpdateUrl, resolveUpdateSettings } = require("./update-settings.cjs");
 const { createWorkspaceStore } = require("./workspace-store.cjs");
+const { callArchivistTool, normalizeBridgeSettings, testArchivistBridge, toolResultPayload } = require("./archivist-mcp-bridge.cjs");
 
 let mainWindow;
 let updateSettings = { updateUrl: "", autoCheck: true };
 let updateState = { status: "ready", version: app.getVersion(), message: "No update feed configured." };
+let archivistBridgeSettings = normalizeBridgeSettings();
 let updateTimer;
 let updateStartupTimer;
 let workspaceStore;
@@ -19,6 +21,10 @@ if (!hasSingleInstanceLock) app.quit();
 
 function settingsPath() {
   return path.join(app.getPath("userData"), "update-settings.json");
+}
+
+function archivistBridgePath() {
+  return path.join(app.getPath("userData"), "archivist-nexus-bridge.json");
 }
 
 function releaseConfig() {
@@ -48,6 +54,27 @@ function saveUpdateSettings(nextSettings) {
   updateSettings = { ...updateSettings, ...nextSettings };
   fs.writeFileSync(settingsPath(), JSON.stringify(updateSettings, null, 2));
   return updateSettings;
+}
+
+function loadArchivistBridgeSettings() {
+  try {
+    archivistBridgeSettings = normalizeBridgeSettings(JSON.parse(fs.readFileSync(archivistBridgePath(), "utf8")));
+  } catch {
+    archivistBridgeSettings = normalizeBridgeSettings();
+  }
+}
+
+function saveArchivistBridgeSettings(settings) {
+  archivistBridgeSettings = normalizeBridgeSettings(settings, archivistBridgeSettings);
+  fs.writeFileSync(archivistBridgePath(), JSON.stringify(archivistBridgeSettings, null, 2));
+  return archivistBridgeSettings;
+}
+
+function archivistBridgeState(extra = {}) {
+  return {
+    ...extra,
+    settings: { ...archivistBridgeSettings, toolArguments: typeof archivistBridgeSettings.toolArguments === "string" ? archivistBridgeSettings.toolArguments : JSON.stringify(archivistBridgeSettings.toolArguments, null, 2) }
+  };
 }
 
 function sendUpdateState(nextState) {
@@ -209,6 +236,21 @@ ipcMain.handle("desktop:workspace-open-folder", async () => {
   if (error) throw new Error(error);
   return workspaceStore.getInfo();
 });
+ipcMain.handle("desktop:archivist-bridge-state", () => archivistBridgeState({ status: archivistBridgeSettings.command ? "configured" : "not-configured" }));
+ipcMain.handle("desktop:archivist-bridge-save", (_, settings) => archivistBridgeState({ status: "saved", settings: saveArchivistBridgeSettings(settings) }));
+ipcMain.handle("desktop:archivist-bridge-test", async (_, settings) => {
+  const nextSettings = saveArchivistBridgeSettings(settings || archivistBridgeSettings);
+  const result = await testArchivistBridge(nextSettings);
+  archivistBridgeSettings = saveArchivistBridgeSettings({ ...nextSettings, lastStatus: `Connected${result.tools.length ? ` · ${result.tools.length} tool${result.tools.length === 1 ? "" : "s"}` : ""}` });
+  return archivistBridgeState({ status: "connected", result });
+});
+ipcMain.handle("desktop:archivist-bridge-sync", async (_, settings) => {
+  const nextSettings = saveArchivistBridgeSettings(settings || archivistBridgeSettings);
+  const result = await callArchivistTool(nextSettings);
+  const payload = toolResultPayload(result);
+  archivistBridgeSettings = saveArchivistBridgeSettings({ ...nextSettings, lastStatus: "Import tool completed", lastSync: new Date().toISOString() });
+  return archivistBridgeState({ status: "synced", payload, result });
+});
 
 app.whenReady().then(() => {
   workspaceStore = createWorkspaceStore({
@@ -216,6 +258,7 @@ app.whenReady().then(() => {
     appVersion: app.getVersion()
   });
   loadUpdateSettings();
+  loadArchivistBridgeSettings();
   if (isPortableBuild()) {
     portableUpdater = createPortableUpdater({
       currentVersion: app.getVersion(),
