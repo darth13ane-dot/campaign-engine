@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const packageJson = require("../package.json");
 const {
   compareVersions,
   createPortableUpdater,
@@ -41,6 +42,18 @@ test("validates portable manifests and safely encodes release filenames", () => 
     () => validatePortableMetadata({ ...manifest, file: "../Campaign Engine.exe" }),
     /invalid executable name/
   );
+});
+
+test("uses GitHub release-safe Windows artifact names", () => {
+  const artifactNames = [
+    packageJson.build.nsis.artifactName,
+    packageJson.build.portable.artifactName
+  ];
+  for (const artifactName of artifactNames) {
+    assert.doesNotMatch(artifactName, /\s/);
+    assert.match(artifactName, /^Campaign\.Engine\./);
+    assert.match(artifactName, /\$\{version\}\.\$\{ext\}$/);
+  }
 });
 
 test("generates a replacement helper with rollback and relaunch steps", () => {

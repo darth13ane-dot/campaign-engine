@@ -1,7 +1,7 @@
 {
   "name": "campaign-engine",
   "productName": "Campaign Engine",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A local-first command center for tabletop RPG campaigns.",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -70,10 +70,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "artifactName": "${productName} Setup ${version}.${ext}"
+      "artifactName": "Campaign.Engine.Setup.${version}.${ext}"
     },
     "portable": {
-      "artifactName": "${productName} Portable ${version}.${ext}"
+      "artifactName": "Campaign.Engine.Portable.${version}.${ext}"
     },
     "publish": [
       {
