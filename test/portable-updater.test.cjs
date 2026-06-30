@@ -60,6 +60,8 @@ test("generates a replacement helper with rollback and relaunch steps", () => {
   const script = portableInstallerScript();
   assert.match(script, /Copy-Item.+\$backup/);
   assert.match(script, /Move-Item.+\$Source.+\$Target/);
+  assert.match(script, /Get-RunningTargetProcesses/);
+  assert.match(script, /Campaign Engine Portable did not close/);
   assert.match(script, /SHA512/);
   assert.match(script, /Start-Process -FilePath \$Target/);
 });

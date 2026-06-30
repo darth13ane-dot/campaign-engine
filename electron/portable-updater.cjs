@@ -105,12 +105,29 @@ $ErrorActionPreference = "Stop"
 $backup = "$Target.previous"
 $log = Join-Path (Split-Path -Parent $Source) "portable-update-error.log"
 try {
+  $targetFullPath = [System.IO.Path]::GetFullPath($Target)
+  function Get-RunningTargetProcesses {
+    @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+      try {
+        $_.Path -and ([System.IO.Path]::GetFullPath($_.Path) -ieq $targetFullPath)
+      } catch {
+        $false
+      }
+    })
+  }
   $deadline = [DateTime]::UtcNow.AddSeconds(90)
   while ((Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) -and [DateTime]::UtcNow -lt $deadline) {
     Start-Sleep -Milliseconds 250
   }
   if (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) {
     throw "Campaign Engine did not close before the portable update timed out."
+  }
+  $deadline = [DateTime]::UtcNow.AddSeconds(90)
+  while ((Get-RunningTargetProcesses).Count -gt 0 -and [DateTime]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 250
+  }
+  if ((Get-RunningTargetProcesses).Count -gt 0) {
+    throw "Campaign Engine Portable did not close before the portable update timed out."
   }
   if (Test-Path -LiteralPath $Target) {
     Copy-Item -LiteralPath $Target -Destination $backup -Force
