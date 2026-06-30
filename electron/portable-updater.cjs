@@ -152,6 +152,8 @@ function createPortableUpdater({
 }) {
   let availableUpdate = null;
   let downloadedUpdate = null;
+  let activeDownload = null;
+  let cleanupTask = null;
 
   function state(nextState) {
     onState({ ...nextState, portable: true });
@@ -188,7 +190,8 @@ function createPortableUpdater({
     return metadata;
   }
 
-  async function download() {
+  async function performDownload() {
+    if (cleanupTask) await cleanupTask;
     if (!availableUpdate) await check();
     if (!availableUpdate) return null;
     const metadata = availableUpdate;
@@ -243,6 +246,14 @@ function createPortableUpdater({
     return downloadedUpdate;
   }
 
+  function download() {
+    if (activeDownload) return activeDownload;
+    activeDownload = performDownload().finally(() => {
+      activeDownload = null;
+    });
+    return activeDownload;
+  }
+
   async function install(quit) {
     if (!downloadedUpdate) throw new Error("Download and verify the portable update before installing it.");
     await fsPromises.access(path.dirname(executablePath), fs.constants.W_OK);
@@ -275,10 +286,18 @@ function createPortableUpdater({
   }
 
   async function cleanupAfterLaunch() {
-    const backupPath = `${executablePath}.previous`;
-    await fsPromises.rm(backupPath, { force: true });
-    const { root } = stagingDirectory(currentVersion);
-    if (pathInside(tempDirectory, root)) await fsPromises.rm(root, { recursive: true, force: true });
+    if (activeDownload) return;
+    cleanupTask = (async () => {
+      const backupPath = `${executablePath}.previous`;
+      await fsPromises.rm(backupPath, { force: true });
+      const { root } = stagingDirectory(currentVersion);
+      if (pathInside(tempDirectory, root)) await fsPromises.rm(root, { recursive: true, force: true });
+    })();
+    try {
+      await cleanupTask;
+    } finally {
+      cleanupTask = null;
+    }
   }
 
   return { check, download, install, cleanupAfterLaunch };

@@ -942,7 +942,8 @@ function desktopUpdateView() {
   }
   const settings = desktopUpdateState.settings || {};
   const portable = Boolean(desktopUpdateState.portable);
-  const action = desktopUpdateState.status === "available" ? `<button class="primary-button" type="button" data-desktop-update-action="download">Download update <span>↓</span></button>` : desktopUpdateState.status === "downloaded" ? `<button class="primary-button" type="button" data-desktop-update-action="install">Restart and install <span>↻</span></button>` : `<button class="primary-button" type="button" data-desktop-update-action="check">Check for updates <span>↻</span></button>`;
+  const busyUpdates = ["checking", "downloading", "installing"].includes(desktopUpdateState.status);
+  const action = desktopUpdateState.status === "available" ? `<button class="primary-button" type="button" data-desktop-update-action="download">Download update <span>↓</span></button>` : desktopUpdateState.status === "downloaded" ? `<button class="primary-button" type="button" data-desktop-update-action="install">Restart and install <span>↻</span></button>` : busyUpdates ? `<button class="primary-button" type="button" disabled>${esc(desktopUpdateState.status || "Working")} <span>⋯</span></button>` : `<button class="primary-button" type="button" data-desktop-update-action="check">Check for updates <span>↻</span></button>`;
   return `${header("App updates", portable ? "PORTABLE RELEASES" : "DESKTOP RELEASES", portable ? "Download, verify, and replace this portable copy without installing Campaign Engine." : "Configure a trusted release feed so this installed app can keep itself current.")}
     <div class="sync-grid">
       <section class="card sync-lead"><p class="eyebrow">CURRENT STATUS · ${portable ? "PORTABLE" : "INSTALLED"}</p><h2>${esc(desktopUpdateState.status || "ready")}</h2><p>${esc(desktopUpdateState.message || "Ready to check for an update.")}</p><div>${action}</div></section>

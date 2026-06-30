@@ -106,6 +106,48 @@ test("downloads, verifies, and stages a portable self-update", async t => {
   assert.equal(quitCalled, true);
 });
 
+test("does not delete an active portable download during launch cleanup", async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "campaign-engine-portable-update-test-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const executablePath = path.join(directory, "Campaign Engine Portable.exe");
+  await fs.writeFile(executablePath, "old portable executable");
+  const payload = Buffer.from("new delayed portable executable");
+  const manifest = manifestFor(payload);
+  let releaseController;
+  let releaseRequestedResolve;
+  const releaseRequested = new Promise(resolve => {
+    releaseRequestedResolve = resolve;
+  });
+
+  const updater = createPortableUpdater({
+    currentVersion: "1.0.0",
+    executablePath,
+    feedUrl: () => "https://downloads.example.com/releases",
+    tempDirectory: directory,
+    fetchImpl: async url => {
+      if (url.endsWith("latest-portable.json")) {
+        return new Response(JSON.stringify(manifest), { status: 200 });
+      }
+      const stream = new ReadableStream({
+        start(controller) {
+          releaseController = controller;
+        }
+      });
+      releaseRequestedResolve();
+      return new Response(stream, { status: 200, headers: { "content-length": String(payload.length) } });
+    }
+  });
+
+  const downloadPromise = updater.download();
+  await releaseRequested;
+  await updater.cleanupAfterLaunch();
+  releaseController.enqueue(payload);
+  releaseController.close();
+
+  const downloaded = await downloadPromise;
+  assert.deepEqual(await fs.readFile(downloaded.readyPath), payload);
+});
+
 test("rejects a portable download that does not match its manifest", async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "campaign-engine-portable-update-test-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
