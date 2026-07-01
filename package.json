@@ -36,6 +36,7 @@
       "styles.css",
       "workspace.css",
       "app.js",
+      "archivist-merge.js",
       "features.js",
       "icon.svg",
       "manifest.webmanifest",
