@@ -6,6 +6,7 @@ let ARCHIVIST_SNAPSHOT = window.ARCHIVIST_SNAPSHOT?.campaigns || null;
 let ARCHIVIST_DETAILS_ROOT = window.ARCHIVIST_DETAILS || {};
 let ARCHIVIST_DETAILS = ARCHIVIST_DETAILS_ROOT.campaigns || {};
 const ARCHIVIST_MERGE = window.CampaignArchivistMerge || null;
+const CAMPAIGN_CLEANUP = window.CampaignCleanup || null;
 const DESKTOP_API = window.campaignEngineDesktop || null;
 
 const seed = {
@@ -462,7 +463,7 @@ function connectionsView(campaign) {
     return groups;
   }, {});
   const explicitCount = connections.filter(connection => !connection.inferred).length;
-  return `${header("Connections", "RELATIONSHIP MAP", "A campaign-wide index of what points to, pressures, and reveals what. Connections are grouped and sorted by relationship type.", `<div class="header-actions"><button class="secondary-button" type="button" data-open-story-scout data-scout-scope="connections">Scout with AI <span>✦</span></button><button class="primary-button" type="button" data-open-connection>Add connection <span>＋</span></button></div>`)}
+  return `${header("Connections", "RELATIONSHIP MAP", "A campaign-wide index of what points to, pressures, and reveals what. Connections are grouped and sorted by relationship type.", `<div class="header-actions"><button class="secondary-button" type="button" data-open-story-scout data-scout-scope="connections">Scout with AI <span>✦</span></button><button class="secondary-button" type="button" data-open-story-cleanup data-cleanup-scope="connections">Review clutter <span>✓</span></button><button class="primary-button" type="button" data-open-connection>Add connection <span>＋</span></button></div>`)}
     <div class="connection-summary"><span><strong>${connections.length}</strong> total relationships</span><span><strong>${explicitCount}</strong> labelled manually</span><span><strong>${connections.length - explicitCount}</strong> journal references</span></div>
     <div class="connection-groups">${connections.length ? Object.keys(grouped).sort((left, right) => left.localeCompare(right)).map(type => `<section class="card connection-group"><div class="section-title"><h2>${esc(type)}</h2><span class="tag">${grouped[type].length} ${grouped[type].length === 1 ? "link" : "links"}</span></div><div class="connection-list">${grouped[type].map(connection => `<article class="connection-row">${entryRelationButton(connection.from)}<span class="connection-arrow" aria-label="connects to">→</span>${entryRelationButton(connection.to)}<div class="connection-note">${connection.note ? esc(connection.note) : connection.inferred ? "Journal reference" : "No note recorded"}</div>${connection.inferred ? `<span class="tag inferred-link">Automatic</span>` : `<button class="quiet-button" type="button" data-delete-connection="${esc(connection.id)}" aria-label="Remove this connection">Remove</button>`}</article>`).join("")}</div></section>`).join("") : `<div class="empty-state"><h2>No relationships are mapped yet.</h2><p>Connect two records to make the hidden structure of the campaign visible here.</p><button class="primary-button" type="button" data-open-connection>Add the first connection <span>→</span></button></div>`}</div>`;
 }
@@ -479,7 +480,7 @@ function arcCardView(campaign, arc) {
 }
 function arcsView(campaign) {
   const arcs = [...campaign.arcs].sort((left, right) => ARC_STATUSES.indexOf(left.status) - ARC_STATUSES.indexOf(right.status) || String(left.title).localeCompare(String(right.title)));
-  return `${header("Story arcs", "FUTURE STORY", "Plan the pressure ahead without locking the players into a plot. Each arc records what is at stake and the next decision worth preparing.", `<div class="header-actions"><button class="secondary-button" type="button" data-open-story-scout data-scout-scope="arcs">Scout threads <span>✦</span></button><button class="secondary-button" type="button" data-open-ai-guide="arc">Guided planning <span>✦</span></button><button class="primary-button" type="button" data-open-arc>Plan story arc <span>＋</span></button></div>`)}
+  return `${header("Story arcs", "FUTURE STORY", "Plan the pressure ahead without locking the players into a plot. Each arc records what is at stake and the next decision worth preparing.", `<div class="header-actions"><button class="secondary-button" type="button" data-open-story-scout data-scout-scope="arcs">Scout threads <span>✦</span></button><button class="secondary-button" type="button" data-open-story-cleanup data-cleanup-scope="arcs">Review clutter <span>✓</span></button><button class="secondary-button" type="button" data-open-ai-guide="arc">Guided planning <span>✦</span></button><button class="primary-button" type="button" data-open-arc>Plan story arc <span>＋</span></button></div>`)}
     <div class="arc-planning-note"><span>Plan outcomes and pressure, not player choices.</span><span>Link an arc to existing records to keep prep grounded.</span></div>
     <div class="arc-grid">${arcs.length ? arcs.map(arc => arcCardView(campaign, arc)).join("") : `<div class="empty-state"><h2>No future arcs planned.</h2><p>Start with a tension that will change the campaign, then prepare the next decision rather than the ending.</p><button class="primary-button" type="button" data-open-arc>Plan the first arc <span>→</span></button></div>`}</div>`;
 }
@@ -1607,7 +1608,12 @@ function storyScoutResultsView() {
 }
 function renderStoryScoutModal() {
   const content = document.querySelector("#storyScoutContent");
-  content.innerHTML = storyScoutState?.loading ? `<div class="guide-dialog guide-loading"><span>✦</span><h2>Reading the campaign record…</h2><p>Looking for repeated pressure, unresolved connections, and the story hiding between entries.</p></div>` : storyScoutState?.suggestions ? storyScoutResultsView() : storyScoutSetupView();
+  const cleanup = storyScoutState?.mode === "cleanup";
+  content.innerHTML = storyScoutState?.loading
+    ? `<div class="guide-dialog guide-loading"><span>✦</span><h2>${cleanup ? "Reviewing repeated structure…" : "Reading the campaign record…"}</h2><p>${cleanup ? "Comparing connections and story arcs without changing the campaign." : "Looking for repeated pressure, unresolved connections, and the story hiding between entries."}</p></div>`
+    : storyScoutState?.suggestions
+      ? cleanup ? storyCleanupResultsView() : storyScoutResultsView()
+      : cleanup ? storyCleanupSetupView() : storyScoutSetupView();
 }
 function openStoryScout(scope = "both") {
   storyScoutState = { scope: ["both", "connections", "arcs"].includes(scope) ? scope : "both" };
@@ -1651,6 +1657,149 @@ function applyStoryScout(form) {
   arcs.forEach(arc => campaign.arcs.unshift({ id: `arc-${Date.now()}-${Math.random().toString(16).slice(2)}`, title: arc.title, status: arc.status, horizon: arc.horizon, tension: arc.tension, change: arc.change, nextStep: arc.nextStep, milestones: arc.milestones, related: arc.related, directions: arc.directions, archetype: arc.archetype, tropes: arc.tropes, threadGaps: arc.threadGaps, evidence: arc.evidence, source: "ai-scout" }));
   if (!connections.length && !arcs.length) { showToast("Select at least one proposal to apply."); return; }
   saveState(); storyScoutState = null; storyScoutModal.close(); render(); showToast(`${connections.length + arcs.length} AI suggestion${connections.length + arcs.length === 1 ? "" : "s"} added to the campaign.`);
+}
+
+function storyCleanupContext(campaign, scope) {
+  if (!CAMPAIGN_CLEANUP) return "";
+  const inventory = CAMPAIGN_CLEANUP.buildInventory(campaign);
+  const connections = scope === "arcs" ? [] : inventory.connections.slice(0, 120);
+  const arcs = scope === "connections" ? [] : inventory.arcs.slice(0, 40);
+  const connectionText = connections.map(row => {
+    const item = row.item;
+    return `${row.ref} | ${row.label} | Note: ${scoutText(item.note, 260) || "None"}`;
+  }).join("\n");
+  const arcText = arcs.map(row => {
+    const item = row.item;
+    const related = (item.related || []).map(entry => `${entry.type}:${entry.name}`).join(", ");
+    return `${row.ref} | ${row.label} | ${item.status || "Planned"} | Tension: ${scoutText(item.tension, 360)} | Next: ${scoutText(item.nextStep, 260)} | Related: ${related || "None"}`;
+  }).join("\n");
+  const omittedConnections = Math.max(0, inventory.connections.length - connections.length);
+  const omittedArcs = Math.max(0, inventory.arcs.length - arcs.length);
+  return `${storyScoutContext(campaign)}
+
+Cleanup connection inventory:
+${connectionText || "None."}
+${omittedConnections ? `${omittedConnections} additional connections were omitted from this bounded scan.` : ""}
+
+Cleanup story arc inventory:
+${arcText || "None."}
+${omittedArcs ? `${omittedArcs} additional arcs were omitted from this bounded scan.` : ""}`;
+}
+
+function storyCleanupSystem(campaign, scope) {
+  const connectionInstruction = scope === "arcs"
+    ? "Return an empty connections array."
+    : "Review the connection inventory for exact duplicates, overlapping statements of the same relationship, and entries that carry no distinct information.";
+  const arcInstruction = scope === "connections"
+    ? "Return an empty arcs array."
+    : "Review the story arc inventory for duplicate arcs, arcs fully subsumed by another active arc, and empty or obsolete planning records that no longer carry distinct historical or future value.";
+  return `You are a conservative tabletop RPG campaign-record editor. ${connectionInstruction} ${arcInstruction}
+
+Propose cleanup only when the supplied evidence is strong. Prefer merge over removal when either record contains unique useful information. Do not remove a completed arc merely because it is complete, and do not remove a connection or arc because it seems less interesting. Never invent a reference, fact, relationship, or replacement field. Each reference may appear in at most one proposal.
+
+For a merge, keep one existing reference, list the redundant references to remove, and provide the complete consolidated fields. For a removal, leave keepRef empty and list only the references to remove. Give a concrete reason and evidence for every proposal. Return at most eight connection actions and eight arc actions.
+
+Relationship type must be exactly one of: ${CONNECTION_TYPES.join(", ")}.
+Arc status must be exactly one of: ${ARC_STATUSES.join(", ")}.
+Return JSON only in exactly this shape:
+{"connections":[{"action":"merge","keepRef":"C1","removeRefs":["C2"],"mergedType":"Protects","mergedNote":"Consolidated note","reason":"Why these are redundant","evidence":"Facts from the supplied inventory"}],"arcs":[{"action":"merge","keepRef":"A1","removeRefs":["A2"],"merged":{"title":"Arc title","status":"Active","horizon":"","tension":"","change":"","nextStep":"","milestones":[""],"related":[{"type":"quest","name":"Exact record name"}],"directions":[""],"archetype":"","tropes":[""],"threadGaps":[""]},"reason":"Why these are redundant","evidence":"Facts from the supplied inventory"}]}.
+
+${storyCleanupContext(campaign, scope)}`;
+}
+
+function storyCleanupSetupView() {
+  const copilot = getCopilotState();
+  const scope = storyScoutState?.scope || "both";
+  return `<form id="storyCleanupForm" class="guide-dialog"><div class="modal-heading"><div><p class="eyebrow">AI CAMPAIGN CLEANUP</p><h2>Review repeated structure</h2></div><button class="close-button" type="button" data-close-story-scout aria-label="Close">×</button></div><p class="guide-intro">The scan identifies redundant connections and story arcs in the active campaign. Every proposed merge or removal remains unchanged until you explicitly select and approve it.</p><label>Review<select name="scope"><option value="both"${selectedOption(scope, "both")}>Connections and story arcs</option><option value="connections"${selectedOption(scope, "connections")}>Connections only</option><option value="arcs"${selectedOption(scope, "arcs")}>Story arcs only</option></select></label>${aiConnectionFields(copilot, "I understand the campaign records in this cleanup scan will be sent to this endpoint. No records will change until I approve selected proposals.")}<button class="primary-button submit-button" type="submit">Scan for redundancies <span>✦</span></button></form>`;
+}
+
+function cleanupConnectionProposal(proposal, index) {
+  const action = proposal.action === "merge" ? `Merge into ${proposal.keepLabel}` : "Remove";
+  const result = proposal.action === "merge"
+    ? `${proposal.mergedType}: ${proposal.mergedNote || "No consolidated note"}`
+    : "No replacement connection";
+  return `<label class="scout-proposal cleanup-proposal"><input type="checkbox" name="cleanupConnections" value="${index}" /><span><small>${esc(action)}</small><strong>${esc(proposal.removeLabels.join(" · "))}</strong><p>${esc(proposal.reason)}</p><b>Result: ${esc(result)}</b><em>Evidence: ${esc(proposal.evidence)}</em></span></label>`;
+}
+
+function cleanupArcProposal(proposal, index) {
+  const action = proposal.action === "merge" ? `Merge into ${proposal.keepLabel}` : "Remove";
+  const result = proposal.action === "merge"
+    ? `${proposal.merged.title} · ${proposal.merged.status} · Next: ${proposal.merged.nextStep || "Not specified"}`
+    : "No replacement story arc";
+  return `<label class="scout-proposal cleanup-proposal"><input type="checkbox" name="cleanupArcs" value="${index}" /><span><small>${esc(action)}</small><strong>${esc(proposal.removeLabels.join(" · "))}</strong><p>${esc(proposal.reason)}</p><b>Result: ${esc(result)}</b><em>Evidence: ${esc(proposal.evidence)}</em></span></label>`;
+}
+
+function storyCleanupResultsView() {
+  const suggestions = storyScoutState.suggestions;
+  const count = suggestions.connections.length + suggestions.arcs.length;
+  if (!count) return `<div class="guide-dialog"><div class="modal-heading"><div><p class="eyebrow">AI CAMPAIGN CLEANUP</p><h2>No safe cleanup proposed</h2></div><button class="close-button" type="button" data-close-story-scout aria-label="Close">×</button></div><p class="guide-intro">The scan did not find redundancies strong enough to recommend changing. Nothing was modified.</p><button class="secondary-button" type="button" data-reset-story-scout>Adjust scan</button></div>`;
+  return `<form id="storyCleanupApplyForm" class="guide-dialog"><div class="modal-heading"><div><p class="eyebrow">AI CAMPAIGN CLEANUP · REVIEW</p><h2>Approve individual changes</h2></div><button class="close-button" type="button" data-close-story-scout aria-label="Close">×</button></div><p class="guide-intro">Cleanup actions start unchecked. Select only the proposals you approve; Campaign Engine creates a safety backup before applying them.</p><div class="scout-proposal-groups">${suggestions.connections.length ? `<section><h3>Connections</h3>${suggestions.connections.map(cleanupConnectionProposal).join("")}</section>` : ""}${suggestions.arcs.length ? `<section><h3>Story arcs</h3>${suggestions.arcs.map(cleanupArcProposal).join("")}</section>` : ""}</div><div class="guide-summary-actions"><button class="primary-button" type="submit">Apply selected cleanup <span>→</span></button><button class="secondary-button" type="button" data-reset-story-scout>Discard and rescan</button></div></form>`;
+}
+
+function openStoryCleanup(scope = "both") {
+  storyScoutState = { mode: "cleanup", scope: ["both", "connections", "arcs"].includes(scope) ? scope : "both" };
+  renderStoryScoutModal();
+  storyScoutModal.showModal();
+}
+
+async function startStoryCleanup(form) {
+  if (!CAMPAIGN_CLEANUP) { showToast("The campaign cleanup engine is unavailable."); return; }
+  const data = new FormData(form);
+  const scope = String(data.get("scope") || "both");
+  const endpoint = String(data.get("endpoint") || "").trim();
+  const model = String(data.get("model") || "").trim();
+  const key = String(data.get("apiKey") || "").trim();
+  if (!endpoint || !model || !(key || copilotToken) || !data.get("consent")) { showToast("Add an endpoint, model, API key, and sending confirmation before scanning."); return; }
+  setCopilotToken(key || copilotToken);
+  try { await persistApiKeyIfRequested(form, copilotToken); } catch (error) { showToast(`The API key was not saved: ${error.message}`); }
+  const copilot = getCopilotState(); copilot.endpoint = endpoint; copilot.model = model;
+  const campaign = activeCampaign();
+  storyScoutState = { mode: "cleanup", scope, endpoint, model, campaignId: campaign.id, loading: true };
+  const request = storyScoutState;
+  renderStoryScoutModal();
+  try {
+    const output = await callCampaignAI(endpoint, model, [{ role: "system", content: storyCleanupSystem(campaign, scope) }]);
+    if (storyScoutState !== request || activeCampaign().id !== campaign.id) return;
+    storyScoutState = {
+      ...storyScoutState,
+      loading: false,
+      suggestions: CAMPAIGN_CLEANUP.sanitizeSuggestions(campaign, parseAIJson(output), scope, {
+        connectionTypes: CONNECTION_TYPES,
+        arcStatuses: ARC_STATUSES
+      })
+    };
+  } catch (error) {
+    storyScoutState = { ...request, loading: false };
+    showToast(`The cleanup scan could not complete: ${error.message}`);
+  }
+  renderStoryScoutModal();
+}
+
+async function applyStoryCleanup(form) {
+  if (!CAMPAIGN_CLEANUP || storyScoutState?.campaignId !== activeCampaign().id) {
+    showToast("The campaign changed. Run the cleanup scan again.");
+    return;
+  }
+  const data = new FormData(form);
+  const connectionIndexes = data.getAll("cleanupConnections").map(Number);
+  const arcIndexes = data.getAll("cleanupArcs").map(Number);
+  if (!connectionIndexes.length && !arcIndexes.length) { showToast("Select at least one cleanup proposal to apply."); return; }
+  try {
+    await flushDesktopSaves();
+    if (DESKTOP_API?.createSafetyBackup) await DESKTOP_API.createSafetyBackup();
+    const stats = CAMPAIGN_CLEANUP.applySelected(activeCampaign(), storyScoutState.suggestions, {
+      connections: connectionIndexes,
+      arcs: arcIndexes
+    });
+    if (!stats.actionsApplied) { showToast("No valid cleanup actions remained to apply."); return; }
+    saveState();
+    storyScoutState = null;
+    storyScoutModal.close();
+    render();
+    showToast(`${stats.actionsApplied} approved cleanup action${stats.actionsApplied === 1 ? "" : "s"} applied.`);
+  } catch (error) {
+    showToast(`Cleanup was not applied: ${error.message}`);
+  }
 }
 function guideQuestionFocus(type, track) {
   if (track === "quick") {
@@ -1907,6 +2056,8 @@ root.addEventListener("click", event => {
   if (event.target.closest("[data-edit-record], [data-revise-record]")) return;
   const scoutButton = event.target.closest("[data-open-story-scout]");
   if (scoutButton) { openStoryScout(scoutButton.dataset.scoutScope || "both"); return; }
+  const cleanupButton = event.target.closest("[data-open-story-cleanup]");
+  if (cleanupButton) { openStoryCleanup(cleanupButton.dataset.cleanupScope || "both"); return; }
   if (event.target.closest("[data-open-connection]")) { openConnectionModal(); return; }
   if (event.target.closest("[data-open-arc]")) { openArcModal(); return; }
   const removeConnection = event.target.closest("[data-delete-connection]");
@@ -2101,7 +2252,7 @@ recordModal.addEventListener("click", event => {
 storyScoutModal.addEventListener("click", event => {
   if (event.target.closest("[data-close-story-scout]")) { storyScoutState = null; storyScoutModal.close(); return; }
   if (event.target.closest("[data-reset-story-scout]")) {
-    storyScoutState = { scope: storyScoutState?.scope || "both" };
+    storyScoutState = { mode: storyScoutState?.mode, scope: storyScoutState?.scope || "both" };
     renderStoryScoutModal();
   }
 });
@@ -2109,6 +2260,8 @@ storyScoutModal.addEventListener("submit", event => {
   event.preventDefault();
   if (event.target.matches("#storyScoutForm")) { startStoryScout(event.target); return; }
   if (event.target.matches("#storyScoutApplyForm")) applyStoryScout(event.target);
+  if (event.target.matches("#storyCleanupForm")) { startStoryCleanup(event.target); return; }
+  if (event.target.matches("#storyCleanupApplyForm")) applyStoryCleanup(event.target);
 });
 storyScoutModal.addEventListener("close", () => { storyScoutState = null; });
 revisionModal.addEventListener("click", event => {

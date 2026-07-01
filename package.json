@@ -1,7 +1,7 @@
 {
   "name": "campaign-engine",
   "productName": "Campaign Engine",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "A local-first command center for tabletop RPG campaigns.",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -37,6 +37,7 @@
       "workspace.css",
       "app.js",
       "archivist-merge.js",
+      "campaign-cleanup.js",
       "features.js",
       "icon.svg",
       "manifest.webmanifest",

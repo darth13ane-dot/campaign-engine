@@ -467,6 +467,8 @@ button { cursor: pointer; }
 .scout-proposal p { color: #c2c7d1; font-size: 11px; line-height: 1.6; margin: 0; }
 .scout-proposal b { color: var(--gold-pale); font-size: 11px; line-height: 1.5; }
 .scout-proposal em { color: var(--muted); font-size: 10px; font-style: normal; line-height: 1.55; }
+.cleanup-proposal small { color: var(--gold); }
+.cleanup-proposal:has(input:checked) { background: rgba(224,183,95,.07); border-color: rgba(224,183,95,.48); }
 .scout-directions { margin: 3px 0; }
 
 /* Rulebooks, builders, exports, and device-local appearance controls. */

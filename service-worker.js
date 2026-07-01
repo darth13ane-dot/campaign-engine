@@ -1,12 +1,13 @@
-const CACHE_NAME = "campaign-engine-shell-v16";
+const CACHE_NAME = "campaign-engine-shell-v17";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=11",
+  "./styles.css?v=12",
   "./workspace.css?v=1",
   "./systems/pf2e/styles.css?v=1",
-  "./app.js?v=14",
+  "./app.js?v=15",
   "./archivist-merge.js?v=2",
+  "./campaign-cleanup.js?v=1",
   "./features.js?v=9",
   "./systems/registry.js?v=1",
   "./systems/dnd5e/definition.js?v=1",
