@@ -1,5 +1,7 @@
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
+const { EventEmitter } = require("node:events");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
@@ -9,6 +11,7 @@ const {
   compareVersions,
   createPortableUpdater,
   portableInstallerScript,
+  portableSchedulerScript,
   releaseFileUrl,
   validatePortableMetadata
 } = require("../electron/portable-updater.cjs");
@@ -56,14 +59,34 @@ test("uses GitHub release-safe Windows artifact names", () => {
   }
 });
 
-test("generates a replacement helper with rollback and relaunch steps", () => {
-  const script = portableInstallerScript();
-  assert.match(script, /Copy-Item.+\$backup/);
-  assert.match(script, /Move-Item.+\$Source.+\$Target/);
-  assert.match(script, /Get-RunningTargetProcesses/);
-  assert.match(script, /Campaign Engine Portable did not close/);
-  assert.match(script, /SHA512/);
-  assert.match(script, /Start-Process -FilePath \$Target/);
+test("generates scheduled replacement helpers with rollback and relaunch steps", () => {
+  const installer = portableInstallerScript();
+  const scheduler = portableSchedulerScript();
+  assert.match(installer, /Copy-Item.+\$backup/);
+  assert.match(installer, /Move-Item.+\$Source.+\$Target/);
+  assert.match(installer, /Get-RunningTargetProcesses/);
+  assert.match(installer, /Campaign Engine Portable did not close/);
+  assert.match(installer, /portable-update-success\.json/);
+  assert.match(installer, /Start-Process -FilePath \$Target/);
+  assert.match(installer, /Unregister-ScheduledTask/);
+  assert.match(scheduler, /New-ScheduledTaskPrincipal.+Interactive/);
+  assert.match(scheduler, /Register-ScheduledTask/);
+  assert.match(scheduler, /Start-ScheduledTask/);
+});
+
+test("generated portable update scripts parse in Windows PowerShell", {
+  skip: process.platform !== "win32"
+}, () => {
+  const powershell = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  for (const script of [portableInstallerScript(), portableSchedulerScript()]) {
+    const result = spawnSync(powershell, [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "$value = [Console]::In.ReadToEnd(); [void][ScriptBlock]::Create($value)"
+    ], { input: script, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+  }
 });
 
 test("downloads, verifies, and stages a portable self-update", async t => {
@@ -88,7 +111,10 @@ test("downloads, verifies, and stages a portable self-update", async t => {
       : new Response(payload, { status: 200, headers: { "content-length": String(payload.length) } }),
     spawnImpl: (command, args, options) => {
       spawnCalls.push({ command, args, options });
-      return { unref() {} };
+      const child = new EventEmitter();
+      child.stderr = new EventEmitter();
+      setImmediate(() => child.emit("close", 0));
+      return child;
     },
     processId: 1234,
     powershellPath: "powershell.exe"
@@ -103,9 +129,43 @@ test("downloads, verifies, and stages a portable self-update", async t => {
   assert.deepEqual(await fs.readFile(downloaded.readyPath), payload);
   assert.equal(states.at(-1).status, "installing");
   assert.equal(spawnCalls.length, 1);
-  assert.equal(spawnCalls[0].options.detached, true);
+  assert.match(spawnCalls[0].args[spawnCalls[0].args.indexOf("-File") + 1], /schedule-portable-update\.ps1$/);
+  assert.ok(spawnCalls[0].args.includes("-TaskName"));
+  assert.deepEqual(spawnCalls[0].options.stdio, ["ignore", "ignore", "pipe"]);
   assert.ok(spawnCalls[0].args.includes(executablePath));
   assert.equal(quitCalled, true);
+});
+
+test("does not quit when the scheduled installer cannot be registered", async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "campaign-engine-portable-update-test-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const executablePath = path.join(directory, "Campaign Engine Portable.exe");
+  await fs.writeFile(executablePath, "old portable executable");
+  const payload = Buffer.from("new verified portable executable");
+  const manifest = manifestFor(payload);
+  let quitCalled = false;
+  const updater = createPortableUpdater({
+    currentVersion: "1.0.0",
+    executablePath,
+    feedUrl: () => "https://downloads.example.com/releases",
+    tempDirectory: directory,
+    fetchImpl: async url => url.endsWith("latest-portable.json")
+      ? new Response(JSON.stringify(manifest), { status: 200 })
+      : new Response(payload, { status: 200 }),
+    spawnImpl: () => {
+      const child = new EventEmitter();
+      child.stderr = new EventEmitter();
+      setImmediate(() => {
+        child.stderr.emit("data", Buffer.from("Task Scheduler is unavailable."));
+        child.emit("close", 1);
+      });
+      return child;
+    }
+  });
+
+  await updater.download();
+  await assert.rejects(() => updater.install(() => { quitCalled = true; }), /Task Scheduler is unavailable/);
+  assert.equal(quitCalled, false);
 });
 
 test("does not delete an active portable download during launch cleanup", async t => {
@@ -167,4 +227,33 @@ test("rejects a portable download that does not match its manifest", async t => 
 
   await updater.check();
   await assert.rejects(() => updater.download(), /unexpected file size|SHA-512 verification/);
+});
+
+test("preserves failed diagnostics and rollback until a successful launch is confirmed", async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "campaign-engine-portable-update-test-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const executablePath = path.join(directory, "Campaign Engine Portable.exe");
+  const backupPath = `${executablePath}.previous`;
+  const staging = path.join(directory, "Campaign Engine", "portable-updates", "1.0.9");
+  const errorLog = path.join(staging, "portable-update-error.log");
+  const successMarker = path.join(staging, "portable-update-success.json");
+  await fs.mkdir(staging, { recursive: true });
+  await fs.writeFile(executablePath, "current executable");
+  await fs.writeFile(backupPath, "rollback executable");
+  await fs.writeFile(errorLog, "replacement failed");
+  const updater = createPortableUpdater({
+    currentVersion: "1.0.9",
+    executablePath,
+    feedUrl: () => "https://downloads.example.com/releases",
+    tempDirectory: directory
+  });
+
+  await updater.cleanupAfterLaunch();
+  assert.equal(await fs.readFile(errorLog, "utf8"), "replacement failed");
+  assert.equal(await fs.readFile(backupPath, "utf8"), "rollback executable");
+
+  await fs.writeFile(successMarker, JSON.stringify({ version: "1.0.9" }));
+  await updater.cleanupAfterLaunch();
+  await assert.rejects(() => fs.access(staging));
+  assert.equal(await fs.readFile(backupPath, "utf8"), "rollback executable");
 });

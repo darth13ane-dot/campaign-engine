@@ -9,7 +9,7 @@ const { normalizeBridgeSettings, syncArchivistBridge, testArchivistBridge } = re
 
 let mainWindow;
 let updateSettings = { updateUrl: "", autoCheck: true };
-let updateState = { status: "ready", version: app.getVersion(), message: "No update feed configured." };
+let updateState = { status: "ready", version: app.getVersion(), currentVersion: app.getVersion(), message: "No update feed configured." };
 let archivistBridgeSettings = normalizeBridgeSettings();
 let updateTimer;
 let updateStartupTimer;
@@ -78,7 +78,7 @@ function archivistBridgeState(extra = {}) {
 }
 
 function sendUpdateState(nextState) {
-  updateState = { ...updateState, ...nextState, portable: isPortableBuild(), settings: { ...updateSettings } };
+  updateState = { ...updateState, ...nextState, currentVersion: app.getVersion(), portable: isPortableBuild(), settings: { ...updateSettings } };
   mainWindow?.webContents.send("desktop:update-state", updateState);
 }
 
@@ -157,7 +157,7 @@ autoUpdater.on("download-progress", progress => sendUpdateState({ status: "downl
 autoUpdater.on("update-downloaded", info => sendUpdateState({ status: "downloaded", version: info.version, message: `Version ${info.version} is ready to install.` }));
 autoUpdater.on("error", error => sendUpdateState({ status: "error", message: error.message || "Desktop update failed." }));
 
-ipcMain.handle("desktop:get-update-state", () => ({ ...updateState, portable: isPortableBuild(), settings: { ...updateSettings } }));
+ipcMain.handle("desktop:get-update-state", () => ({ ...updateState, currentVersion: app.getVersion(), portable: isPortableBuild(), settings: { ...updateSettings } }));
 ipcMain.handle("desktop:save-update-settings", (_, settings) => {
   const updateUrl = String(settings?.updateUrl || "").trim();
   if (updateUrl && !validUpdateUrl(updateUrl)) throw new Error("Use an HTTPS release-feed URL.");

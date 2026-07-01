@@ -99,12 +99,19 @@ function portableInstallerScript() {
   [int]$ParentPid,
   [string]$Source,
   [string]$Target,
-  [string]$ExpectedSha512
+  [string]$ExpectedSha512,
+  [string]$UpdateVersion,
+  [string]$TaskName
 )
 $ErrorActionPreference = "Stop"
 $backup = "$Target.previous"
-$log = Join-Path (Split-Path -Parent $Source) "portable-update-error.log"
+$stagingDirectory = Split-Path -Parent $Source
+$log = Join-Path $stagingDirectory "portable-update-error.log"
+$success = Join-Path $stagingDirectory "portable-update-success.json"
+$backupCreated = $false
 try {
+  Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $success -Force -ErrorAction SilentlyContinue
   $targetFullPath = [System.IO.Path]::GetFullPath($Target)
   function Get-RunningTargetProcesses {
     @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
@@ -131,6 +138,7 @@ try {
   }
   if (Test-Path -LiteralPath $Target) {
     Copy-Item -LiteralPath $Target -Destination $backup -Force
+    $backupCreated = $true
   }
   Move-Item -LiteralPath $Source -Destination $Target -Force
   $stream = [System.IO.File]::OpenRead($Target)
@@ -148,12 +156,77 @@ try {
     throw "The installed portable executable failed its final checksum verification."
   }
   Start-Process -FilePath $Target -WorkingDirectory (Split-Path -Parent $Target)
+  @{
+    version = $UpdateVersion
+    target = $targetFullPath
+    installedAt = [DateTime]::UtcNow.ToString("o")
+  } | ConvertTo-Json | Set-Content -LiteralPath $success -Encoding UTF8
 } catch {
-  if (Test-Path -LiteralPath $backup) {
+  if ($backupCreated -and (Test-Path -LiteralPath $backup)) {
     Copy-Item -LiteralPath $backup -Destination $Target -Force
   }
   $_ | Out-String | Set-Content -LiteralPath $log
+  throw
+} finally {
+  if ($TaskName) {
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+  }
 }`;
+}
+
+function portableSchedulerScript() {
+  return String.raw`param(
+  [string]$TaskName,
+  [string]$PowerShellPath,
+  [string]$InstallerPath,
+  [int]$ParentPid,
+  [string]$Source,
+  [string]$Target,
+  [string]$ExpectedSha512,
+  [string]$UpdateVersion
+)
+$ErrorActionPreference = "Stop"
+$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+function Quote-Argument([string]$Value) {
+  return '"' + $Value + '"'
+}
+$arguments = @(
+  "-NoProfile",
+  "-NonInteractive",
+  "-WindowStyle", "Hidden",
+  "-ExecutionPolicy", "Bypass",
+  "-File", (Quote-Argument $InstallerPath),
+  "-ParentPid", $ParentPid,
+  "-Source", (Quote-Argument $Source),
+  "-Target", (Quote-Argument $Target),
+  "-ExpectedSha512", (Quote-Argument $ExpectedSha512),
+  "-UpdateVersion", (Quote-Argument $UpdateVersion),
+  "-TaskName", (Quote-Argument $TaskName)
+) -join " "
+$action = New-ScheduledTaskAction -Execute $PowerShellPath -Argument $arguments -WorkingDirectory (Split-Path -Parent $Target)
+$principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel Limited
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+try {
+  Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $principal -Settings $settings -Force | Out-Null
+  Start-ScheduledTask -TaskName $TaskName
+} catch {
+  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+  throw
+}`;
+}
+
+function waitForChild(child) {
+  return new Promise((resolve, reject) => {
+    let stderr = "";
+    child.stderr?.on("data", chunk => {
+      stderr = `${stderr}${chunk.toString("utf8")}`.slice(-4000);
+    });
+    child.once("error", reject);
+    child.once("close", code => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `Portable update scheduler exited with code ${code}.`));
+    });
+  });
 }
 
 function createPortableUpdater({
@@ -276,28 +349,28 @@ function createPortableUpdater({
     await fsPromises.access(path.dirname(executablePath), fs.constants.W_OK);
     await fsPromises.access(executablePath, fs.constants.R_OK | fs.constants.W_OK);
     const helperPath = path.join(path.dirname(downloadedUpdate.readyPath), "install-portable-update.ps1");
+    const schedulerPath = path.join(path.dirname(downloadedUpdate.readyPath), "schedule-portable-update.ps1");
+    const taskName = `Campaign Engine Portable Update ${downloadedUpdate.version} ${processId}`;
     await fsPromises.writeFile(helperPath, portableInstallerScript(), "utf8");
+    await fsPromises.writeFile(schedulerPath, portableSchedulerScript(), "utf8");
     const child = spawnImpl(powershellPath, [
       "-NoProfile",
       "-NonInteractive",
       "-ExecutionPolicy", "Bypass",
-      "-File", helperPath,
+      "-File", schedulerPath,
+      "-TaskName", taskName,
+      "-PowerShellPath", powershellPath,
+      "-InstallerPath", helperPath,
       "-ParentPid", String(processId),
       "-Source", downloadedUpdate.readyPath,
       "-Target", executablePath,
-      "-ExpectedSha512", downloadedUpdate.sha512
+      "-ExpectedSha512", downloadedUpdate.sha512,
+      "-UpdateVersion", downloadedUpdate.version
     ], {
-      detached: true,
-      stdio: "ignore",
+      stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true
     });
-    if (typeof child.once === "function") {
-      await new Promise((resolve, reject) => {
-        child.once("spawn", resolve);
-        child.once("error", reject);
-      });
-    }
-    child.unref();
+    await waitForChild(child);
     state({ status: "installing", version: downloadedUpdate.version, message: "Restarting to install the portable update…" });
     setImmediate(quit);
   }
@@ -305,10 +378,21 @@ function createPortableUpdater({
   async function cleanupAfterLaunch() {
     if (activeDownload) return;
     cleanupTask = (async () => {
-      const backupPath = `${executablePath}.previous`;
-      await fsPromises.rm(backupPath, { force: true });
-      const { root } = stagingDirectory(currentVersion);
-      if (pathInside(tempDirectory, root)) await fsPromises.rm(root, { recursive: true, force: true });
+      const { root, destination } = stagingDirectory(currentVersion);
+      const successPath = path.join(destination, "portable-update-success.json");
+      let success;
+      try {
+        success = JSON.parse(await fsPromises.readFile(successPath, "utf8"));
+      } catch {
+        return;
+      }
+      if (success?.version !== currentVersion) return;
+      await fsPromises.rm(destination, { recursive: true, force: true });
+      try {
+        if (!(await fsPromises.readdir(root)).length) await fsPromises.rmdir(root);
+      } catch {
+        // Preserve other staged versions and failed-install diagnostics.
+      }
     })();
     try {
       await cleanupTask;
@@ -326,6 +410,7 @@ module.exports = {
   compareVersions,
   createPortableUpdater,
   portableInstallerScript,
+  portableSchedulerScript,
   releaseFileUrl,
   sha512File,
   validatePortableMetadata

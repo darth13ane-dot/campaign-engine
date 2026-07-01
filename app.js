@@ -979,11 +979,15 @@ function desktopUpdateView() {
   }
   const settings = desktopUpdateState.settings || {};
   const portable = Boolean(desktopUpdateState.portable);
+  const installedVersion = desktopUpdateState.currentVersion || desktopUpdateState.version || "Unknown";
+  const targetVersion = desktopUpdateState.version && desktopUpdateState.version !== installedVersion
+    ? desktopUpdateState.version
+    : "";
   const busyUpdates = ["checking", "downloading", "installing"].includes(desktopUpdateState.status);
   const action = desktopUpdateState.status === "available" ? `<button class="primary-button" type="button" data-desktop-update-action="download">Download update <span>↓</span></button>` : desktopUpdateState.status === "downloaded" ? `<button class="primary-button" type="button" data-desktop-update-action="install">Restart and install <span>↻</span></button>` : busyUpdates ? `<button class="primary-button" type="button" disabled>${esc(desktopUpdateState.status || "Working")} <span>⋯</span></button>` : `<button class="primary-button" type="button" data-desktop-update-action="check">Check for updates <span>↻</span></button>`;
-  return `${header("App updates", portable ? "PORTABLE RELEASES" : "DESKTOP RELEASES", portable ? "Download, verify, and replace this portable copy without installing Campaign Engine." : "Configure a trusted release feed so this installed app can keep itself current.")}
+  return `${header("App updates", portable ? "PORTABLE RELEASES" : "DESKTOP RELEASES", portable ? "Download, verify, and update this portable file in place while preserving campaign data and a rollback copy." : "Configure a trusted release feed so this installed app can keep itself current.")}
     <div class="sync-grid">
-      <section class="card sync-lead"><p class="eyebrow">CURRENT STATUS · ${portable ? "PORTABLE" : "INSTALLED"}</p><h2>${esc(desktopUpdateState.status || "ready")}</h2><p>${esc(desktopUpdateState.message || "Ready to check for an update.")}</p><div>${action}</div></section>
+      <section class="card sync-lead"><p class="eyebrow">CURRENT STATUS · ${portable ? "PORTABLE" : "INSTALLED"}</p><h2>${esc(desktopUpdateState.status || "ready")}</h2><p>${esc(desktopUpdateState.message || "Ready to check for an update.")}</p><div class="connection-metrics"><span><strong>v${esc(installedVersion)}</strong> installed</span>${targetVersion ? `<span><strong>v${esc(targetVersion)}</strong> target</span>` : ""}</div><div>${action}</div></section>
       <section class="card sync-card"><div class="section-title"><h2>Release feed</h2><span class="tag">${portable ? "Portable self-update" : "Installed app"}</span></div><p>Use the HTTPS folder where you publish the Windows executables and update metadata. This URL is stored locally on this device.</p><form id="desktopUpdateForm" class="compact-form"><label>Release feed URL<input required name="updateUrl" type="url" value="${esc(settings.updateUrl || "")}" placeholder="https://downloads.example.com/campaign-engine" /></label><label class="consent-check"><input name="autoCheck" type="checkbox" ${settings.autoCheck ? "checked" : ""} /> Check automatically when the app opens and every six hours</label><button class="secondary-button" type="submit">Save update settings</button></form></section>
     </div>`;
 }
