@@ -1,4 +1,5 @@
 const { spawn } = require("node:child_process");
+const { buildCampaignEnginePayload } = require("./archivist-import.cjs");
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const MCP_PROTOCOL_VERSION = "2024-11-05";
@@ -193,20 +194,189 @@ async function callArchivistTool(settings, overrides = {}) {
   }));
 }
 
+function resultText(result) {
+  if (!Array.isArray(result?.content)) return "";
+  return result.content.map(item => item?.text || "").join("\n").trim();
+}
+
+function parseJsonText(text) {
+  const value = String(text || "").trim();
+  if (!value) return null;
+  const fenced = value.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return JSON.parse(fenced ? fenced[1] : value);
+}
+
 function toolResultPayload(result) {
   if (!result) return null;
+  if (result.isError) throw new Error(resultText(result) || "The Archivist MCP tool returned an error.");
   if (isObject(result.payload)) return result.payload;
   if (isObject(result.structuredContent)) return result.structuredContent;
   if (Array.isArray(result.content)) {
-    const text = result.content.map(item => item?.text || "").join("\n").trim();
+    const text = resultText(result);
     if (!text) return result;
     try {
-      return JSON.parse(text);
+      return parseJsonText(text);
     } catch {
       return { text };
     }
   }
   return result;
+}
+
+function isCampaignEnginePayload(payload) {
+  if (!isObject(payload)) return false;
+  if (isObject(payload.workspace)) return isCampaignEnginePayload(payload.workspace);
+  return Array.isArray(payload.campaigns)
+    || Array.isArray(payload.state?.campaigns)
+    || isObject(payload.archivist)
+    || isObject(payload.details)
+    || isObject(payload.archivistDetails);
+}
+
+async function requestToolPayload(client, name, args = {}) {
+  const result = await client.request("tools/call", { name, arguments: args });
+  return toolResultPayload(result);
+}
+
+async function requestAllPages(client, name, args = {}) {
+  const rows = [];
+  let page = 1;
+  let lastPage = 1;
+  do {
+    const payload = await requestToolPayload(client, name, { ...args, page });
+    if (Array.isArray(payload)) {
+      rows.push(...payload);
+      break;
+    }
+    const data = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.items) ? payload.items : [];
+    rows.push(...data);
+    lastPage = Math.max(page, Number(payload?.last_page || payload?.lastPage || 1));
+    page += 1;
+  } while (page <= lastPage);
+  return rows;
+}
+
+function importOptions(settings) {
+  const options = parseToolArguments(settings.toolArguments);
+  const values = Array.isArray(options.campaignIds)
+    ? options.campaignIds
+    : [options.campaignId || options.campaign_id].filter(Boolean);
+  return {
+    campaignIds: new Set(values.map(String)),
+    includeLinks: options.includeLinks === true
+  };
+}
+
+async function nativeCampaignBundle(client, listedCampaign, availableTools, options) {
+  const campaignId = String(listedCampaign.id);
+  const args = { campaign_id: campaignId };
+  const campaign = await requestToolPayload(client, "get-campaign-tool", args);
+  const [characters, sessions, factions, locations, items, quests, journalRows, links] = await Promise.all([
+    requestAllPages(client, "list-characters-tool", args),
+    requestAllPages(client, "list-sessions-tool", args),
+    requestAllPages(client, "list-factions-tool", args),
+    requestAllPages(client, "list-locations-tool", args),
+    requestAllPages(client, "list-items-tool", args),
+    requestAllPages(client, "list-quests-tool", args),
+    requestAllPages(client, "list-journals-tool", args),
+    options.includeLinks && availableTools.has("list-links-tool")
+      ? requestAllPages(client, "list-links-tool", args)
+      : []
+  ]);
+  let journals = journalRows;
+  if (availableTools.has("get-journal-tool") && journalRows.length) {
+    journals = await Promise.all(journalRows.map(async journal => {
+      try {
+        return await requestToolPayload(client, "get-journal-tool", { journal_id: journal.id });
+      } catch {
+        return journal;
+      }
+    }));
+  }
+  return {
+    campaign: isObject(campaign) ? campaign : listedCampaign,
+    characters,
+    sessions,
+    factions,
+    locations,
+    items,
+    quests,
+    journals,
+    links
+  };
+}
+
+function publicTools(tools) {
+  return tools.map(tool => ({ name: tool.name, description: tool.description || "" }));
+}
+
+async function nativeArchivistPayload(client, settings, availableTools) {
+  const required = [
+    "list-campaigns-tool",
+    "get-campaign-tool",
+    "list-characters-tool",
+    "list-sessions-tool",
+    "list-factions-tool",
+    "list-locations-tool",
+    "list-items-tool",
+    "list-quests-tool",
+    "list-journals-tool"
+  ];
+  const missing = required.filter(name => !availableTools.has(name));
+  if (missing.length) throw new Error(`Archivist is missing required sync tools: ${missing.join(", ")}.`);
+
+  const options = importOptions(settings);
+  const campaignRows = await requestAllPages(client, "list-campaigns-tool");
+  const selected = options.campaignIds.size
+    ? campaignRows.filter(item => options.campaignIds.has(String(item.id)))
+    : campaignRows;
+  if (!selected.length) {
+    throw new Error(options.campaignIds.size
+      ? "No Archivist campaign matched the configured campaignId."
+      : "Archivist returned no campaigns.");
+  }
+  const bundles = await Promise.all(selected.map(campaign => {
+    return nativeCampaignBundle(client, campaign, availableTools, options);
+  }));
+  return buildCampaignEnginePayload(bundles);
+}
+
+async function syncArchivistBridge(settings) {
+  const normalized = normalizeBridgeSettings({
+    ...settings,
+    timeoutMs: Math.max(120000, Number(settings?.timeoutMs) || 0)
+  });
+  return withMcpClient(normalized, async client => {
+    const tools = (await client.request("tools/list", {}))?.tools || [];
+    const availableTools = new Set(tools.map(tool => tool.name));
+    if (availableTools.has("list-campaigns-tool")) {
+      const payload = await nativeArchivistPayload(client, normalized, availableTools);
+      return {
+        mode: "archivist-native",
+        payload,
+        campaignCount: payload.state.campaigns.length,
+        tools: publicTools(tools)
+      };
+    }
+    if (!normalized.toolName) {
+      throw new Error("This MCP server does not advertise Archivist sync tools. Choose a custom Campaign Engine export tool.");
+    }
+    const result = await client.request("tools/call", {
+      name: normalized.toolName,
+      arguments: parseToolArguments(normalized.toolArguments)
+    });
+    const payload = toolResultPayload(result);
+    if (!isCampaignEnginePayload(payload)) {
+      throw new Error(`The selected tool "${normalized.toolName}" returned a record, not a Campaign Engine campaign export.`);
+    }
+    return {
+      mode: "custom-export",
+      payload,
+      result,
+      campaignCount: payload.state?.campaigns?.length || payload.campaigns?.length || 0,
+      tools: publicTools(tools)
+    };
+  });
 }
 
 module.exports = {
@@ -216,5 +386,7 @@ module.exports = {
   splitCommandLine,
   testArchivistBridge,
   callArchivistTool,
-  toolResultPayload
+  toolResultPayload,
+  isCampaignEnginePayload,
+  syncArchivistBridge
 };

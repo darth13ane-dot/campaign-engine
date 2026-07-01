@@ -170,6 +170,18 @@
     return merged;
   }
 
+  function mergeConnections(existingConnections, incomingConnections) {
+    if (!Array.isArray(incomingConnections)) return clone(existingConnections || []);
+    const incoming = clone(incomingConnections);
+    const incomingIds = new Set(incoming.map(item => item.archivistId || item.id).filter(Boolean).map(String));
+    for (const item of existingConnections || []) {
+      const id = item.archivistId || item.id;
+      if (id && incomingIds.has(String(id))) continue;
+      incoming.push(clone(item));
+    }
+    return incoming;
+  }
+
   function emptyStats() {
     return {
       campaignsAdded: 0,
@@ -190,7 +202,8 @@
     for (const collection of Object.keys(COLLECTIONS)) {
       merged[collection] = mergeCollection(collection, existing[collection], incoming[collection], stats);
     }
-    for (const key of ["connections", "arcs", "documents", "builders"]) {
+    merged.connections = mergeConnections(existing.connections, incomingCampaign.connections);
+    for (const key of ["arcs", "documents", "builders"]) {
       if (Array.isArray(existing[key]) && !Array.isArray(incomingCampaign[key])) merged[key] = existing[key];
     }
     if (existing.systemData && !incomingCampaign.systemData) merged.systemData = existing.systemData;

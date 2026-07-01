@@ -125,3 +125,28 @@ test("refreshes detail maps by ID without duplicating renamed entries", () => {
     name: "Captain Vale"
   }).description, "Fresh details");
 });
+
+test("refreshes Archivist links without removing local connections", () => {
+  const existing = campaign({
+    connections: [{
+      id: "local-link",
+      from: { type: "character", name: "Vale" },
+      to: { type: "quest", name: "Find the Road" },
+      type: "Protects",
+      source: "manual"
+    }]
+  });
+  const incoming = campaign({
+    connections: [{
+      id: "archivist-link-1",
+      archivistId: "link-1",
+      from: { type: "character", name: "Vale" },
+      to: { type: "quest", name: "Find the Road" },
+      type: "Is tied to",
+      source: "archivist"
+    }]
+  });
+
+  const result = mergeCampaigns([existing], [incoming], details(), details());
+  assert.deepEqual(result.campaigns[0].connections.map(item => item.id), ["archivist-link-1", "local-link"]);
+});

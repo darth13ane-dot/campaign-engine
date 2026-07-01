@@ -5,7 +5,7 @@ const path = require("node:path");
 const { createPortableUpdater } = require("./portable-updater.cjs");
 const { normalizeUpdateUrl, resolveUpdateSettings } = require("./update-settings.cjs");
 const { createWorkspaceStore } = require("./workspace-store.cjs");
-const { callArchivistTool, normalizeBridgeSettings, testArchivistBridge, toolResultPayload } = require("./archivist-mcp-bridge.cjs");
+const { normalizeBridgeSettings, syncArchivistBridge, testArchivistBridge } = require("./archivist-mcp-bridge.cjs");
 
 let mainWindow;
 let updateSettings = { updateUrl: "", autoCheck: true };
@@ -246,10 +246,12 @@ ipcMain.handle("desktop:archivist-bridge-test", async (_, settings) => {
 });
 ipcMain.handle("desktop:archivist-bridge-sync", async (_, settings) => {
   const nextSettings = saveArchivistBridgeSettings(settings || archivistBridgeSettings);
-  const result = await callArchivistTool(nextSettings);
-  const payload = toolResultPayload(result);
-  archivistBridgeSettings = saveArchivistBridgeSettings({ ...nextSettings, lastStatus: "Import tool completed", lastSync: new Date().toISOString() });
-  return archivistBridgeState({ status: "synced", payload, result });
+  const result = await syncArchivistBridge(nextSettings);
+  const lastStatus = result.mode === "archivist-native"
+    ? `Synced ${result.campaignCount} Archivist campaign${result.campaignCount === 1 ? "" : "s"}`
+    : "Custom import tool completed";
+  archivistBridgeSettings = saveArchivistBridgeSettings({ ...nextSettings, lastStatus, lastSync: new Date().toISOString() });
+  return archivistBridgeState({ status: "synced", payload: result.payload, result });
 });
 
 app.whenReady().then(() => {
