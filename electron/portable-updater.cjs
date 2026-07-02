@@ -100,8 +100,7 @@ function portableInstallerScript() {
   [string]$Source,
   [string]$Target,
   [string]$ExpectedSha512,
-  [string]$UpdateVersion,
-  [string]$TaskName
+  [string]$UpdateVersion
 )
 $ErrorActionPreference = "Stop"
 $backup = "$Target.previous"
@@ -167,10 +166,6 @@ try {
   }
   $_ | Out-String | Set-Content -LiteralPath $log
   throw
-} finally {
-  if ($TaskName) {
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-  }
 }`;
 }
 
@@ -200,8 +195,7 @@ $arguments = @(
   "-Source", (Quote-Argument $Source),
   "-Target", (Quote-Argument $Target),
   "-ExpectedSha512", (Quote-Argument $ExpectedSha512),
-  "-UpdateVersion", (Quote-Argument $UpdateVersion),
-  "-TaskName", (Quote-Argument $TaskName)
+  "-UpdateVersion", (Quote-Argument $UpdateVersion)
 ) -join " "
 $action = New-ScheduledTaskAction -Execute $PowerShellPath -Argument $arguments -WorkingDirectory (Split-Path -Parent $Target)
 $principal = New-ScheduledTaskPrincipal -UserId $identity -LogonType Interactive -RunLevel Limited
@@ -254,6 +248,20 @@ function createPortableUpdater({
     const destination = path.join(root, version);
     if (!pathInside(tempDirectory, destination)) throw new Error("The portable update staging path is invalid.");
     return { root, destination };
+  }
+
+  async function cleanupScheduledTasks() {
+    const child = spawnImpl(powershellPath, [
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle", "Hidden",
+      "-Command",
+      "$tasks = @(Get-ScheduledTask -TaskName 'Campaign Engine Portable Update *' -ErrorAction SilentlyContinue); $tasks | Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue"
+    ], {
+      stdio: ["ignore", "ignore", "pipe"],
+      windowsHide: true
+    });
+    await waitForChild(child);
   }
 
   async function check() {
@@ -378,6 +386,11 @@ function createPortableUpdater({
   async function cleanupAfterLaunch() {
     if (activeDownload) return;
     cleanupTask = (async () => {
+      try {
+        await cleanupScheduledTasks();
+      } catch {
+        // Task cleanup can be retried on the next launch.
+      }
       const { root, destination } = stagingDirectory(currentVersion);
       const successPath = path.join(destination, "portable-update-success.json");
       let success;

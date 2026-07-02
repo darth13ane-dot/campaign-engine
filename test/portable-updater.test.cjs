@@ -68,10 +68,10 @@ test("generates scheduled replacement helpers with rollback and relaunch steps",
   assert.match(installer, /Campaign Engine Portable did not close/);
   assert.match(installer, /portable-update-success\.json/);
   assert.match(installer, /Start-Process -FilePath \$Target/);
-  assert.match(installer, /Unregister-ScheduledTask/);
   assert.match(scheduler, /New-ScheduledTaskPrincipal.+Interactive/);
   assert.match(scheduler, /Register-ScheduledTask/);
   assert.match(scheduler, /Start-ScheduledTask/);
+  assert.match(scheduler, /Unregister-ScheduledTask/);
 });
 
 test("generated portable update scripts parse in Windows PowerShell", {
@@ -245,7 +245,13 @@ test("preserves failed diagnostics and rollback until a successful launch is con
     currentVersion: "1.0.9",
     executablePath,
     feedUrl: () => "https://downloads.example.com/releases",
-    tempDirectory: directory
+    tempDirectory: directory,
+    spawnImpl: () => {
+      const child = new EventEmitter();
+      child.stderr = new EventEmitter();
+      setImmediate(() => child.emit("close", 0));
+      return child;
+    }
   });
 
   await updater.cleanupAfterLaunch();
