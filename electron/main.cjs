@@ -1,7 +1,8 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs");
 const path = require("node:path");
+const { createCredentialStore } = require("./credential-store.cjs");
 const { createPortableUpdater } = require("./portable-updater.cjs");
 const { normalizeUpdateUrl, resolveUpdateSettings } = require("./update-settings.cjs");
 const { createWorkspaceStore } = require("./workspace-store.cjs");
@@ -14,6 +15,7 @@ let archivistBridgeSettings = normalizeBridgeSettings();
 let updateTimer;
 let updateStartupTimer;
 let workspaceStore;
+let credentialStore;
 let portableUpdater;
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -236,6 +238,9 @@ ipcMain.handle("desktop:workspace-open-folder", async () => {
   if (error) throw new Error(error);
   return workspaceStore.getInfo();
 });
+ipcMain.handle("desktop:api-key-load", () => credentialStore.loadApiKey());
+ipcMain.handle("desktop:api-key-save", (_, apiKey) => credentialStore.saveApiKey(apiKey));
+ipcMain.handle("desktop:api-key-clear", () => credentialStore.clearApiKey());
 ipcMain.handle("desktop:archivist-bridge-state", () => archivistBridgeState({ status: archivistBridgeSettings.command ? "configured" : "not-configured" }));
 ipcMain.handle("desktop:archivist-bridge-save", (_, settings) => archivistBridgeState({ status: "saved", settings: saveArchivistBridgeSettings(settings) }));
 ipcMain.handle("desktop:archivist-bridge-test", async (_, settings) => {
@@ -258,6 +263,10 @@ app.whenReady().then(() => {
   workspaceStore = createWorkspaceStore({
     directory: app.getPath("userData"),
     appVersion: app.getVersion()
+  });
+  credentialStore = createCredentialStore({
+    directory: app.getPath("userData"),
+    safeStorage
   });
   loadUpdateSettings();
   loadArchivistBridgeSettings();

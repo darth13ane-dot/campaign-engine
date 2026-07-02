@@ -16,6 +16,14 @@ On first launch, Campaign Engine creates its private workspace at:
 %APPDATA%\Campaign Engine\campaign-engine-workspace.json
 ```
 
+When an API key is saved in **Settings → AI connection**, Windows encrypts it for the current Windows account and Campaign Engine stores only the protected value at:
+
+```text
+%APPDATA%\Campaign Engine\ai-credential.json
+```
+
+The credential stays outside the executable, so both installed and portable launches restore it after restarts and upgrades. Saving AI settings with a new key replaces the protected value; **Clear saved key** removes it.
+
 The local build created by **Build Campaign Engine.cmd** includes the private Archivist snapshot and automatically replaces an untouched demo workspace after making a safety backup. Public release builds created by **Prepare Campaign Engine Release.cmd** deliberately contain empty Archivist snapshot files.
 
 ## Build the Windows applications
@@ -43,7 +51,7 @@ Open **Settings → Private data & backups**.
 - **Create local safety copy** writes a timestamped copy under the AppData backup folder.
 - **Open data folder** shows the live workspace and automatic previous-file copy.
 
-The encrypted AI-key vault is intentionally excluded from workspace backups.
+The encrypted AI credential is intentionally excluded from workspace backups and cannot be decrypted by a different Windows account.
 
 ## Automated GitHub releases
 

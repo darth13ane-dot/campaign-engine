@@ -85,7 +85,7 @@ let recordType = null;
 let detailTarget = null;
 let foundryToken = "";
 let copilotToken = loadSessionApiKey();
-let keyVaultUnlocked = false;
+let desktopApiKeySaved = false;
 let desktopUpdateState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading desktop update settings…" : "Use the installable web app or Windows package." };
 let archivistBridgeState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading Archivist bridge settings…" : "The internal bridge is available in the Windows desktop app." };
 let desktopWorkspaceInfo = { mode: DESKTOP_API ? "loading" : "browser", savedAt: null, workspacePath: "" };
@@ -231,7 +231,12 @@ function systemDefinition(name) {
   const definition = SYSTEM_REGISTRY.get(name);
   return SYSTEM_LIBRARY[definition?.name] || SYSTEM_LIBRARY.Custom;
 }
-function supportsKeyVault() { return Boolean(globalThis.crypto?.subtle && globalThis.crypto?.getRandomValues); }
+function usesDesktopCredentialStore() {
+  return Boolean(DESKTOP_API?.loadApiKey && DESKTOP_API?.saveApiKey && DESKTOP_API?.clearApiKey);
+}
+function supportsKeyVault() {
+  return usesDesktopCredentialStore() || Boolean(globalThis.crypto?.subtle && globalThis.crypto?.getRandomValues);
+}
 function loadSessionApiKey() {
   try { return sessionStorage.getItem(KEY_SESSION_STORAGE_KEY) || ""; } catch { return ""; }
 }
@@ -263,16 +268,27 @@ async function deriveVaultKey(passphrase, salt) {
 }
 async function saveApiKeyInVault(apiKey, passphrase) {
   if (!supportsKeyVault()) throw new Error("This browser does not support encrypted local key storage.");
-  if (passphrase.length < 12) throw new Error("Use a vault passphrase with at least 12 characters.");
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const vaultKey = await deriveVaultKey(passphrase, salt);
-  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, vaultKey, new TextEncoder().encode(apiKey));
-  localStorage.setItem(KEY_VAULT_STORAGE_KEY, JSON.stringify({ version: 1, salt: bytesToBase64(salt), iv: bytesToBase64(iv), ciphertext: bytesToBase64(ciphertext) }));
+  if (usesDesktopCredentialStore()) {
+    await DESKTOP_API.saveApiKey(apiKey);
+    desktopApiKeySaved = true;
+  } else {
+    if (passphrase.length < 12) throw new Error("Use a vault passphrase with at least 12 characters.");
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const vaultKey = await deriveVaultKey(passphrase, salt);
+    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, vaultKey, new TextEncoder().encode(apiKey));
+    localStorage.setItem(KEY_VAULT_STORAGE_KEY, JSON.stringify({ version: 1, salt: bytesToBase64(salt), iv: bytesToBase64(iv), ciphertext: bytesToBase64(ciphertext) }));
+  }
   setCopilotToken(apiKey, true);
-  keyVaultUnlocked = true;
 }
 async function unlockApiKeyVault(passphrase) {
+  if (usesDesktopCredentialStore()) {
+    const result = await DESKTOP_API.loadApiKey();
+    if (!result?.apiKey) throw new Error("No saved API key was found on this device.");
+    desktopApiKeySaved = true;
+    setCopilotToken(result.apiKey, true);
+    return result.apiKey;
+  }
   const vault = savedKeyVault();
   if (!vault) throw new Error("No saved API key was found on this device.");
   if (!passphrase) throw new Error("Enter the vault passphrase first.");
@@ -282,22 +298,36 @@ async function unlockApiKeyVault(passphrase) {
     const apiKey = new TextDecoder().decode(plaintext).trim();
     if (!apiKey) throw new Error("The saved API key is empty.");
     setCopilotToken(apiKey, true);
-    keyVaultUnlocked = true;
     return apiKey;
   } catch (error) {
-    keyVaultUnlocked = false;
     throw new Error(error.message === "The saved API key is empty." ? error.message : "The vault passphrase could not unlock the saved API key.");
   }
 }
-function clearApiKeyVault() {
-  localStorage.removeItem(KEY_VAULT_STORAGE_KEY);
+async function clearApiKeyVault() {
+  if (usesDesktopCredentialStore()) {
+    await DESKTOP_API.clearApiKey();
+    desktopApiKeySaved = false;
+  } else {
+    localStorage.removeItem(KEY_VAULT_STORAGE_KEY);
+  }
   setCopilotToken("");
-  keyVaultUnlocked = false;
 }
 async function persistApiKeyIfRequested(form, apiKey) {
   if (!form.querySelector('[name="rememberApiKey"]')?.checked) return;
   const passphrase = String(new FormData(form).get("vaultPassphrase") || "");
   await saveApiKeyInVault(apiKey, passphrase);
+}
+async function initializeDesktopApiKey() {
+  if (!usesDesktopCredentialStore()) return;
+  try {
+    const result = await DESKTOP_API.loadApiKey();
+    desktopApiKeySaved = Boolean(result?.saved);
+    if (result?.apiKey) setCopilotToken(result.apiKey, true);
+  } catch (error) {
+    console.error("Campaign Engine could not restore the saved API key.", error);
+    showToast("The saved API key could not be restored. Open Settings to replace it.");
+  }
+  render();
 }
 function initials(name) { return name.split(/\s+/).map(word => word[0]).join("").slice(0, 2); }
 function showToast(message) { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove("show"), 2500); }
@@ -398,9 +428,6 @@ function updateCampaignChrome() {
 
 function header(title, label, description, action) {
   return `<div class="page-heading"><div><p class="eyebrow">${label}</p><h1>${esc(title)}</h1>${description ? `<p>${esc(description)}</p>` : ""}</div>${action || ""}</div>`;
-}
-function createActions(type, label) {
-  return `<div class="header-actions"><button class="secondary-button" type="button" data-open-ai-guide="${type}">Guided interview <span>✦</span></button><button class="primary-button" data-open-record="${type}">${label} <span>＋</span></button></div>`;
 }
 function stats(campaign) {
   return `<div class="stat-grid"><div class="card stat"><span class="stat-number">${campaign.sessions.length}</span><span class="stat-label">Sessions played</span></div><div class="card stat"><span class="stat-number">${countOpen(campaign)}</span><span class="stat-label">Open threads</span></div><div class="card stat"><span class="stat-number">${campaign.characters.filter(c => c.role.startsWith("PC")).length}</span><span class="stat-label">Players at table</span></div></div>`;
@@ -511,10 +538,6 @@ function stripJournalLinks(text = "") {
   return String(text).replace(/\[\[([^\]:]+):\s*([^\]]+)\]\]/g, "$2").replace(/\[\[([^\]]+)\]\]/g, "$1");
 }
 function escapeRegExp(value = "") { return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
-function journalEntryByTitle(campaign, title) {
-  const key = String(title).trim().toLocaleLowerCase();
-  return campaign.journal.find(entry => entry.title.toLocaleLowerCase() === key);
-}
 function renderJournalContent(campaign, text = "") {
   return String(text).split(/(\[\[[^\]]+\]\])/g).map(part => {
     const match = part.match(/^\[\[([^\]]+)\]\]$/);
@@ -655,11 +678,6 @@ function sheetsView(campaign) {
   return `${header("Sheets & stats", "TABLE READY", `${linked} of ${campaign.characters.length} character records are currently matched to a Foundry actor.`, `<button class="primary-button" data-view-jump="foundry">Link Foundry <span>→</span></button>`)}
     <div class="sheet-list">${campaign.characters.length ? campaign.characters.map(character => { const actor = findActorByName(character.name); return `<article class="card sheet-card"><div class="record-emblem">${esc(initials(character.name))}</div><div><h2>${esc(character.name)}</h2><p>${esc(character.role)}</p></div>${actor?.stats?.length ? `<div class="sheet-card-stats">${actor.stats.slice(0, 3).map(stat => `<span><small>${esc(stat.label)}</small>${esc(stat.value)}</span>`).join("")}</div>` : `<p class="unlinked-copy">Awaiting sheet link</p>`}<button class="secondary-button" type="button" data-open-sheet="${esc(character.name)}">${actor ? "View sheet" : "Link sheet"}</button></article>`; }).join("") : `<div class="empty-state"><h2>No character records yet.</h2><p>Add the cast first, then link their Foundry actors here.</p></div>`}</div>`;
 }
-function systemsView() {
-  const systems = [...new Set(state.campaigns.map(campaign => campaign.system))];
-  return `${header("Game systems", "RULES LIBRARY", "Quick, campaign-aware routes to the rules and Foundry systems you use.")}
-    <div class="resource-grid">${systems.map(system => { const resource = SYSTEM_LIBRARY[system]; return `<article class="card resource-card"><p class="eyebrow">${esc(system)}</p><h2>${esc(resource?.name || system)}</h2><p>${esc(resource?.accent || "A custom system in your Campaign Engine library.")}</p><div class="resource-fields"><span>Sheet focus</span>${(resource?.sheetFields || ["Character sheets", "Stat blocks", "Rules reference"]).map(field => `<b>${esc(field)}</b>`).join("")}</div><div class="resource-links">${(resource?.links || []).map(link => `<a href="${esc(link.url)}" target="_blank" rel="noreferrer">${esc(link.label)} <span>↗</span></a>`).join("") || `<span class="empty-copy">Add your own reference links in a future resource pack.</span>`}</div></article>`; }).join("")}</div>`;
-}
 function workspaceStatusCopy() {
   if (!DESKTOP_API) return "Browser-local workspace";
   if (desktopWorkspaceInfo.mode === "loading") return "Opening private workspace...";
@@ -765,7 +783,7 @@ function settingsView() {
   ];
   return `${header("Settings", "CONFIGURATION", "AI credentials and utility integrations live here, so the campaign workspace stays focused on the table.")}
     <div class="settings-grid">
-      <section class="card settings-card settings-ai-card"><div class="section-title"><h2>AI connection</h2><span class="tag">${keyReady ? "Key ready" : "Setup needed"}</span></div><p>Configure GPT once here. Every AI panel reuses the current session key automatically.</p><form id="aiSettingsForm" class="compact-form"><label>Chat-completions endpoint<input required name="endpoint" type="url" value="${esc(copilot.endpoint)}" /></label><label>Model ID<input required name="model" value="${esc(copilot.model)}" placeholder="Enter the model available to your account" /></label><label>${keyReady ? "Replace API key (optional)" : "API key"}<input name="apiKey" type="password" autocomplete="off" placeholder="${keyReady ? "A key is already ready for this session" : "Paste your API key"}" /></label>${apiKeyVaultFields()}<button class="primary-button" type="submit">Save AI settings <span>→</span></button></form><p class="quiet-copy">The API key stays in memory for the current app session. The optional device vault encrypts it for later sessions.</p></section>
+      <section class="card settings-card settings-ai-card"><div class="section-title"><h2>AI connection</h2><span class="tag">${keyReady ? "Key ready" : "Setup needed"}</span></div><p>Configure GPT once here. Every AI panel reuses the same connection.</p><form id="aiSettingsForm" class="compact-form"><label>Chat-completions endpoint<input required name="endpoint" type="url" value="${esc(copilot.endpoint)}" /></label><label>Model ID<input required name="model" value="${esc(copilot.model)}" placeholder="Enter the model available to your account" /></label><label>${keyReady ? "Replace API key (optional)" : "API key"}<input name="apiKey" type="password" autocomplete="off" placeholder="${keyReady ? "A key is already ready" : "Paste your API key"}" /></label>${apiKeyVaultFields()}<button class="primary-button" type="submit">Save AI settings <span>→</span></button></form><p class="quiet-copy">${usesDesktopCredentialStore() ? "Windows encrypts the API key in your private AppData folder so installed and portable launches can restore it automatically." : "The API key stays in memory for the current session unless you save it in the optional passphrase vault."}</p></section>
       <section class="card settings-card"><div class="section-title"><h2>Utilities & integrations</h2><span class="tag">Workspace tools</span></div><div class="settings-links">${utilities.map(item => `<button type="button" data-view-jump="${item.view}"><span>${item.icon}</span><div><strong>${item.title}</strong><small>${item.detail}</small></div><b>→</b></button>`).join("")}</div></section>
       <section class="card settings-card settings-data-card">
         <div class="section-title"><h2>Private data & backups</h2><span class="tag">${esc(workspaceStatusCopy())}</span></div>
@@ -808,6 +826,10 @@ function campaignConversation(campaign) {
 }
 function apiKeyVaultFields() {
   if (!supportsKeyVault()) return `<p class="field-help">Encrypted key storage is not available in this browser. The key will stay in memory only.</p>`;
+  if (usesDesktopCredentialStore()) {
+    const ready = Boolean(copilotToken);
+    return `<details class="ai-vault"><summary>${desktopApiKeySaved ? "API key protected by Windows" : "Save API key on this device"}</summary><div><p class="field-help">Saving AI settings protects the key with your Windows account and keeps it outside the portable executable. It will be restored automatically after restarts and updates.</p><div class="vault-actions">${ready ? `<span class="vault-ready">Ready</span>` : ""}<button class="secondary-button" type="button" data-save-ai-key>${desktopApiKeySaved ? "Replace saved key" : "Save API key securely"}</button>${desktopApiKeySaved ? `<button class="quiet-button" type="button" data-clear-ai-key>Clear saved key</button>` : ""}</div></div></details>`;
+  }
   const hasSavedKey = Boolean(savedKeyVault());
   const ready = Boolean(copilotToken);
   return `<details class="ai-vault" ${hasSavedKey && !ready ? "open" : ""}><summary>${ready ? "Saved API key ready for this app session" : hasSavedKey ? "Unlock saved API key" : "Save API key on this device"}</summary><div><p class="field-help">The key is encrypted in this browser with a passphrase you choose. The passphrase is never saved. Once unlocked, it stays available for this app session.</p><label>Vault passphrase<input name="vaultPassphrase" type="password" autocomplete="off" placeholder="At least 12 characters" /></label>${hasSavedKey ? `<div class="vault-actions">${ready ? `<span class="vault-ready">Ready</span>` : `<button class="secondary-button" type="button" data-unlock-ai-key>Unlock saved key</button>`}<button class="quiet-button" type="button" data-clear-ai-key>Clear saved key</button></div>` : ""}<label class="consent-check"><input name="rememberApiKey" type="checkbox" /> Remember the current API key in this encrypted vault</label></div></details>`;
@@ -822,9 +844,13 @@ async function saveAiSettings(form) {
   const model = String(data.get("model") || "").trim();
   const suppliedKey = String(data.get("apiKey") || "").trim();
   if (!endpoint || !model) { showToast("Add the API endpoint and model ID before saving AI settings."); return; }
-  if (suppliedKey) setCopilotToken(suppliedKey);
   try {
-    if (form.querySelector('[name="rememberApiKey"]')?.checked) {
+    if (suppliedKey && usesDesktopCredentialStore()) {
+      await saveApiKeyInVault(suppliedKey);
+    } else if (suppliedKey) {
+      setCopilotToken(suppliedKey);
+    }
+    if (!usesDesktopCredentialStore() && form.querySelector('[name="rememberApiKey"]')?.checked) {
       if (!copilotToken) throw new Error("Paste an API key or unlock the saved key first.");
       await persistApiKeyIfRequested(form, copilotToken);
     }
@@ -847,7 +873,7 @@ function copilotView(campaign) {
   return `${header("GM assistant", "PLANNING ROOM", "Move quickly when the table needs an answer, or slow down and shape a stronger session, arc, or campaign record.")}
     <div class="copilot-layout">
       <aside class="card copilot-context"><p class="eyebrow">ACTIVE CONTEXT</p><h2>${esc(campaign.title)}</h2><p>${esc(campaign.summary)}</p><div class="copilot-context-block"><small>Latest session</small><strong>${esc(campaign.nextSession.title)}</strong><span>${esc(campaign.nextSession.date)}</span></div><div class="copilot-context-block"><small>Open threads</small>${openQuests.length ? openQuests.map(quest => `<button type="button" data-open-entity data-entity-type="quest" data-entity-name="${esc(quest.title)}">${esc(quest.title)}</button>`).join("") : "<span>No active quests recorded.</span>"}</div><div class="copilot-context-block"><small>Future arcs</small>${activeArcs.length ? activeArcs.map(arc => `<span>${esc(arc.title)} · ${esc(arc.horizon || arc.status)}</span>`).join("") : "<span>No future arcs planned.</span>"}</div><div class="prompt-starters"><button type="button" data-copilot-prompt="Quick table mode: create a distinctive NPC I can portray immediately from the current campaign context. Ask only if one missing fact would materially change the result.">Make an NPC now</button><button type="button" data-copilot-prompt="Crafted prep mode: help me shape the next session, one consequential question at a time. When there is enough context, synthesize a complete playable plan with possible story directions.">Craft next session</button><button type="button" data-copilot-prompt="Audit my active plot threads. Identify which already have a clear narrative engine, then suggest an archetype or a few tropes only for the threads that lack one.">Audit story patterns</button></div></aside>
-      <section class="card copilot-chat"><div class="copilot-chat-head"><div><p class="eyebrow">ADAPTIVE CREATIVE PARTNER</p><h2>Ask, make, or pressure-test</h2></div><span class="tag">Quick + crafted</span></div><div class="message-list" id="copilotMessages">${messages.length ? messages.map(message => `<article class="copilot-message ${esc(message.role)}"><span>${message.role === "assistant" ? "GM ASSISTANT" : "YOU"}</span><p>${esc(message.content)}</p></article>`).join("") : `<div class="copilot-empty"><span>✺</span><h3>Name the kind of help you need.</h3><p>Ask for something table-ready now, or invite a deeper planning conversation. The assistant will match your pace and finish with usable material.</p></div>`}</div><form id="copilotForm" class="copilot-form"><textarea required name="message" rows="3" placeholder="Quick table answer, crafted prep, or a plan to pressure-test…"></textarea>${aiConnectionFields(copilot, "I understand the active campaign context and my request will be sent to this endpoint.")}<div class="copilot-submit"><small>Keys stay in memory unless you opt into the encrypted local vault.</small><button class="primary-button" type="submit">Send to assistant <span>→</span></button></div></form></section>
+      <section class="card copilot-chat"><div class="copilot-chat-head"><div><p class="eyebrow">ADAPTIVE CREATIVE PARTNER</p><h2>Ask, make, or pressure-test</h2></div><span class="tag">Quick + crafted</span></div><div class="message-list" id="copilotMessages">${messages.length ? messages.map(message => `<article class="copilot-message ${esc(message.role)}"><span>${message.role === "assistant" ? "GM ASSISTANT" : "YOU"}</span><p>${esc(message.content)}</p></article>`).join("") : `<div class="copilot-empty"><span>✺</span><h3>Name the kind of help you need.</h3><p>Ask for something table-ready now, or invite a deeper planning conversation. The assistant will match your pace and finish with usable material.</p></div>`}</div><form id="copilotForm" class="copilot-form"><textarea required name="message" rows="3" placeholder="Quick table answer, crafted prep, or a plan to pressure-test…"></textarea>${aiConnectionFields(copilot, "I understand the active campaign context and my request will be sent to this endpoint.")}<div class="copilot-submit"><small>${usesDesktopCredentialStore() ? "The saved key is protected by Windows and restored automatically." : "Keys stay in memory unless you opt into the encrypted local vault."}</small><button class="primary-button" type="submit">Send to assistant <span>→</span></button></div></form></section>
     </div>`;
 }
 function archivistView(campaign) {
@@ -1197,22 +1223,6 @@ async function askCopilot(form) {
   saveState(); render();
 }
 
-function openRecordModal(type) {
-  recordType = type;
-  const title = { session: "Plan a session", characters: "Add a character", quests: "Add a quest", locations: "Add a location", journal: "Write a journal entry" }[type];
-  document.querySelector("#recordTitle").textContent = title;
-  document.querySelector("#recordKicker").textContent = `${activeCampaign().title.toUpperCase()} / NEW`;
-  const fields = {
-    session: `<label>Session title<input required name="title" placeholder="The Name of This Session" /></label><div class="form-row"><label>Session number<input required name="number" type="number" min="1" value="${activeCampaign().sessions.length + 1}" /></label><label>Date<input required name="date" type="date" /></label></div><label>Prep or recap<textarea required name="description" rows="3" placeholder="The scenes, discoveries, and trouble waiting ahead."></textarea></label>`,
-    characters: `<label>Character name<input required name="title" placeholder="Name" /></label><div class="form-row"><label>Role<select name="role"><option>PC · Adventurer</option><option>NPC · Ally</option><option>NPC · Antagonist</option><option>NPC · Contact</option></select></label><label>Tags<input name="tags" placeholder="ally, secret" /></label></div><label>Notes<textarea name="description" rows="3" placeholder="What should you remember about them?"></textarea></label>`,
-    quests: `<label>Quest title<input required name="title" placeholder="What needs doing?" /></label><div class="form-row"><label>Status<select name="status"><option>Active</option><option>Blocked</option><option>Done</option></select></label><label>Tags<input name="tags" placeholder="main, personal" /></label></div><label>Current objective<textarea name="description" rows="3" placeholder="The next meaningful step."></textarea></label>`,
-    locations: `<label>Location name<input required name="title" placeholder="The place's name" /></label><label>Tags<input name="tags" placeholder="city, faction, dungeon" /></label><label>Notes<textarea name="description" rows="3" placeholder="What makes this place alive?"></textarea></label>`,
-    journal: `<label>Entry title<input required name="title" placeholder="A secret worth recording" /></label><div class="form-row"><label>Visibility<select name="permission"><option>GM only</option><option>Player safe</option></select></label><label>Tags<input name="tags" placeholder="lore, faction" /></label></div><label>Entry<textarea required name="description" rows="5" placeholder="Preserve the important bit."></textarea></label>`
-  }[type];
-  document.querySelector("#recordFields").innerHTML = fields;
-  recordModal.showModal();
-}
-
 let pendingRecordDraft = null;
 function selectedOption(value, expected) { return value === expected ? " selected" : ""; }
 function recordFields(type, values = {}) {
@@ -1527,6 +1537,27 @@ function applySuggestedInternalLinks(button) {
     insertTokenIntoField(field, entryLinkToken(entry), input.dataset.linkAnchor || "");
   });
   if (checked.length) showToast(`${checked.length} internal link${checked.length === 1 ? "" : "s"} inserted.`);
+}
+function handleInternalLinkTools(event, modal) {
+  const suggest = event.target.closest("[data-suggest-internal-links]");
+  if (suggest) {
+    suggestInternalLinks(suggest, modal);
+    return true;
+  }
+  const apply = event.target.closest("[data-apply-suggested-links]");
+  if (apply) {
+    applySuggestedInternalLinks(apply);
+    return true;
+  }
+  const button = event.target.closest("[data-insert-internal-link], [data-insert-journal-link]");
+  if (!button) return false;
+  const field = modal.querySelector('textarea[name="description"]');
+  if (!field) return true;
+  const entry = button.dataset.insertInternalLink
+    ? decodeEntryRef(button.dataset.insertInternalLink)
+    : { type: "journal", name: button.dataset.insertJournalLink };
+  insertTokenIntoField(field, entryLinkToken(entry));
+  return true;
 }
 function scoutText(value, limit = 320) { return String(value || "").replace(/\s+/g, " ").trim().slice(0, limit); }
 function storyScoutContext(campaign) {
@@ -2203,9 +2234,13 @@ document.addEventListener("click", async event => {
   event.preventDefault();
   const vault = (unlock || clear).closest(".ai-vault");
   if (clear) {
-    clearApiKeyVault();
-    if (vault) vault.outerHTML = apiKeyVaultFields();
-    showToast("The saved API key was cleared from this device.");
+    try {
+      await clearApiKeyVault();
+      if (vault) vault.outerHTML = apiKeyVaultFields();
+      showToast("The saved API key was cleared from this device.");
+    } catch (error) {
+      showToast(error.message || "The saved API key could not be cleared.");
+    }
     return;
   }
   const form = unlock.closest("form");
@@ -2242,16 +2277,7 @@ root.addEventListener("click", event => {
   aiGuideModal.showModal();
 });
 recordModal.addEventListener("click", event => {
-  const suggest = event.target.closest("[data-suggest-internal-links]");
-  if (suggest) { suggestInternalLinks(suggest, recordModal); return; }
-  const apply = event.target.closest("[data-apply-suggested-links]");
-  if (apply) { applySuggestedInternalLinks(apply); return; }
-  const button = event.target.closest("[data-insert-internal-link], [data-insert-journal-link]");
-  if (!button) return;
-  const field = recordModal.querySelector('textarea[name="description"]');
-  if (!field) return;
-  const entry = button.dataset.insertInternalLink ? decodeEntryRef(button.dataset.insertInternalLink) : { type: "journal", name: button.dataset.insertJournalLink };
-  insertTokenIntoField(field, entryLinkToken(entry));
+  handleInternalLinkTools(event, recordModal);
 });
 storyScoutModal.addEventListener("click", event => {
   if (event.target.closest("[data-close-story-scout]")) { storyScoutState = null; storyScoutModal.close(); return; }
@@ -2270,16 +2296,7 @@ storyScoutModal.addEventListener("submit", event => {
 storyScoutModal.addEventListener("close", () => { storyScoutState = null; });
 revisionModal.addEventListener("click", event => {
   if (event.target.closest("[data-close-revision]")) { revisionState = null; revisionModal.close(); return; }
-  const suggest = event.target.closest("[data-suggest-internal-links]");
-  if (suggest) { suggestInternalLinks(suggest, revisionModal); return; }
-  const apply = event.target.closest("[data-apply-suggested-links]");
-  if (apply) { applySuggestedInternalLinks(apply); return; }
-  const linkButton = event.target.closest("[data-insert-internal-link], [data-insert-journal-link]");
-  if (!linkButton) return;
-  const field = revisionModal.querySelector('textarea[name="description"]');
-  if (!field) return;
-  const entry = linkButton.dataset.insertInternalLink ? decodeEntryRef(linkButton.dataset.insertInternalLink) : { type: "journal", name: linkButton.dataset.insertJournalLink };
-  insertTokenIntoField(field, entryLinkToken(entry));
+  handleInternalLinkTools(event, revisionModal);
 });
 revisionModal.addEventListener("submit", event => {
   event.preventDefault();
@@ -2289,18 +2306,7 @@ revisionModal.addEventListener("submit", event => {
 revisionModal.addEventListener("close", () => { revisionState = null; });
 aiGuideModal.addEventListener("click", event => {
   if (event.target.closest("[data-retry-guide-draft]")) { delete guideState.draftError; finishGuideDraft(); return; }
-  const suggest = event.target.closest("[data-suggest-internal-links]");
-  if (suggest) { suggestInternalLinks(suggest, aiGuideModal); return; }
-  const apply = event.target.closest("[data-apply-suggested-links]");
-  if (apply) { applySuggestedInternalLinks(apply); return; }
-  const linkButton = event.target.closest("[data-insert-internal-link], [data-insert-journal-link]");
-  if (linkButton) {
-    const field = aiGuideModal.querySelector('textarea[name="description"]');
-    if (!field) return;
-    const entry = linkButton.dataset.insertInternalLink ? decodeEntryRef(linkButton.dataset.insertInternalLink) : { type: "journal", name: linkButton.dataset.insertJournalLink };
-    insertTokenIntoField(field, entryLinkToken(entry));
-    return;
-  }
+  if (handleInternalLinkTools(event, aiGuideModal)) return;
   const close = event.target.closest("[data-close-ai-guide]");
   if (!close) return;
   guideState = null;
@@ -2322,30 +2328,17 @@ aiGuideModal.addEventListener("submit", event => {
     const data = new FormData(event.target);
     const type = guideState.type;
     const campaign = activeCampaign();
-    const title = String(data.get("title") || "").trim();
-    const description = String(data.get("description") || "").trim();
-    const tags = String(data.get("tags") || "").split(",").map(tag => tag.trim()).filter(Boolean);
-    const directions = String(data.get("directions") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean);
-    const archetype = String(data.get("archetype") || "").trim();
-    const tropes = String(data.get("tropes") || "").split(",").map(item => item.trim()).filter(Boolean);
-    const threadGaps = String(data.get("threadGaps") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean);
-    if (!title) return;
-    if (type === "session") {
-      const date = data.get("date") ? new Date(`${data.get("date")}T00:00:00`).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : "TBD";
-      campaign.sessions.forEach(session => session.upcoming = false);
-      campaign.sessions.unshift({ number: data.get("number"), date, title, recap: description, tags, directions, archetype, tropes, threadGaps, upcoming: true, source: "guided-creation" });
-      campaign.nextSession = { number: data.get("number"), date: date === "TBD" ? date : date.split(",")[0], title, prep: "Guided session plan ready" };
-    }
-    if (type === "characters") campaign.characters.unshift({ name: title, role: String(data.get("role") || "NPC · Ally"), description, tags, source: "guided-creation" });
-    if (type === "quests") campaign.quests.unshift({ title, status: String(data.get("status") || "Active"), detail: description, tags, source: "guided-creation" });
-    if (type === "locations") campaign.locations.unshift({ title, detail: description, tags, source: "guided-creation" });
-    if (type === "journal") campaign.journal.unshift({ title, body: description, permission: String(data.get("permission") || "GM only"), tags, source: "guided-creation" });
     if (type === "arc") {
+      const title = String(data.get("title") || "").trim();
       const tension = String(data.get("tension") || "").trim();
       const nextStep = String(data.get("nextStep") || "").trim();
-      if (!tension || !nextStep) { showToast("An arc needs a central tension and next decision."); return; }
+      if (!title || !tension || !nextStep) { showToast("An arc needs a title, central tension, and next decision."); return; }
       const related = data.getAll("related").map(decodeEntryRef).filter(entry => findCampaignEntry(campaign, entry));
-      campaign.arcs.unshift({ id: `arc-${Date.now()}-${Math.random().toString(16).slice(2)}`, title, status: String(data.get("status") || "Planned"), horizon: String(data.get("horizon") || "").trim(), tension, change: String(data.get("change") || "").trim(), nextStep, milestones: String(data.get("milestones") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean), related, directions, archetype, tropes, threadGaps, source: "guided-creation" });
+      campaign.arcs.unshift({ id: `arc-${Date.now()}-${Math.random().toString(16).slice(2)}`, title, status: String(data.get("status") || "Planned"), horizon: String(data.get("horizon") || "").trim(), tension, change: String(data.get("change") || "").trim(), nextStep, milestones: String(data.get("milestones") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean), related, directions: String(data.get("directions") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean), archetype: String(data.get("archetype") || "").trim(), tropes: String(data.get("tropes") || "").split(",").map(item => item.trim()).filter(Boolean), threadGaps: String(data.get("threadGaps") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean), source: "guided-creation" });
+    } else {
+      const values = recordValuesFromForm(type, data);
+      if (!values.title) return;
+      addRecordValues(campaign, type, values, "guided-creation");
     }
     saveState();
     guideState = null;
@@ -2359,6 +2352,7 @@ aiGuideModal.addEventListener("close", () => { guideState = null; });
 recordModal.addEventListener("close", () => { recordEditing = null; });
 
 initializeDesktopWorkspace();
+initializeDesktopApiKey();
 initializeDesktopUpdates();
 initializeArchivistBridge();
 render();

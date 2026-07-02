@@ -502,7 +502,7 @@ root.addEventListener("click", event => {
       return;
     }
     saveApiKeyInVault(key, passphrase).then(() => {
-      showToast("API key saved in this device's encrypted vault.");
+      showToast(usesDesktopCredentialStore() ? "API key protected by Windows and saved for future launches." : "API key saved in this device's encrypted vault.");
       render();
     }).catch(error => showToast("The API key was not saved: " + error.message));
   }
