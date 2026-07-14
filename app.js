@@ -81,6 +81,7 @@ let state = loadState();
 hydrateCampaignState();
 let currentView = "dashboard";
 let activeFilter = "All";
+let characterDirectoryMode = "directory";
 let recordType = null;
 let detailTarget = null;
 let foundryToken = "";
@@ -452,9 +453,34 @@ function recordView(type, campaign) {
   }[type];
   const filters = type === "characters" ? ["All", "PC", "NPC"] : type === "quests" ? ["All", "Active", "Blocked", "Done"] : ["All", "location", "faction", "item"];
   const records = settings.list.filter(item => activeFilter === "All" || (item.tags || []).some(tag => tag.toLowerCase() === activeFilter.toLowerCase()) || (item.role || "").includes(activeFilter) || item.status === activeFilter);
+  const directoryModes = type === "characters" ? `<div class="directory-mode" role="group" aria-label="Character organization"><button class="filter-button ${characterDirectoryMode === "directory" ? "active" : ""}" type="button" data-character-directory="directory">Directory</button><button class="filter-button ${characterDirectoryMode === "factions" ? "active" : ""}" type="button" data-character-directory="factions">By faction</button></div>` : "";
+  const recordList = type === "characters" && characterDirectoryMode === "factions" ? factionCharacterGroups(campaign, records) : `<div class="records">${records.length ? records.map(item => recordRow(type, item)).join("") : `<div class="empty-state"><h2>Nothing in this chapter yet.</h2><p>Add a record to give it a place in the story.</p></div>`}</div>`;
   return `${header(settings.title, settings.label, settings.description, `<button class="primary-button" data-open-record="${type}">${settings.add} <span>＋</span></button>`)}
-    <div class="list-toolbar"><div class="filter-group">${filters.map(filter => `<button class="filter-button ${filter === "All" ? "active" : ""}" data-filter="${filter}">${filter === "PC" ? "PCs" : filter === "NPC" ? "NPCs" : esc(filter)}</button>`).join("")}</div><input class="inline-search" data-list-search="${type}" placeholder="Filter ${settings.title.toLowerCase()}…" /></div>
-    <div class="records">${records.length ? records.map(item => recordRow(type, item)).join("") : `<div class="empty-state"><h2>Nothing in this chapter yet.</h2><p>Add a record to give it a place in the story.</p></div>`}</div>`;
+    <div class="list-toolbar"><div class="list-toolbar-groups"><div class="filter-group">${filters.map(filter => `<button class="filter-button ${filter === activeFilter ? "active" : ""}" data-filter="${filter}">${filter === "PC" ? "PCs" : filter === "NPC" ? "NPCs" : esc(filter)}</button>`).join("")}</div>${directoryModes}</div><input class="inline-search" data-list-search="${type}" placeholder="Filter ${settings.title.toLowerCase()}…" /></div>
+    ${recordList}`;
+}
+function characterFactions(character) {
+  return Array.isArray(character.factions) ? character.factions.map(value => String(value).trim()).filter(Boolean) : [];
+}
+function factionCharacterGroups(campaign, records) {
+  const pcs = records.filter(character => String(character.role || "").startsWith("PC"));
+  const npcs = records.filter(character => !String(character.role || "").startsWith("PC"));
+  const groups = new Map();
+  npcs.forEach(character => {
+    const factions = characterFactions(character);
+    (factions.length ? factions : ["Unaffiliated"]).forEach(faction => {
+      if (!groups.has(faction)) groups.set(faction, []);
+      groups.get(faction).push(character);
+    });
+  });
+  const factionEntries = new Map(campaign.locations.filter(item => String(item.tags?.[0] || "").toLowerCase() === "faction").map(item => [String(item.title).toLocaleLowerCase(), item]));
+  const sections = [...groups.entries()].sort(([left], [right]) => left === "Unaffiliated" ? 1 : right === "Unaffiliated" ? -1 : left.localeCompare(right)).map(([faction, members]) => {
+    const entry = factionEntries.get(faction.toLocaleLowerCase());
+    const title = entry ? `<button type="button" data-open-entity data-entity-type="location" data-entity-name="${esc(entry.title)}">${esc(faction)} <span>→</span></button>` : `<h2>${esc(faction)}</h2>`;
+    return `<section class="faction-character-group" data-character-group><div class="faction-character-heading">${title}<span class="tag">${members.length} NPC${members.length === 1 ? "" : "s"}</span></div><div class="records">${members.map(item => recordRow("characters", item)).join("")}</div></section>`;
+  }).join("");
+  const pcSection = pcs.length ? `<section class="faction-character-group" data-character-group><div class="faction-character-heading"><h2>Player characters</h2><span class="tag">${pcs.length} PC${pcs.length === 1 ? "" : "s"}</span></div><div class="records">${pcs.map(item => recordRow("characters", item)).join("")}</div></section>` : "";
+  return sections || pcSection ? `<div class="faction-character-groups">${sections}${pcSection}</div>` : `<div class="empty-state"><h2>No matching characters.</h2><p>Change the filter or add a character to build the cast.</p></div>`;
 }
 function recordRow(type, item) {
   const title = item.name || item.title;
@@ -577,6 +603,11 @@ function structuredSections(type, source) {
   }
   return "";
 }
+function characterTableNotes(item) {
+  const factionTags = tagSection("Factions", characterFactions(item), "faction-tag");
+  const notes = `${textSection("Voice & accent", item.voice)}${textSection("Quirks", item.quirks)}${textSection("Relationships", item.relationships)}${textSection("PF2e stat block", item.statBlock, "stat-block-notes")}`;
+  return factionTags || notes ? `<section class="table-notes"><div class="table-notes-heading"><p class="eyebrow">AT THE TABLE</p><h3>GM portrayal notes</h3></div>${factionTags}${notes}</section>` : "";
+}
 function entityDetailView(campaign) {
   if (!detailTarget) return `<div class="empty-state"><h2>Nothing is selected.</h2><p>Choose a campaign record to open its full entry.</p></div>`;
   const definitions = {
@@ -598,7 +629,7 @@ function entityDetailView(campaign) {
     <article class="card entity-detail">
       <div class="entity-detail-top"><div class="record-emblem entity-emblem">${esc(initials(definition.title(item)))}</div><div><p class="eyebrow">${definition.label}</p><h2>${esc(definition.title(item))}</h2><p>${renderJournalContent(campaign, overview)}</p></div></div>
       <div class="detail-facts">${fields}</div>
-       <div class="detail-sections">${connectionDetailSection(campaign, { type: detailTarget.type, name: definition.title(item) })}${structuredSections(detailTarget.type, source)}</div>
+       <div class="detail-sections">${detailTarget.type === "character" ? characterTableNotes(item) : ""}${connectionDetailSection(campaign, { type: detailTarget.type, name: definition.title(item) })}${structuredSections(detailTarget.type, source)}</div>
       <div class="detail-actions">${characterAction}<button class="secondary-button" data-view-jump="${definition.back}">Return to directory</button></div>
     </article>`;
 }
@@ -1238,7 +1269,14 @@ function recordFields(type, values = {}) {
     const compass = `<fieldset class="planning-insights-fields"><legend>Story compass</legend><p class="field-help">These are planning possibilities, never required player outcomes.</p><label>Potential directions <span class="field-help">One per line.</span><textarea name="directions" rows="4">${esc(directions)}</textarea></label><div class="form-row"><label>Narrative archetype<textarea name="archetype" rows="2" placeholder="A useful pattern, if the thread needs one">${esc(values.archetype || "")}</textarea></label><label>Tropes to use or subvert<textarea name="tropes" rows="2" placeholder="false ally, ticking clock">${esc(tropes)}</textarea></label></div><label>Threads still missing a story engine <span class="field-help">One per line.</span><textarea name="threadGaps" rows="3">${esc(gaps)}</textarea></label></fieldset>`;
     return `<label>Session title<input required name="title" value="${title}" placeholder="The Name of This Session" /></label><div class="form-row"><label>Session number<input required name="number" type="number" min="1" value="${esc(values.number || activeCampaign().sessions.length + 1)}" /></label><label>Date<input name="date" type="date" value="${esc(values.date || "")}" /></label></div><label>Playable session plan<textarea required name="description" rows="10" placeholder="Opening situation, pressures, discoveries, meaningful choices, and useful contingencies.">${description}</textarea></label>${linkTools}<label>Tags<input name="tags" value="${esc(tags)}" placeholder="mystery, faction" /></label>${compass}`;
   }
-  if (type === "characters") return `<label>Character name<input required name="title" value="${title}" placeholder="Name" /></label><div class="form-row"><label>Role<select name="role"><option${selectedOption(values.role || "NPC · Ally", "PC · Adventurer")}>PC · Adventurer</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Ally")}>NPC · Ally</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Antagonist")}>NPC · Antagonist</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Contact")}>NPC · Contact</option></select></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="ally, secret" /></label></div><label>Notes<textarea required name="description" rows="5" placeholder="What should you remember about them?">${description}</textarea></label>${linkTools}`;
+  if (type === "characters") {
+    const factions = Array.isArray(values.factions) ? values.factions.join(", ") : values.factions || "";
+    const knownFactions = activeCampaign().locations.filter(item => String(item.tags?.[0] || "").toLowerCase() === "faction").map(item => item.title).sort((left, right) => left.localeCompare(right));
+    const factionOptions = knownFactions.map(name => `<option value="${esc(name)}"></option>`).join("");
+    const pf2eEnabled = enabledSystems(activeCampaign()).some(system => system.id === "pf2e");
+    const statBlockField = pf2eEnabled || values.statBlock ? `<label>PF2e stat block <span class="field-help">Optional; use this for an NPC who may enter encounter mode.</span><textarea name="statBlock" rows="7" placeholder="Level, traits, Perception, skills, defenses, HP, Speed, Strikes, and special abilities.">${esc(values.statBlock || "")}</textarea></label>` : "";
+    return `<label>Character name<input required name="title" value="${title}" placeholder="Name" /></label><div class="form-row"><label>Role<select name="role"><option${selectedOption(values.role || "NPC · Ally", "PC · Adventurer")}>PC · Adventurer</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Ally")}>NPC · Ally</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Antagonist")}>NPC · Antagonist</option><option${selectedOption(values.role || "NPC · Ally", "NPC · Contact")}>NPC · Contact</option></select></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="ally, secret" /></label></div><label>Factions <span class="field-help">Separate multiple affiliations with commas.</span><input name="factions" list="characterFactionOptions" value="${esc(factions)}" placeholder="The Watch, Ash Court" /></label><datalist id="characterFactionOptions">${factionOptions}</datalist><label>Overview<textarea required name="description" rows="5" placeholder="Who are they and what matters about them?">${description}</textarea></label><fieldset class="table-notes-fields"><legend>At-the-table GM notes</legend><p class="field-help">Fast portrayal cues kept with this character record.</p><div class="form-row"><label>Accent / voice<textarea name="voice" rows="3" placeholder="Tempo, pitch, vocabulary, or a touchstone">${esc(values.voice || "")}</textarea></label><label>Quirks<textarea name="quirks" rows="3" placeholder="Habits, tells, repeated gestures">${esc(values.quirks || "")}</textarea></label></div><label>Relationships<textarea name="relationships" rows="4" placeholder="Who matters to them, and what is the pressure between them?">${esc(values.relationships || "")}</textarea></label>${statBlockField}</fieldset>${linkTools}`;
+  }
   if (type === "quests") return `<label>Quest title<input required name="title" value="${title}" placeholder="What needs doing?" /></label><div class="form-row"><label>Status<select name="status"><option${selectedOption(values.status || "Active", "Active")}>Active</option><option${selectedOption(values.status || "Active", "Blocked")}>Blocked</option><option${selectedOption(values.status || "Active", "Done")}>Done</option></select></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="main, personal" /></label></div><label>Current objective<textarea required name="description" rows="5" placeholder="The next meaningful step.">${description}</textarea></label>${linkTools}`;
   if (type === "locations") return `<label>Location name<input required name="title" value="${title}" placeholder="The place's name" /></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="city, faction, dungeon" /></label><label>Notes<textarea required name="description" rows="5" placeholder="What makes this place alive?">${description}</textarea></label>${linkTools}`;
   return `<label>Entry title<input required name="title" value="${title}" placeholder="A secret worth recording" /></label><div class="form-row"><label>Visibility<select name="permission"><option${selectedOption(values.permission || "GM only", "GM only")}>GM only</option><option${selectedOption(values.permission || "GM only", "Player safe")}>Player safe</option></select></label><label>Tags<input name="tags" value="${esc(tags)}" placeholder="lore, faction" /></label></div><label>Entry<textarea required name="description" rows="7" placeholder="Preserve the important bit. Use [[World: Cinderfall]] to link another record.">${description}</textarea></label>${linkTools}`;
@@ -1269,7 +1307,7 @@ function findRecordItem(campaign, type, name) {
 function recordValuesFromItem(type, item) {
   if (!item) return {};
   if (type === "session") return { title: item.title, number: item.number, date: dateInputValue(item.date), description: item.recap, tags: item.tags || [], directions: item.directions || [], archetype: item.archetype || "", tropes: item.tropes || [], threadGaps: item.threadGaps || [] };
-  if (type === "characters") return { title: item.name, role: item.role, description: item.description, tags: item.tags || [] };
+  if (type === "characters") return { title: item.name, role: item.role, description: item.description, tags: item.tags || [], factions: characterFactions(item), voice: item.voice || "", quirks: item.quirks || "", relationships: item.relationships || "", statBlock: item.statBlock || "" };
   if (type === "quests") return { title: item.title, status: item.status, description: item.detail, tags: item.tags || [] };
   if (type === "locations") return { title: item.title, description: item.detail, tags: item.tags || [] };
   return { title: item.title, description: item.body || item.detail || "", permission: item.permission || "GM only", tags: item.tags || [] };
@@ -1284,7 +1322,7 @@ function recordValuesFromForm(type, form, existing = null) {
   const threadGaps = String(data.get("threadGaps") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean);
   const common = { title, description, tags };
   if (type === "session") return { ...common, number: data.get("number"), date: displayDateFromInput(data.get("date"), existing?.date), directions, archetype: String(data.get("archetype") || "").trim(), tropes, threadGaps };
-  if (type === "characters") return { ...common, role: String(data.get("role") || "NPC · Ally") };
+  if (type === "characters") return { ...common, role: String(data.get("role") || "NPC · Ally"), factions: String(data.get("factions") || "").split(",").map(value => value.trim()).filter(Boolean), voice: String(data.get("voice") || "").trim(), quirks: String(data.get("quirks") || "").trim(), relationships: String(data.get("relationships") || "").trim(), statBlock: String(data.get("statBlock") || "").trim() };
   if (type === "quests") return { ...common, status: String(data.get("status") || "Active") };
   if (type === "journal") return { ...common, permission: String(data.get("permission") || "GM only") };
   return common;
@@ -1296,7 +1334,7 @@ function updateTextReferences(campaign, oldEntry, newEntry) {
   if (oldEntry.type === "journal") replacements.push([`[[${oldEntry.name}]]`, `[[${newEntry.name}]]`]);
   const replaceTokens = text => replacements.reduce((value, [from, to]) => value.replace(new RegExp(escapeRegExp(from), "g"), to), String(text || ""));
   campaign.sessions.forEach(item => { item.recap = replaceTokens(item.recap); });
-  campaign.characters.forEach(item => { item.description = replaceTokens(item.description); });
+  campaign.characters.forEach(item => { item.description = replaceTokens(item.description); item.relationships = replaceTokens(item.relationships); });
   campaign.quests.forEach(item => { item.detail = replaceTokens(item.detail); });
   campaign.locations.forEach(item => { item.detail = replaceTokens(item.detail); });
   campaign.journal.forEach(item => { item.body = replaceTokens(item.body); });
@@ -1327,7 +1365,7 @@ function applyRecordValues(campaign, type, item, values, source = "manual") {
     item.threadGaps = values.threadGaps || [];
     if (item.upcoming) campaign.nextSession = { number: item.number, date: item.date === "TBD" ? item.date : String(item.date).split(",")[0], title: item.title, prep: campaign.nextSession?.prep || "Session in progress" };
   }
-  if (type === "characters") { item.name = values.title; item.role = values.role; item.description = values.description || ""; item.tags = values.tags; }
+  if (type === "characters") { item.name = values.title; item.role = values.role; item.description = values.description || ""; item.tags = values.tags; item.factions = values.factions || []; item.voice = values.voice || ""; item.quirks = values.quirks || ""; item.relationships = values.relationships || ""; item.statBlock = values.statBlock || ""; }
   if (type === "quests") { item.title = values.title; item.status = values.status; item.detail = values.description || ""; item.tags = values.tags; }
   if (type === "locations") { item.title = values.title; item.detail = values.description || ""; item.tags = values.tags; }
   if (type === "journal") { item.title = values.title; item.body = values.description || ""; item.detail = item.body; item.permission = values.permission || "GM only"; item.tags = values.tags; }
@@ -1336,7 +1374,7 @@ function applyRecordValues(campaign, type, item, values, source = "manual") {
   if (source === "manual-edit") {
     const editable = type === "session"
       ? ["title", "number", "date", "recap", "tags", "directions", "archetype", "tropes", "threadGaps", "upcoming"]
-      : type === "characters" ? ["name", "role", "description", "tags"]
+      : type === "characters" ? ["name", "role", "description", "tags", "factions", "voice", "quirks", "relationships", "statBlock"]
         : type === "quests" ? ["title", "status", "detail", "tags"]
           : type === "locations" ? ["title", "detail", "tags"]
             : ["title", "body", "permission", "tags"];
@@ -1354,7 +1392,7 @@ function addRecordValues(campaign, type, values, source = "manual") {
     campaign.nextSession = { number: item.number, date: item.date === "TBD" ? item.date : String(item.date).split(",")[0], title: item.title, prep: source === "guided-creation" ? "Guided session plan ready" : "New session in the works" };
     return item;
   }
-  if (type === "characters") { const item = { name: values.title, role: values.role, description: values.description, tags: values.tags, source }; campaign.characters.unshift(item); return item; }
+  if (type === "characters") { const item = { name: values.title, role: values.role, description: values.description, tags: values.tags, factions: values.factions || [], voice: values.voice || "", quirks: values.quirks || "", relationships: values.relationships || "", statBlock: values.statBlock || "", source }; campaign.characters.unshift(item); return item; }
   if (type === "quests") { const item = { title: values.title, status: values.status, detail: values.description, tags: values.tags, source }; campaign.quests.unshift(item); return item; }
   if (type === "locations") { const item = { title: values.title, detail: values.description, tags: values.tags, source }; campaign.locations.unshift(item); return item; }
   const item = { title: values.title, body: values.description, permission: values.permission, tags: values.tags, source };
@@ -1881,7 +1919,7 @@ function guideDraftSystem(campaign, guide) {
   const formats = {
     session: '{"title":"","number":1,"date":"YYYY-MM-DD or empty","description":"","tags":[""],"directions":[""],"archetype":"","tropes":[""],"threadGaps":[""]}',
     arc: '{"title":"","status":"Planned","horizon":"","tension":"","change":"","nextStep":"","milestones":[""],"related":[{"type":"quest","name":"Exact existing record name"}],"directions":[""],"archetype":"","tropes":[""],"threadGaps":[""]}',
-    characters: '{"title":"","role":"NPC · Ally","description":"","tags":[""]}',
+    characters: '{"title":"","role":"NPC · Ally","description":"","tags":[""],"factions":[""],"voice":"","quirks":"","relationships":"","statBlock":""}',
     quests: '{"title":"","status":"Active","description":"","tags":[""]}',
     locations: '{"title":"","description":"","tags":[""]}',
     journal: '{"title":"","permission":"GM only","description":"","tags":[""]}'
@@ -2020,7 +2058,7 @@ function openRecordRevisionModal(type, name) {
 function recordRevisionSystem(campaign, revision, newInfo) {
   const formats = {
     session: '{"title":"","number":1,"date":"YYYY-MM-DD or empty","description":"","tags":[""],"directions":[""],"archetype":"","tropes":[""],"threadGaps":[""]}',
-    characters: '{"title":"","role":"NPC · Ally","description":"","tags":[""]}',
+    characters: '{"title":"","role":"NPC · Ally","description":"","tags":[""],"factions":[""],"voice":"","quirks":"","relationships":"","statBlock":""}',
     quests: '{"title":"","status":"Active","description":"","tags":[""]}',
     locations: '{"title":"","description":"","tags":[""]}',
     journal: '{"title":"","permission":"GM only","description":"","tags":[""]}'
@@ -2123,6 +2161,7 @@ root.addEventListener("click", event => {
   if (event.target.closest("[data-refresh-snapshot]")) { window.location.reload(); return; }
   const viewButton = event.target.closest("[data-view-jump]"); if (viewButton) { currentView = viewButton.dataset.viewJump; activeFilter = "All"; render(); return; }
   const recordButton = event.target.closest("[data-open-record]"); if (recordButton) { openRecordModal(recordButton.dataset.openRecord); return; }
+  const directoryMode = event.target.closest("[data-character-directory]"); if (directoryMode) { characterDirectoryMode = directoryMode.dataset.characterDirectory; render(); return; }
   const filter = event.target.closest("[data-filter]"); if (filter) { activeFilter = filter.dataset.filter; root.querySelectorAll("[data-filter]").forEach(b => b.classList.toggle("active", b === filter)); render(); return; }
   const check = event.target.closest("[data-check-index]"); if (check) { const item = activeCampaign().checklist[Number(check.dataset.checkIndex)]; item.done = !item.done; saveState(); render(); return; }
   if (event.target.closest("[data-toggle-checklist]")) showToast("Checklist changes save automatically.");
@@ -2134,7 +2173,7 @@ root.addEventListener("keydown", event => {
   if (!record) return;
   event.preventDefault(); detailTarget = { type: record.dataset.entityType, name: record.dataset.entityName }; currentView = "detail"; render();
 });
-root.addEventListener("input", event => { const input = event.target.closest("[data-list-search]"); if (!input) return; const term = input.value.trim().toLowerCase(); root.querySelectorAll(".record").forEach(record => record.style.display = record.innerText.toLowerCase().includes(term) ? "grid" : "none"); });
+root.addEventListener("input", event => { const input = event.target.closest("[data-list-search]"); if (!input) return; const term = input.value.trim().toLowerCase(); root.querySelectorAll(".record").forEach(record => record.style.display = record.innerText.toLowerCase().includes(term) ? "grid" : "none"); root.querySelectorAll("[data-character-group]").forEach(group => group.style.display = [...group.querySelectorAll(".record")].some(record => record.style.display !== "none") ? "grid" : "none"); });
 root.addEventListener("submit", event => {
   if (event.target.matches("#desktopUpdateForm")) { event.preventDefault(); saveDesktopUpdateSettings(event.target); return; }
   if (event.target.matches("#aiSettingsForm")) { event.preventDefault(); saveAiSettings(event.target); return; }
@@ -2217,7 +2256,7 @@ document.querySelector("#arcForm").addEventListener("submit", event => {
 document.querySelector("#searchButton").addEventListener("click", () => { searchModal.showModal(); setTimeout(() => document.querySelector("#searchInput").focus(), 20); });
 document.querySelector("#searchInput").addEventListener("input", event => {
   const q = event.target.value.trim().toLowerCase(); const container = document.querySelector("#searchResults"); if (!q) { container.innerHTML = `<p class="empty-copy">Start typing to search the living record.</p>`; return; }
-  const campaign = activeCampaign(); const things = [...campaign.characters.map(x => ({ type: "Character", title: x.name, body: `${x.role} ${x.description}` })), ...campaign.quests.map(x => ({ type: "Quest", title: x.title, body: `${x.detail} ${x.tags.join(" ")}` })), ...campaign.locations.map(x => ({ type: "World", title: x.title, body: `${x.detail} ${x.tags.join(" ")}` })), ...campaign.journal.map(x => ({ type: "Journal", title: x.title, body: `${x.body} ${x.tags.join(" ")}` }))].filter(item => `${item.title} ${item.body}`.toLowerCase().includes(q)).slice(0, 6);
+  const campaign = activeCampaign(); const things = [...campaign.characters.map(x => ({ type: "Character", title: x.name, body: `${x.role} ${x.description} ${characterFactions(x).join(" ")} ${x.voice || ""} ${x.quirks || ""} ${x.relationships || ""} ${x.statBlock || ""}` })), ...campaign.quests.map(x => ({ type: "Quest", title: x.title, body: `${x.detail} ${x.tags.join(" ")}` })), ...campaign.locations.map(x => ({ type: "World", title: x.title, body: `${x.detail} ${x.tags.join(" ")}` })), ...campaign.journal.map(x => ({ type: "Journal", title: x.title, body: `${x.body} ${x.tags.join(" ")}` }))].filter(item => `${item.title} ${item.body}`.toLowerCase().includes(q)).slice(0, 6);
   container.innerHTML = things.length ? things.map(item => { const entityType = item.type === "Character" ? "character" : item.type === "Quest" ? "quest" : item.type === "World" ? "location" : "journal"; return `<button class="search-result" type="button" data-open-entity data-entity-type="${entityType}" data-entity-name="${esc(item.title)}"><span>${item.type.toUpperCase()}</span><strong>${esc(item.title)}</strong></button>`; }).join("") : `<p class="empty-copy">No trace of that in this campaign.</p>`;
 });
 document.querySelector("#searchResults").addEventListener("click", event => {

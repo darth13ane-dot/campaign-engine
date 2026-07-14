@@ -51,7 +51,12 @@ test("merges matching Archivist IDs and preserves local field overrides", () => 
         name: "Captain Vale",
         role: "NPC · Ally",
         description: "My local version",
-        tags: ["local"]
+        tags: ["local"],
+        factions: ["The Watch"],
+        voice: "Measured and quiet",
+        quirks: "Counts exits",
+        relationships: "Protective of Mira",
+        statBlock: "Creature 5\nPerception +12"
       }
     }]
   });
@@ -67,6 +72,11 @@ test("merges matching Archivist IDs and preserves local field overrides", () => 
   assert.equal(result.campaigns[0].characters[0].name, "Captain Vale");
   assert.equal(result.campaigns[0].characters[0].description, "My local version");
   assert.deepEqual(result.campaigns[0].characters[0].tags, ["local"]);
+  assert.deepEqual(result.campaigns[0].characters[0].factions, ["The Watch"]);
+  assert.equal(result.campaigns[0].characters[0].voice, "Measured and quiet");
+  assert.equal(result.campaigns[0].characters[0].quirks, "Counts exits");
+  assert.equal(result.campaigns[0].characters[0].relationships, "Protective of Mira");
+  assert.equal(result.campaigns[0].characters[0].statBlock, "Creature 5\nPerception +12");
   assert.equal(result.stats.editsPreserved, 1);
   assert.equal(result.stats.duplicatesCollapsed, 1);
 });

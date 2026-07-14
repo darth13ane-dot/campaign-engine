@@ -5,7 +5,7 @@
 })(typeof globalThis === "object" ? globalThis : this, function createArchivistMerge() {
   const COLLECTIONS = {
     sessions: { title: item => item?.title, detail: ["sessions"], editable: ["title", "number", "date", "recap", "tags", "directions", "archetype", "tropes", "threadGaps", "upcoming"] },
-    characters: { title: item => item?.name, detail: ["characters"], editable: ["name", "role", "description", "tags"] },
+    characters: { title: item => item?.name, detail: ["characters"], editable: ["name", "role", "description", "tags", "factions", "voice", "quirks", "relationships", "statBlock"] },
     quests: { title: item => item?.title, detail: ["quests"], editable: ["title", "status", "detail", "tags"] },
     locations: { title: item => item?.title, detail: ["world"], editable: ["title", "detail", "tags"] },
     journal: { title: item => item?.title, detail: ["journals"], editable: ["title", "body", "permission", "tags"] }
