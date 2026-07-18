@@ -82,6 +82,11 @@ hydrateCampaignState();
 let currentView = "dashboard";
 let activeFilter = "All";
 let characterDirectoryMode = "directory";
+let connectionViewMode = "board";
+let quickTagTarget = null;
+let connectionEditingId = null;
+let arcEditingId = null;
+let boardDrag = null;
 let recordType = null;
 let detailTarget = null;
 let foundryToken = "";
@@ -133,6 +138,8 @@ function loadState() {
 }
 function ensureCampaignPlanning(campaign) {
   if (!Array.isArray(campaign.connections)) campaign.connections = [];
+  if (!campaign.connectionBoard || typeof campaign.connectionBoard !== "object") campaign.connectionBoard = { positions: {} };
+  if (!campaign.connectionBoard.positions || typeof campaign.connectionBoard.positions !== "object") campaign.connectionBoard.positions = {};
   if (!Array.isArray(campaign.arcs)) campaign.arcs = [];
   if (!Array.isArray(campaign.documents)) campaign.documents = [];
   if (!Array.isArray(campaign.builders)) campaign.builders = [];
@@ -339,7 +346,8 @@ const ENTRY_TYPES = {
   quest: "Quest",
   location: "World",
   journal: "Journal",
-  session: "Session"
+  session: "Session",
+  arc: "Story arc"
 };
 const CONNECTION_TYPES = ["Allied with", "Depends on", "Hunts", "Is tied to", "Knows about", "Leads to", "Opposes", "Protects", "Reveals", "Seeks"];
 const ARC_STATUSES = ["Planned", "Active", "On hold", "Complete"];
@@ -351,7 +359,8 @@ function campaignEntries(campaign) {
     ...campaign.quests.map(item => ({ type: "quest", name: item.title })),
     ...campaign.locations.map(item => ({ type: "location", name: item.title })),
     ...campaign.journal.map(item => ({ type: "journal", name: item.title })),
-    ...campaign.sessions.map(item => ({ type: "session", name: item.title }))
+    ...campaign.sessions.map(item => ({ type: "session", name: item.title })),
+    ...campaign.arcs.map(item => ({ type: "arc", name: item.title }))
   ].filter(entry => entry.name);
 }
 function entryKey(entry) { return `${entry.type}:${String(entry.name).toLocaleLowerCase()}`; }
@@ -459,6 +468,34 @@ function recordView(type, campaign) {
     <div class="list-toolbar"><div class="list-toolbar-groups"><div class="filter-group">${filters.map(filter => `<button class="filter-button ${filter === activeFilter ? "active" : ""}" data-filter="${filter}">${filter === "PC" ? "PCs" : filter === "NPC" ? "NPCs" : esc(filter)}</button>`).join("")}</div>${directoryModes}</div><input class="inline-search" data-list-search="${type}" placeholder="Filter ${settings.title.toLowerCase()}…" /></div>
     ${recordList}`;
 }
+
+function entryRecordItem(campaign, entry) {
+  const lists = { character: campaign.characters, quest: campaign.quests, location: campaign.locations, journal: campaign.journal, session: campaign.sessions, arc: campaign.arcs };
+  const list = lists[entry.type] || [];
+  return list.find(item => String(item.name || item.title).toLocaleLowerCase() === String(entry.name).toLocaleLowerCase()) || null;
+}
+function normalizedTags(values = []) {
+  const seen = new Set();
+  return (Array.isArray(values) ? values : []).map(value => String(value).trim()).filter(value => value && !seen.has(value.toLocaleLowerCase()) && seen.add(value.toLocaleLowerCase()));
+}
+function updateEntryTags(campaign, entry, tags) {
+  const item = entryRecordItem(campaign, entry);
+  if (!item) return false;
+  item.tags = normalizedTags(tags);
+  item.updatedAt = new Date().toISOString();
+  item.lastEditedBy = "manual-edit";
+  item.localOverrides = { ...(item.localOverrides || {}), tags: structuredClone(item.tags) };
+  return true;
+}
+function quickTagControls(entry, item, className = "") {
+  const encoded = encodeEntryRef(entry);
+  const editing = quickTagTarget === encoded;
+  const tags = normalizedTags(item.tags);
+  return `<div class="quick-tags ${className}" data-quick-tags="${esc(encoded)}">${tags.map(tag => `<button class="tag quick-tag" type="button" data-remove-tag="${esc(tag)}" data-tag-entry="${esc(encoded)}" aria-label="Remove tag ${esc(tag)}">${esc(tag)} <span>×</span></button>`).join("")}${editing ? `<form class="quick-tag-editor" data-quick-tag-form="${esc(encoded)}"><input name="tag" maxlength="40" autocomplete="off" placeholder="New tag" aria-label="New tag" /><button class="tag-add-confirm" type="submit">Add</button><button class="tag-add-cancel" type="button" data-cancel-tag aria-label="Cancel adding tag">×</button></form>` : `<button class="tag quick-tag-add" type="button" data-add-tag="${esc(encoded)}">＋ tag</button>`}</div>`;
+}
+function quickTagSection(entry, item) {
+  return `<section class="record-section quick-tag-section"><div><h3>Tags</h3><p>Add or remove labels without opening the full editor.</p></div>${quickTagControls(entry, item, "detail-quick-tags")}</section>`;
+}
 function characterFactions(character) {
   return Array.isArray(character.factions) ? character.factions.map(value => String(value).trim()).filter(Boolean) : [];
 }
@@ -486,39 +523,90 @@ function recordRow(type, item) {
   const title = item.name || item.title;
   const subtitle = item.role || item.status || (item.tags || []).join(" · ");
   const description = item.description || item.detail || "";
-  const tags = item.tags || [];
   const sheetAction = type === "characters" ? `<button class="record-action" type="button" data-open-sheet="${esc(title)}">${findActorByName(title) ? "View sheet" : "Link sheet"}</button>` : "";
   const entityType = type === "characters" ? "character" : type === "locations" ? "location" : "quest";
+  const entry = { type: entityType, name: title };
   const editAction = `<button class="record-action" type="button" data-edit-record="${esc(encodeEntryRef({ type: entityType, name: title }))}">Edit</button>`;
+  const reviseAction = `<button class="record-action ai-record-action" type="button" data-revise-record="${esc(encodeEntryRef(entry))}">AI revise</button>`;
   const editedTag = item.localOverrides ? `<span class="tag local-edit-tag">LOCAL EDIT</span>` : "";
-  return `<article class="card record clickable-record" tabindex="0" data-open-entity data-entity-type="${entityType}" data-entity-name="${esc(title)}"><div class="record-emblem">${esc(initials(title))}</div><div><h3>${esc(title)}</h3><span class="record-subtitle">${esc(subtitle)}</span></div><p class="record-description">${esc(description)}</p><div class="record-tags">${tags.map(tag => `<span class="tag">${esc(tag)}</span>`).join("")}${editedTag}${sheetAction}${editAction}</div></article>`;
+  return `<article class="card record clickable-record" tabindex="0" data-open-entity data-entity-type="${entityType}" data-entity-name="${esc(title)}"><div class="record-emblem">${esc(initials(title))}</div><div><h3>${esc(title)}</h3><span class="record-subtitle">${esc(subtitle)}</span></div><p class="record-description">${esc(description)}</p><div class="record-tags">${quickTagControls(entry, item)}${editedTag}${sheetAction}${editAction}${reviseAction}</div></article>`;
 }
 function sessionsView(campaign) {
   return `${header("Sessions", "CHRONICLE", "A chronological memory of what happened and what still needs to happen.", `<button class="primary-button" data-open-record="session">Plan session <span>＋</span></button>`)}
     <div class="timeline">${campaign.sessions.map(session => {
       const directions = Array.isArray(session.directions) ? session.directions.filter(Boolean) : [];
       const patterns = [session.archetype, ...(Array.isArray(session.tropes) ? session.tropes : [])].filter(Boolean);
-      return `<article class="card timeline-item ${session.upcoming ? "upcoming" : ""}"><div class="timeline-meta">SESSION ${session.number} · ${esc(session.date)} ${session.upcoming ? "· UPCOMING" : ""}${session.localOverrides ? " · LOCALLY EDITED" : ""}</div><h2>${esc(session.title)}</h2><p>${esc(session.recap)}</p>${directions.length || patterns.length ? `<div class="story-compass compact">${directions.length ? `<section><small>POSSIBLE DIRECTIONS</small><ul>${directions.slice(0, 3).map(direction => `<li>${esc(direction)}</li>`).join("")}</ul></section>` : ""}${patterns.length ? `<section><small>STORY PATTERNS</small><div class="pattern-tags">${patterns.slice(0, 5).map(pattern => `<span>${esc(pattern)}</span>`).join("")}</div></section>` : ""}</div>` : ""}<div class="timeline-footer"><button class="text-link" data-open-entity data-entity-type="session" data-entity-name="${esc(session.title)}">Open notes</button><button class="secondary-button" type="button" data-edit-record="${esc(encodeEntryRef({ type: "session", name: session.title }))}">Edit</button>${session.upcoming ? `<button class="secondary-button" data-open-entity data-entity-type="session" data-entity-name="${esc(session.title)}">Prep checklist</button>` : ""}</div></article>`;
+      return `<article class="card timeline-item ${session.upcoming ? "upcoming" : ""}"><div class="timeline-meta">SESSION ${session.number} · ${esc(session.date)} ${session.upcoming ? "· UPCOMING" : ""}${session.localOverrides ? " · LOCALLY EDITED" : ""}</div><h2>${esc(session.title)}</h2><p>${esc(session.recap)}</p>${directions.length || patterns.length ? `<div class="story-compass compact">${directions.length ? `<section><small>POSSIBLE DIRECTIONS</small><ul>${directions.slice(0, 3).map(direction => `<li>${esc(direction)}</li>`).join("")}</ul></section>` : ""}${patterns.length ? `<section><small>STORY PATTERNS</small><div class="pattern-tags">${patterns.slice(0, 5).map(pattern => `<span>${esc(pattern)}</span>`).join("")}</div></section>` : ""}</div>` : ""}<div class="timeline-footer">${quickTagControls({ type: "session", name: session.title }, session)}<button class="text-link" data-open-entity data-entity-type="session" data-entity-name="${esc(session.title)}">Open notes</button><button class="secondary-button" type="button" data-edit-record="${esc(encodeEntryRef({ type: "session", name: session.title }))}">Edit</button><button class="secondary-button" type="button" data-revise-record="${esc(encodeEntryRef({ type: "session", name: session.title }))}">AI revise</button>${session.upcoming ? `<button class="secondary-button" data-open-entity data-entity-type="session" data-entity-name="${esc(session.title)}">Prep checklist</button>` : ""}</div></article>`;
     }).join("")}</div>`;
 }
 function journalView(campaign) {
   return `${header("Journal", "THE LIVING RECORD", "Lore, revelations, and player-safe artifacts—each where it belongs.", `<button class="primary-button" data-open-record="journal">New entry <span>＋</span></button>`)}
-    <div class="journal-grid">${campaign.journal.map(entry => `<article class="card journal-card clickable-record" tabindex="0" data-open-entity data-entity-type="journal" data-entity-name="${esc(entry.title)}"><p class="eyebrow">${(entry.tags || []).map(esc).join(" · ")}</p><h2>${esc(entry.title)}</h2><p>${esc(stripJournalLinks(entry.body || entry.detail || ""))}</p><div class="journal-footer"><span class="permission">${esc(entry.permission || "GM only")}</span><span>${entry.localOverrides ? "LOCALLY EDITED" : "ARCHIVIST RECORD"}</span><button class="record-action" type="button" data-edit-record="${esc(encodeEntryRef({ type: "journal", name: entry.title }))}">Edit</button></div></article>`).join("")}</div>`;
+    <div class="journal-grid">${campaign.journal.map(entry => `<article class="card journal-card clickable-record" tabindex="0" data-open-entity data-entity-type="journal" data-entity-name="${esc(entry.title)}"><p class="eyebrow">${(entry.tags || []).map(esc).join(" · ")}</p><h2>${esc(entry.title)}</h2><p>${esc(stripJournalLinks(entry.body || entry.detail || ""))}</p><div class="journal-footer">${quickTagControls({ type: "journal", name: entry.title }, entry)}<span class="permission">${esc(entry.permission || "GM only")}</span><span>${entry.localOverrides ? "LOCALLY EDITED" : "ARCHIVIST RECORD"}</span><button class="record-action" type="button" data-edit-record="${esc(encodeEntryRef({ type: "journal", name: entry.title }))}">Edit</button><button class="record-action ai-record-action" type="button" data-revise-record="${esc(encodeEntryRef({ type: "journal", name: entry.title }))}">AI revise</button></div></article>`).join("")}</div>`;
 }
 function entryRelationButton(entry) {
-  return `<button class="relation-entry" type="button" data-open-entity data-entity-type="${esc(entry.type)}" data-entity-name="${esc(entry.name)}"><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small><strong>${esc(entry.name)}</strong></button>`;
+  const action = entry.type === "arc" ? `data-open-arc-entry="${esc(entry.name)}"` : `data-open-entity data-entity-type="${esc(entry.type)}" data-entity-name="${esc(entry.name)}"`;
+  return `<button class="relation-entry" type="button" ${action}><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small><strong>${esc(entry.name)}</strong></button>`;
+}
+const BOARD_TYPE_ORDER = ["character", "location", "quest", "arc", "journal", "session"];
+function boardNodeClass(campaign, entry) {
+  if (entry.type === "location") {
+    const item = entryRecordItem(campaign, entry);
+    if (String(item?.tags?.[0] || "").toLocaleLowerCase() === "faction") return "faction";
+  }
+  return entry.type;
+}
+function connectionBoardLayout(campaign, connections) {
+  const nodes = new Map();
+  connections.forEach(connection => { nodes.set(entryKey(connection.from), connection.from); nodes.set(entryKey(connection.to), connection.to); });
+  const grouped = [...nodes.values()].reduce((groups, entry) => {
+    (groups[entry.type] ||= []).push(entry);
+    return groups;
+  }, {});
+  const types = BOARD_TYPE_ORDER.filter(type => grouped[type]?.length);
+  const positions = {};
+  types.forEach((type, column) => {
+    [...grouped[type]].sort((left, right) => left.name.localeCompare(right.name)).forEach((entry, row) => {
+      const saved = campaign.connectionBoard.positions[entryKey(entry)];
+      positions[entryKey(entry)] = saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) ? saved : { x: 42 + column * 220, y: 70 + row * 122 };
+    });
+  });
+  const width = Math.max(760, 90 + types.length * 220, ...Object.values(positions).map(position => position.x + 210));
+  const height = Math.max(520, ...Object.values(positions).map(position => position.y + 120));
+  return { nodes: [...nodes.values()], positions, width, height };
+}
+function corkboardEntryAction(entry) {
+  return entry.type === "arc" ? `data-open-arc-entry="${esc(entry.name)}"` : `data-open-entity data-entity-type="${esc(entry.type)}" data-entity-name="${esc(entry.name)}"`;
+}
+function corkboardView(campaign, connections) {
+  if (!connections.length) return `<div class="empty-state corkboard-empty"><h2>The corkboard is waiting for its first thread.</h2><p>Add a connection between any NPC, faction, quest, story arc, journal, or session.</p><button class="primary-button" type="button" data-open-connection>Add the first connection <span>→</span></button></div>`;
+  const layout = connectionBoardLayout(campaign, connections);
+  const lines = connections.map(connection => {
+    const from = layout.positions[entryKey(connection.from)];
+    const to = layout.positions[entryKey(connection.to)];
+    if (!from || !to) return "";
+    const x1 = from.x + 84, y1 = from.y + 39, x2 = to.x + 84, y2 = to.y + 39;
+    const labelX = Math.round((x1 + x2) / 2), labelY = Math.round((y1 + y2) / 2) - 7;
+    return `<g class="board-thread ${connection.inferred ? "inferred" : "manual"}"><line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"></line><text x="${labelX}" y="${labelY}">${esc(connection.type)}</text></g>`;
+  }).join("");
+  const nodes = layout.nodes.map(entry => {
+    const item = entryRecordItem(campaign, entry) || {};
+    const position = layout.positions[entryKey(entry)];
+    const tags = normalizedTags(item.tags).slice(0, 2);
+    return `<article class="corkboard-node ${esc(boardNodeClass(campaign, entry))}" style="left:${position.x}px;top:${position.y}px" data-board-node="${esc(encodeEntryRef(entry))}" tabindex="0"><span class="board-pin" aria-hidden="true"></span><button type="button" ${corkboardEntryAction(entry)}><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small><strong>${esc(entry.name)}</strong>${tags.length ? `<span>${tags.map(tag => esc(tag)).join(" · ")}</span>` : ""}</button></article>`;
+  }).join("");
+  return `<div class="corkboard-shell"><div class="corkboard-help"><span>Drag cards to arrange the board. Positions save with this campaign.</span><button class="quiet-button" type="button" data-reset-corkboard>Reset layout</button></div><div class="corkboard-canvas"><div class="corkboard-surface" data-corkboard-surface style="width:${layout.width}px;height:${layout.height}px"><svg class="corkboard-lines" width="${layout.width}" height="${layout.height}" aria-hidden="true">${lines}</svg>${nodes}</div></div></div>`;
+}
+function connectionListView(connections) {
+  const grouped = connections.reduce((groups, connection) => { if (!groups[connection.type]) groups[connection.type] = []; groups[connection.type].push(connection); return groups; }, {});
+  return `<div class="connection-groups">${connections.length ? Object.keys(grouped).sort((left, right) => left.localeCompare(right)).map(type => `<section class="card connection-group"><div class="section-title"><h2>${esc(type)}</h2><span class="tag">${grouped[type].length} ${grouped[type].length === 1 ? "link" : "links"}</span></div><div class="connection-list">${grouped[type].map(connection => `<article class="connection-row">${entryRelationButton(connection.from)}<span class="connection-arrow" aria-label="connects to">→</span>${entryRelationButton(connection.to)}<div class="connection-note">${connection.note ? esc(connection.note) : connection.inferred ? "Journal reference" : "No note recorded"}</div>${connection.inferred ? `<span class="tag inferred-link">Automatic</span>` : `<div class="connection-actions"><button class="quiet-button" type="button" data-edit-connection="${esc(connection.id)}">Edit</button><button class="quiet-button danger" type="button" data-delete-connection="${esc(connection.id)}">Remove</button></div>`}</article>`).join("")}</div></section>`).join("") : `<div class="empty-state"><h2>No relationships are mapped yet.</h2><p>Connect two records to make the hidden structure of the campaign visible here.</p><button class="primary-button" type="button" data-open-connection>Add the first connection <span>→</span></button></div>`}</div>`;
 }
 function connectionsView(campaign) {
   const connections = campaignConnections(campaign);
-  const grouped = connections.reduce((groups, connection) => {
-    if (!groups[connection.type]) groups[connection.type] = [];
-    groups[connection.type].push(connection);
-    return groups;
-  }, {});
   const explicitCount = connections.filter(connection => !connection.inferred).length;
-  return `${header("Connections", "RELATIONSHIP MAP", "A campaign-wide index of what points to, pressures, and reveals what. Connections are grouped and sorted by relationship type.", `<div class="header-actions"><button class="secondary-button" type="button" data-open-story-scout data-scout-scope="connections">Scout with AI <span>✦</span></button><button class="secondary-button" type="button" data-open-story-cleanup data-cleanup-scope="connections">Review clutter <span>✓</span></button><button class="primary-button" type="button" data-open-connection>Add connection <span>＋</span></button></div>`)}
+  const viewSwitch = `<div class="connection-view-switch" role="group" aria-label="Connection view"><button class="filter-button ${connectionViewMode === "board" ? "active" : ""}" type="button" data-connection-view="board">Corkboard</button><button class="filter-button ${connectionViewMode === "list" ? "active" : ""}" type="button" data-connection-view="list">List</button></div>`;
+  return `${header("Connections", "RELATIONSHIP MAP", "Pin NPCs, factions, plots, places, and campaign records into a living web of pressure and possibility.", `<div class="header-actions"><button class="secondary-button" type="button" data-open-story-scout data-scout-scope="connections">Scout with AI <span>✦</span></button><button class="secondary-button" type="button" data-open-story-cleanup data-cleanup-scope="connections">Review clutter <span>✓</span></button><button class="primary-button" type="button" data-open-connection>Add connection <span>＋</span></button></div>`)}
     <div class="connection-summary"><span><strong>${connections.length}</strong> total relationships</span><span><strong>${explicitCount}</strong> labelled manually</span><span><strong>${connections.length - explicitCount}</strong> journal references</span></div>
-    <div class="connection-groups">${connections.length ? Object.keys(grouped).sort((left, right) => left.localeCompare(right)).map(type => `<section class="card connection-group"><div class="section-title"><h2>${esc(type)}</h2><span class="tag">${grouped[type].length} ${grouped[type].length === 1 ? "link" : "links"}</span></div><div class="connection-list">${grouped[type].map(connection => `<article class="connection-row">${entryRelationButton(connection.from)}<span class="connection-arrow" aria-label="connects to">→</span>${entryRelationButton(connection.to)}<div class="connection-note">${connection.note ? esc(connection.note) : connection.inferred ? "Journal reference" : "No note recorded"}</div>${connection.inferred ? `<span class="tag inferred-link">Automatic</span>` : `<button class="quiet-button" type="button" data-delete-connection="${esc(connection.id)}" aria-label="Remove this connection">Remove</button>`}</article>`).join("")}</div></section>`).join("") : `<div class="empty-state"><h2>No relationships are mapped yet.</h2><p>Connect two records to make the hidden structure of the campaign visible here.</p><button class="primary-button" type="button" data-open-connection>Add the first connection <span>→</span></button></div>`}</div>`;
+    ${viewSwitch}${connectionViewMode === "board" ? corkboardView(campaign, connections) : connectionListView(connections)}`;
 }
 function arcRelatedEntries(campaign, arc) {
   return (arc.related || []).map(entry => findCampaignEntry(campaign, entry)).filter(Boolean);
@@ -529,7 +617,7 @@ function arcCardView(campaign, arc) {
   const directions = Array.isArray(arc.directions) ? arc.directions.filter(Boolean) : [];
   const tropes = Array.isArray(arc.tropes) ? arc.tropes.filter(Boolean) : [];
   const gaps = Array.isArray(arc.threadGaps) ? arc.threadGaps.filter(Boolean) : [];
-  return `<article class="card arc-card"><div class="arc-card-top"><div><p class="eyebrow">${esc(arc.horizon || "Future arc")}</p><h2>${esc(arc.title)}</h2></div><span class="status ${arc.status === "On hold" ? "blocked" : ""}">${esc(arc.status || "Planned")}</span></div><p class="arc-tension">${esc(arc.tension)}</p><div class="arc-decision"><small>NEXT DECISION OR BEAT</small><strong>${esc(arc.nextStep)}</strong></div>${directions.length || arc.archetype || tropes.length || gaps.length ? `<div class="story-compass">${directions.length ? `<section><small>POSSIBLE DIRECTIONS</small><ul>${directions.map(direction => `<li>${esc(direction)}</li>`).join("")}</ul></section>` : ""}${arc.archetype || tropes.length ? `<section><small>ARCHETYPE & TROPES</small>${arc.archetype ? `<strong>${esc(arc.archetype)}</strong>` : ""}<div class="pattern-tags">${tropes.map(trope => `<span>${esc(trope)}</span>`).join("")}</div></section>` : ""}${gaps.length ? `<section><small>THREADS NEEDING A STORY ENGINE</small><ul>${gaps.map(gap => `<li>${esc(gap)}</li>`).join("")}</ul></section>` : ""}</div>` : ""}${arc.change ? `<section><small>IF IT RESOLVES</small><p>${esc(arc.change)}</p></section>` : ""}${milestones.length ? `<section><small>PRESSURE POINTS</small><ol>${milestones.map(milestone => `<li>${esc(milestone)}</li>`).join("")}</ol></section>` : ""}${related.length ? `<section class="arc-related"><small>CONNECTED RECORDS</small><div>${related.map(entryRelationButton).join("")}</div></section>` : ""}</article>`;
+  return `<article class="card arc-card" data-arc-name="${esc(arc.title)}"><div class="arc-card-top"><div><p class="eyebrow">${esc(arc.horizon || "Future arc")}</p><h2>${esc(arc.title)}</h2></div><span class="status ${arc.status === "On hold" ? "blocked" : ""}">${esc(arc.status || "Planned")}</span></div><p class="arc-tension">${esc(arc.tension)}</p><div class="arc-decision"><small>NEXT DECISION OR BEAT</small><strong>${esc(arc.nextStep)}</strong></div>${directions.length || arc.archetype || tropes.length || gaps.length ? `<div class="story-compass">${directions.length ? `<section><small>POSSIBLE DIRECTIONS</small><ul>${directions.map(direction => `<li>${esc(direction)}</li>`).join("")}</ul></section>` : ""}${arc.archetype || tropes.length ? `<section><small>ARCHETYPE & TROPES</small>${arc.archetype ? `<strong>${esc(arc.archetype)}</strong>` : ""}<div class="pattern-tags">${tropes.map(trope => `<span>${esc(trope)}</span>`).join("")}</div></section>` : ""}${gaps.length ? `<section><small>THREADS NEEDING A STORY ENGINE</small><ul>${gaps.map(gap => `<li>${esc(gap)}</li>`).join("")}</ul></section>` : ""}</div>` : ""}${arc.change ? `<section><small>IF IT RESOLVES</small><p>${esc(arc.change)}</p></section>` : ""}${milestones.length ? `<section><small>PRESSURE POINTS</small><ol>${milestones.map(milestone => `<li>${esc(milestone)}</li>`).join("")}</ol></section>` : ""}${related.length ? `<section class="arc-related"><small>CONNECTED RECORDS</small><div>${related.map(entryRelationButton).join("")}</div></section>` : ""}<div class="arc-card-actions">${quickTagControls({ type: "arc", name: arc.title }, arc)}<button class="secondary-button" type="button" data-edit-arc="${esc(arc.id)}">Edit arc</button></div></article>`;
 }
 function arcsView(campaign) {
   const arcs = [...campaign.arcs].sort((left, right) => ARC_STATUSES.indexOf(left.status) - ARC_STATUSES.indexOf(right.status) || String(left.title).localeCompare(String(right.title)));
@@ -629,7 +717,7 @@ function entityDetailView(campaign) {
     <article class="card entity-detail">
       <div class="entity-detail-top"><div class="record-emblem entity-emblem">${esc(initials(definition.title(item)))}</div><div><p class="eyebrow">${definition.label}</p><h2>${esc(definition.title(item))}</h2><p>${renderJournalContent(campaign, overview)}</p></div></div>
       <div class="detail-facts">${fields}</div>
-       <div class="detail-sections">${detailTarget.type === "character" ? characterTableNotes(item) : ""}${connectionDetailSection(campaign, { type: detailTarget.type, name: definition.title(item) })}${structuredSections(detailTarget.type, source)}</div>
+       <div class="detail-sections">${quickTagSection({ type: detailTarget.type, name: definition.title(item) }, item)}${detailTarget.type === "character" ? characterTableNotes(item) : ""}${connectionDetailSection(campaign, { type: detailTarget.type, name: definition.title(item) })}${structuredSections(detailTarget.type, source)}</div>
       <div class="detail-actions">${characterAction}<button class="secondary-button" data-view-jump="${definition.back}">Return to directory</button></div>
     </article>`;
 }
@@ -1419,11 +1507,15 @@ function entryOptions(campaign, selectedEntries = []) {
   const selected = new Set(selectedEntries.map(entryKey));
   return campaignEntries(campaign).sort((left, right) => (ENTRY_TYPES[left.type] || left.type).localeCompare(ENTRY_TYPES[right.type] || right.type) || left.name.localeCompare(right.name)).map(entry => `<option value="${esc(encodeEntryRef(entry))}"${selected.has(entryKey(entry)) ? " selected" : ""}>${esc(ENTRY_TYPES[entry.type] || entry.type)} · ${esc(entry.name)}</option>`).join("");
 }
-function openConnectionModal() {
+function openConnectionModal(connection = null) {
   const entries = campaignEntries(activeCampaign());
   if (entries.length < 2) { showToast("Add at least two campaign records before connecting them."); return; }
-  const options = entryOptions(activeCampaign());
-  document.querySelector("#connectionFields").innerHTML = `<div class="form-row"><label>From<select required name="from">${options}</select></label><label>Relationship type<select required name="type">${CONNECTION_TYPES.map(type => `<option>${esc(type)}</option>`).join("")}</select></label></div><label>To<select required name="to">${options}</select></label><label>Why this matters <textarea name="note" rows="3" maxlength="280" placeholder="A short GM-facing reminder of the pressure, secret, or consequence."></textarea></label>`;
+  connectionEditingId = connection?.id || null;
+  const fromOptions = entryOptions(activeCampaign(), connection ? [connection.from] : []);
+  const toOptions = entryOptions(activeCampaign(), connection ? [connection.to] : []);
+  document.querySelector("#connectionTitle").textContent = connection ? "Edit connection" : "Connect records";
+  document.querySelector("#connectionSubmit").innerHTML = connection ? "Save changes <span>→</span>" : "Save connection <span>→</span>";
+  document.querySelector("#connectionFields").innerHTML = `<div class="form-row"><label>From<select required name="from">${fromOptions}</select></label><label>Relationship type<select required name="type">${CONNECTION_TYPES.map(type => `<option${selectedOption(connection?.type || CONNECTION_TYPES[0], type)}>${esc(type)}</option>`).join("")}</select></label></div><label>To<select required name="to">${toOptions}</select></label><label>Why this matters <textarea name="note" rows="3" maxlength="280" placeholder="A short GM-facing reminder of the pressure, secret, or consequence.">${esc(connection?.note || "")}</textarea></label>`;
   connectionModal.showModal();
 }
 function arcFieldsView(campaign, values = {}) {
@@ -1432,8 +1524,11 @@ function arcFieldsView(campaign, values = {}) {
   const tropes = Array.isArray(values.tropes) ? values.tropes.join(", ") : values.tropes || "";
   return `<label>Arc title<input required name="title" maxlength="90" value="${esc(values.title || "")}" placeholder="The Crown That Refuses a Bearer" /></label><div class="form-row"><label>Status<select name="status">${ARC_STATUSES.map(status => `<option${selectedOption(values.status || "Planned", status)}>${esc(status)}</option>`).join("")}</select></label><label>Planning horizon<input required name="horizon" maxlength="60" value="${esc(values.horizon || "")}" placeholder="Next 3–5 sessions" /></label></div><label>Central tension<textarea required name="tension" rows="3" maxlength="500" placeholder="What pressure is building, and who cannot ignore it?">${esc(values.tension || "")}</textarea></label><label>What changes if this resolves?<textarea name="change" rows="2" maxlength="400" placeholder="State the likely change to the campaign, not a required player outcome.">${esc(values.change || "")}</textarea></label><label>Next decision or beat<textarea required name="nextStep" rows="2" maxlength="300" placeholder="What should be ready to put in front of the table next?">${esc(values.nextStep || "")}</textarea></label><label>Pressure points <span class="field-help">One per line; these are possible turns, not a fixed sequence.</span><textarea name="milestones" rows="4" maxlength="1000" placeholder="A rival makes their move&#10;The cost of delay becomes visible">${lines(values.milestones)}</textarea></label><fieldset class="planning-insights-fields"><legend>Story compass</legend><p class="field-help">Possible motion, not a fixed plot. Use patterns only where a thread needs a stronger story engine.</p><label>Potential directions <span class="field-help">One per line.</span><textarea name="directions" rows="4" maxlength="1200" placeholder="If the party protects the witness, the rival faction changes tactics…">${lines(values.directions)}</textarea></label><div class="form-row"><label>Narrative archetype<textarea name="archetype" rows="2" maxlength="140" placeholder="The reluctant succession">${esc(values.archetype || "")}</textarea></label><label>Tropes to use or subvert<textarea name="tropes" rows="2" maxlength="300" placeholder="enemy within, poisoned inheritance">${esc(tropes)}</textarea></label></div><label>Threads still missing a story engine <span class="field-help">One per line; leave empty when the existing tension is already strong.</span><textarea name="threadGaps" rows="3" maxlength="900">${lines(values.threadGaps)}</textarea></label></fieldset><label>Connected records <span class="field-help">Optional. Use Ctrl/Cmd to select more than one.</span><select name="related" multiple size="6">${options}</select></label>`;
 }
-function openArcModal() {
-  document.querySelector("#arcFields").innerHTML = arcFieldsView(activeCampaign());
+function openArcModal(arc = null) {
+  arcEditingId = arc?.id || null;
+  document.querySelector("#arcTitle").textContent = arc ? "Edit story arc" : "Plan a story arc";
+  document.querySelector("#arcSubmit").innerHTML = arc ? "Save changes <span>→</span>" : "Save story arc <span>→</span>";
+  document.querySelector("#arcFields").innerHTML = arcFieldsView(activeCampaign(), arc || {});
   arcModal.showModal();
 }
 
@@ -2127,11 +2222,52 @@ nav.addEventListener("click", event => { const button = event.target.closest("[d
 settingsButton.addEventListener("click", () => { currentView = "settings"; activeFilter = "All"; document.querySelector(".sidebar").classList.remove("open"); render(); });
 root.addEventListener("click", event => {
   if (event.target.closest("[data-edit-record], [data-revise-record]")) return;
+  if (event.target.closest("[data-quick-tag-form]")) return;
+  const addTag = event.target.closest("[data-add-tag]");
+  if (addTag) {
+    quickTagTarget = addTag.dataset.addTag;
+    render();
+    setTimeout(() => root.querySelector(`[data-quick-tag-form="${CSS.escape(quickTagTarget)}"] input`)?.focus(), 0);
+    return;
+  }
+  const cancelTag = event.target.closest("[data-cancel-tag]");
+  if (cancelTag) { quickTagTarget = null; render(); return; }
+  const removeTag = event.target.closest("[data-remove-tag]");
+  if (removeTag) {
+    const campaign = activeCampaign();
+    const entry = decodeEntryRef(removeTag.dataset.tagEntry);
+    const item = entryRecordItem(campaign, entry);
+    if (item && updateEntryTags(campaign, entry, normalizedTags(item.tags).filter(tag => tag.toLocaleLowerCase() !== removeTag.dataset.removeTag.toLocaleLowerCase()))) {
+      saveState(); render(); showToast(`Tag “${removeTag.dataset.removeTag}” removed.`);
+    }
+    return;
+  }
   const scoutButton = event.target.closest("[data-open-story-scout]");
   if (scoutButton) { openStoryScout(scoutButton.dataset.scoutScope || "both"); return; }
   const cleanupButton = event.target.closest("[data-open-story-cleanup]");
   if (cleanupButton) { openStoryCleanup(cleanupButton.dataset.cleanupScope || "both"); return; }
+  const editConnection = event.target.closest("[data-edit-connection]");
+  if (editConnection) {
+    const connection = activeCampaign().connections.find(item => String(item.id) === editConnection.dataset.editConnection);
+    if (connection) openConnectionModal(connection);
+    return;
+  }
   if (event.target.closest("[data-open-connection]")) { openConnectionModal(); return; }
+  const connectionView = event.target.closest("[data-connection-view]");
+  if (connectionView) { connectionViewMode = connectionView.dataset.connectionView; render(); return; }
+  if (event.target.closest("[data-reset-corkboard]")) { activeCampaign().connectionBoard.positions = {}; saveState(); render(); showToast("Corkboard layout reset."); return; }
+  const arcEntry = event.target.closest("[data-open-arc-entry]");
+  if (arcEntry) {
+    currentView = "arcs"; render();
+    setTimeout(() => { const card = root.querySelector(`[data-arc-name="${CSS.escape(arcEntry.dataset.openArcEntry)}"]`); card?.scrollIntoView({ behavior: "smooth", block: "center" }); card?.classList.add("focus-pulse"); }, 0);
+    return;
+  }
+  const editArc = event.target.closest("[data-edit-arc]");
+  if (editArc) {
+    const arc = activeCampaign().arcs.find(item => String(item.id) === editArc.dataset.editArc);
+    if (arc) openArcModal(arc);
+    return;
+  }
   if (event.target.closest("[data-open-arc]")) { openArcModal(); return; }
   const removeConnection = event.target.closest("[data-delete-connection]");
   if (removeConnection) {
@@ -2168,13 +2304,47 @@ root.addEventListener("click", event => {
 });
 root.addEventListener("keydown", event => {
   if (event.key !== "Enter" && event.key !== " ") return;
-  if (event.target.closest("button")) return;
+  if (event.target.closest("button, input, textarea, select, form, [contenteditable='true']")) return;
   const record = event.target.closest("[data-open-entity]");
   if (!record) return;
   event.preventDefault(); detailTarget = { type: record.dataset.entityType, name: record.dataset.entityName }; currentView = "detail"; render();
 });
+root.addEventListener("pointerdown", event => {
+  const node = event.target.closest("[data-board-node]");
+  if (!node || event.target.closest("button")) return;
+  const surface = node.closest("[data-corkboard-surface]");
+  if (!surface) return;
+  boardDrag = { node, surface, entry: decodeEntryRef(node.dataset.boardNode), pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: parseFloat(node.style.left) || 0, originY: parseFloat(node.style.top) || 0 };
+  node.setPointerCapture(event.pointerId); node.classList.add("dragging"); event.preventDefault();
+});
+root.addEventListener("pointermove", event => {
+  if (!boardDrag || event.pointerId !== boardDrag.pointerId) return;
+  const x = Math.max(12, Math.min(boardDrag.surface.offsetWidth - boardDrag.node.offsetWidth - 12, boardDrag.originX + event.clientX - boardDrag.startX));
+  const y = Math.max(20, Math.min(boardDrag.surface.offsetHeight - boardDrag.node.offsetHeight - 20, boardDrag.originY + event.clientY - boardDrag.startY));
+  boardDrag.node.style.left = `${Math.round(x)}px`; boardDrag.node.style.top = `${Math.round(y)}px`;
+});
+root.addEventListener("pointerup", event => {
+  if (!boardDrag || event.pointerId !== boardDrag.pointerId) return;
+  const position = { x: parseFloat(boardDrag.node.style.left) || 0, y: parseFloat(boardDrag.node.style.top) || 0 };
+  activeCampaign().connectionBoard.positions[entryKey(boardDrag.entry)] = position;
+  boardDrag.node.classList.remove("dragging"); boardDrag = null; saveState(); render(); showToast("Corkboard position saved.");
+});
+root.addEventListener("pointercancel", event => {
+  if (!boardDrag || event.pointerId !== boardDrag.pointerId) return;
+  boardDrag.node.classList.remove("dragging"); boardDrag = null; render();
+});
 root.addEventListener("input", event => { const input = event.target.closest("[data-list-search]"); if (!input) return; const term = input.value.trim().toLowerCase(); root.querySelectorAll(".record").forEach(record => record.style.display = record.innerText.toLowerCase().includes(term) ? "grid" : "none"); root.querySelectorAll("[data-character-group]").forEach(group => group.style.display = [...group.querySelectorAll(".record")].some(record => record.style.display !== "none") ? "grid" : "none"); });
 root.addEventListener("submit", event => {
+  const quickTagForm = event.target.closest("[data-quick-tag-form]");
+  if (quickTagForm) {
+    event.preventDefault();
+    const tag = String(new FormData(quickTagForm).get("tag") || "").trim();
+    const entry = decodeEntryRef(quickTagForm.dataset.quickTagForm);
+    const item = entryRecordItem(activeCampaign(), entry);
+    if (!tag || !item) return;
+    updateEntryTags(activeCampaign(), entry, [...normalizedTags(item.tags), tag]);
+    quickTagTarget = null; saveState(); render(); showToast(`Tag “${tag}” added.`); return;
+  }
   if (event.target.matches("#desktopUpdateForm")) { event.preventDefault(); saveDesktopUpdateSettings(event.target); return; }
   if (event.target.matches("#aiSettingsForm")) { event.preventDefault(); saveAiSettings(event.target); return; }
   if (event.target.matches("#copilotForm")) { event.preventDefault(); askCopilot(event.target); return; }
@@ -2200,6 +2370,8 @@ document.querySelector("#sheetModalContent").addEventListener("click", event => 
 
 document.querySelector("#newCampaignButton").addEventListener("click", () => campaignModal.showModal());
 document.querySelectorAll("[data-close-modal]").forEach(button => button.addEventListener("click", () => button.closest("dialog").close()));
+connectionModal.addEventListener("close", () => { connectionEditingId = null; });
+arcModal.addEventListener("close", () => { arcEditingId = null; });
 document.querySelector("#campaignForm").addEventListener("submit", event => {
   event.preventDefault(); const form = new FormData(event.currentTarget); const title = form.get("title").trim(); const id = `c-${Date.now()}`;
   const date = form.get("sessionDate") ? new Date(`${form.get("sessionDate")}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "TBD";
@@ -2235,10 +2407,13 @@ document.querySelector("#connectionForm").addEventListener("submit", event => {
   if (!findCampaignEntry(campaign, from) || !findCampaignEntry(campaign, to)) { showToast("Choose two current campaign records."); return; }
   if (entryKey(from) === entryKey(to)) { showToast("A record cannot connect to itself."); return; }
   if (!CONNECTION_TYPES.includes(type)) { showToast("Choose a relationship type from the list."); return; }
-  const duplicate = campaign.connections.some(connection => connection.type === type && entryKey(connection.from) === entryKey(from) && entryKey(connection.to) === entryKey(to));
+  const duplicate = campaign.connections.some(connection => String(connection.id) !== String(connectionEditingId) && connection.type === type && entryKey(connection.from) === entryKey(from) && entryKey(connection.to) === entryKey(to));
   if (duplicate) { showToast("That labelled connection already exists."); return; }
-  campaign.connections.unshift({ id: `connection-${Date.now()}-${Math.random().toString(16).slice(2)}`, from, to, type, note: String(form.get("note") || "").trim() });
-  saveState(); connectionModal.close(); render(); showToast("Connection saved.");
+  const note = String(form.get("note") || "").trim();
+  const existing = campaign.connections.find(connection => String(connection.id) === String(connectionEditingId));
+  if (existing) Object.assign(existing, { from, to, type, note, updatedAt: new Date().toISOString() });
+  else campaign.connections.unshift({ id: `connection-${Date.now()}-${Math.random().toString(16).slice(2)}`, from, to, type, note });
+  connectionEditingId = null; saveState(); connectionModal.close(); render(); showToast(existing ? "Connection updated." : "Connection saved.");
 });
 document.querySelector("#arcForm").addEventListener("submit", event => {
   event.preventDefault();
@@ -2249,8 +2424,11 @@ document.querySelector("#arcForm").addEventListener("submit", event => {
   const nextStep = String(form.get("nextStep") || "").trim();
   if (!title || !tension || !nextStep) { showToast("An arc needs a title, central tension, and next decision."); return; }
   const related = form.getAll("related").map(decodeEntryRef).filter(entry => findCampaignEntry(campaign, entry));
-  campaign.arcs.unshift({ id: `arc-${Date.now()}-${Math.random().toString(16).slice(2)}`, title, status: String(form.get("status") || "Planned"), horizon: String(form.get("horizon") || "").trim(), tension, change: String(form.get("change") || "").trim(), nextStep, milestones: String(form.get("milestones") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean), related, directions: String(form.get("directions") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean), archetype: String(form.get("archetype") || "").trim(), tropes: String(form.get("tropes") || "").split(",").map(item => item.trim()).filter(Boolean), threadGaps: String(form.get("threadGaps") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean) });
-  saveState(); arcModal.close(); currentView = "arcs"; render(); showToast("Story arc saved.");
+  const values = { title, status: String(form.get("status") || "Planned"), horizon: String(form.get("horizon") || "").trim(), tension, change: String(form.get("change") || "").trim(), nextStep, milestones: String(form.get("milestones") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean), related, directions: String(form.get("directions") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean), archetype: String(form.get("archetype") || "").trim(), tropes: String(form.get("tropes") || "").split(",").map(item => item.trim()).filter(Boolean), threadGaps: String(form.get("threadGaps") || "").split(/\r?\n/).map(item => item.trim()).filter(Boolean), updatedAt: new Date().toISOString() };
+  const existing = campaign.arcs.find(arc => String(arc.id) === String(arcEditingId));
+  if (existing) Object.assign(existing, values);
+  else campaign.arcs.unshift({ id: `arc-${Date.now()}-${Math.random().toString(16).slice(2)}`, ...values });
+  arcEditingId = null; saveState(); arcModal.close(); currentView = "arcs"; render(); showToast(existing ? "Story arc updated." : "Story arc saved.");
 });
 
 document.querySelector("#searchButton").addEventListener("click", () => { searchModal.showModal(); setTimeout(() => document.querySelector("#searchInput").focus(), 20); });

@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=12" />
+    <link rel="stylesheet" href="styles.css?v=13" />
     <link rel="stylesheet" href="workspace.css?v=1" />
     <link rel="stylesheet" href="systems/pf2e/styles.css?v=1" />
   </head>
@@ -96,19 +96,19 @@
 
     <dialog class="modal" id="connectionModal">
       <form method="dialog" id="connectionForm">
-        <div class="modal-heading"><div><p class="eyebrow">RELATIONSHIP MAP</p><h2>Connect records</h2></div><button class="close-button" type="button" data-close-modal aria-label="Close">×</button></div>
+        <div class="modal-heading"><div><p class="eyebrow">RELATIONSHIP MAP</p><h2 id="connectionTitle">Connect records</h2></div><button class="close-button" type="button" data-close-modal aria-label="Close">×</button></div>
         <p class="modal-intro">Connections stay local to this campaign. Journal references are listed automatically; use this form for the relationships that need a deliberate label.</p>
         <div id="connectionFields"></div>
-        <button class="primary-button submit-button" type="submit">Save connection <span>→</span></button>
+        <button class="primary-button submit-button" id="connectionSubmit" type="submit">Save connection <span>→</span></button>
       </form>
     </dialog>
 
     <dialog class="modal arc-modal" id="arcModal">
       <form method="dialog" id="arcForm">
-        <div class="modal-heading"><div><p class="eyebrow">FUTURE STORY</p><h2>Plan a story arc</h2></div><button class="close-button" type="button" data-close-modal aria-label="Close">×</button></div>
+        <div class="modal-heading"><div><p class="eyebrow">FUTURE STORY</p><h2 id="arcTitle">Plan a story arc</h2></div><button class="close-button" type="button" data-close-modal aria-label="Close">×</button></div>
         <p class="modal-intro">Write the pressure, the likely change, and the next decision. This is a planning horizon, not a script for the players.</p>
         <div id="arcFields"></div>
-        <button class="primary-button submit-button" type="submit">Save story arc <span>→</span></button>
+        <button class="primary-button submit-button" id="arcSubmit" type="submit">Save story arc <span>→</span></button>
       </form>
     </dialog>
 
@@ -149,7 +149,7 @@
     <script src="systems/call-of-cthulhu/definition.js?v=1"></script>
     <script src="systems/custom/definition.js?v=1"></script>
     <script src="systems/campaign-system-state.js?v=1"></script>
-    <script src="app.js?v=18"></script>
+    <script src="app.js?v=20"></script>
     <script src="features.js?v=10"></script>
     <script src="systems/pf2e/toolkit.js?v=1"></script>
     <script>
