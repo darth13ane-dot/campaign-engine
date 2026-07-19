@@ -1,64 +1,72 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  DEFAULT_URL,
   FoundryApiClient,
-  bridgeUrl,
+  apiBaseUrl,
   numericRange,
+  sendBuilderContent,
   syncActors,
   tableCreateParams
 } = require("../foundry-api-bridge.js");
 
-class FakeSocket {
-  static instances = [];
-  constructor(url) {
-    this.url = url;
-    this.readyState = 0;
-    this.sent = [];
-    FakeSocket.instances.push(this);
-    queueMicrotask(() => { this.readyState = 1; this.onopen?.(); });
-  }
-  send(value) { this.sent.push(JSON.parse(value)); }
-  close() { this.readyState = 3; this.onclose?.(); }
-  respond(id, data, success = true) { this.onmessage?.({ data: JSON.stringify({ id, success, data, error: success ? undefined : data }) }); }
+function jsonResponse(payload, status = 200) {
+  return { ok: status >= 200 && status < 300, status, async json() { return payload; } };
 }
 
-test.beforeEach(() => { FakeSocket.instances = []; });
-
-test("bridgeUrl adds the API key without losing existing query values", () => {
-  const value = new URL(bridgeUrl("wss://api.example.test/v1/connect?world=one", "pk_secret"));
-  assert.equal(value.protocol, "wss:");
-  assert.equal(value.searchParams.get("world"), "one");
-  assert.equal(value.searchParams.get("apiKey"), "pk_secret");
-  assert.throws(() => bridgeUrl("https://example.test", "pk_secret"), /ws:\/\/ or wss:\/\//);
+test("apiBaseUrl migrates the connection-disrupting WebSocket URL to the public REST API", () => {
+  assert.equal(apiBaseUrl("wss://api.foundry-mcp.com/v1/connect"), DEFAULT_URL);
+  assert.equal(apiBaseUrl("https://api.example.test/v1/"), "https://api.example.test/v1");
+  assert.throws(() => apiBaseUrl("ftp://api.example.test"), /http:\/\/ or https:\/\//);
 });
 
-test("client correlates responses and surfaces Foundry errors", async () => {
-  const client = new FoundryApiClient({ url: "wss://api.example.test/connect", apiKey: "pk_test", WebSocketImpl: FakeSocket, timeout: 1000 });
-  await client.connect();
-  const socket = FakeSocket.instances[0];
-  const worldPromise = client.request("get-world-info", {});
-  socket.respond(socket.sent[0].id, { world: { title: "Test World" } });
-  assert.equal((await worldPromise).world.title, "Test World");
-  const actorPromise = client.request("get-actor", { actorId: "missing" });
-  socket.respond(socket.sent[1].id, "Actor not found", false);
-  await assert.rejects(actorPromise, /Actor not found/);
-  client.close();
+test("client uses bearer-authenticated HTTPS requests and surfaces API errors", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    if (url.endsWith("/world")) return jsonResponse({ data: { title: "Test World" } });
+    return jsonResponse({ error: "Actor not found" }, 404);
+  };
+  const client = new FoundryApiClient({ url: "https://api.example.test/v1", apiKey: "pk_test", fetchImpl });
+  assert.equal((await client.request("/world")).title, "Test World");
+  assert.equal(calls[0].options.headers.Authorization, "Bearer pk_test");
+  await assert.rejects(client.request("/actors/missing"), /Actor not found/);
 });
 
-test("syncActors resolves actor summaries into complete actor documents", async () => {
-  class SyncSocket extends FakeSocket {
-    send(value) {
-      super.send(value);
-      const command = this.sent.at(-1);
-      if (command.type === "get-world-info") queueMicrotask(() => this.respond(command.id, { world: { title: "Bridge World" } }));
-      if (command.type === "get-actors") queueMicrotask(() => this.respond(command.id, [{ id: "a1", name: "Vale", type: "character" }]));
-      if (command.type === "get-actor") queueMicrotask(() => this.respond(command.id, { id: "a1", name: "Vale", type: "character", system: { attributes: { hp: { value: 12 } } }, items: [] }));
-    }
-  }
-  const result = await syncActors({ url: "wss://api.example.test/connect", apiKey: "pk_test", WebSocketImpl: SyncSocket, timeout: 1000 });
-  assert.equal(result.world.world.title, "Bridge World");
+test("syncActors follows pagination and resolves actor refs into complete records", async () => {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (url.endsWith("/world")) return jsonResponse({ data: { id: "world", title: "Bridge World", system: "pf2e" } });
+    if (url.includes("/actors?limit=200&offset=0")) return jsonResponse({ data: [{ id: "a1", name: "Vale" }], pagination: { limit: 200, offset: 0, total: 2, has_more: true } });
+    if (url.includes("/actors?limit=200&offset=1")) return jsonResponse({ data: [{ id: "a2", name: "Mara" }], pagination: { limit: 200, offset: 1, total: 2, has_more: false } });
+    if (url.endsWith("/actors/a1")) return jsonResponse({ data: { id: "a1", name: "Vale", type: "character", image: "vale.png", system: { attributes: { hp: { value: 12 } } }, items: [] } });
+    if (url.endsWith("/actors/a2")) return jsonResponse({ data: { id: "a2", name: "Mara", type: "npc", image: "", system: {}, items: [] } });
+    return jsonResponse({ error: "Unexpected test URL" }, 500);
+  };
+  const result = await syncActors({ url: "https://api.example.test/v1", apiKey: "pk_test", fetchImpl });
+  assert.equal(result.world.title, "Bridge World");
+  assert.deepEqual(result.actors.map(actor => actor.name), ["Vale", "Mara"]);
   assert.equal(result.actors[0].system.attributes.hp.value, 12);
+  assert.equal(calls.filter(url => url.includes("/actors?")).length, 2);
   assert.deepEqual(result.warnings, []);
+});
+
+test("builder sends use the documented actor and roll-table REST endpoints", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options, body: JSON.parse(options.body) });
+    return jsonResponse({ data: { id: String(calls.length) } }, 201);
+  };
+  const result = await sendBuilderContent(
+    { url: "https://api.example.test/v1", apiKey: "pk_test", fetchImpl },
+    { actors: [{ name: "Scout", type: "npc", img: "scout.png", system: {} }], tables: [{ name: "Rumors", results: [{ text: "Quiet", range: [1, 2] }] }] }
+  );
+  assert.deepEqual(calls.map(call => call.url), ["https://api.example.test/v1/actors", "https://api.example.test/v1/roll-tables"]);
+  assert.equal(calls[0].body.image, "scout.png");
+  assert.equal(calls[1].body.display_roll, true);
+  assert.equal(result.actors.length, 1);
+  assert.equal(result.tables.length, 1);
 });
 
 test("roll-table payload preserves authored ranges", () => {

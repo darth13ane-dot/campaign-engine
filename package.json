@@ -1,7 +1,7 @@
 {
   "name": "campaign-engine",
   "productName": "Campaign Engine",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "A local-first command center for tabletop RPG campaigns.",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -40,6 +40,7 @@
       "campaign-cleanup.js",
       "session-workflow.js",
       "foundry-api-bridge.js",
+      "character-filters.js",
       "features.js",
       "icon.svg",
       "manifest.webmanifest",
