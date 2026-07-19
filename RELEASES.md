@@ -1,5 +1,15 @@
 # Sharing and desktop updates
 
+## Version 1.1.0 — Prep → play → reconcile
+
+Campaign Engine 1.1.0 connects session planning to live play and post-session campaign upkeep.
+
+From **Overview** or **Sessions**, choose **Run live session** on a planned session. The Live Session Desk keeps flexible scenes and pressures, pinned campaign records, a continuously saved scratchpad, timestamped log entries, quick-created records, clocks, counters, and clue checkoffs in one focused view. Closing the app does not complete the session; choose **End session** explicitly, and confirm it, when play is finished.
+
+Ending a session opens the **Consequence Inbox**. Edit the recap, add proposed record updates manually, or—with explicit consent—ask the configured AI endpoint to draft evidence-backed proposals. Every proposal shows its session evidence and a before/after preview. Approve only the desired changes, then apply the batch. Unapproved changes never touch campaign canon.
+
+Desktop editions create a local safety backup immediately before applying a batch. Archivist-backed fields are recorded as local overrides, IDs and imported source records remain intact, and stale proposals stop rather than overwriting a record changed since the draft was created. Unapplied drafts persist in the workspace and its backups until they are applied or deliberately discarded.
+
 Double-click **Build Campaign Engine.cmd** or run `pnpm run dist`. This produces:
 
 - an NSIS Setup executable for normal installation and automatic updates;

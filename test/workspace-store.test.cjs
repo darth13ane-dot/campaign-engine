@@ -41,6 +41,21 @@ test("initializes a private workspace and preserves Archivist details on saves",
   assert.equal(workspace.appVersion, "9.9.9");
 });
 
+test("persists versioned live-session and reconciliation state in backups", async t => {
+  const { store } = await temporaryStore(t);
+  const sessionWorkflow = {
+    schemaVersion: 1,
+    desks: { "desk-1": { id: "desk-1", status: "active", scratch: "Door opened" } },
+    reconciliations: { "draft-1": { id: "draft-1", deskId: "desk-1", status: "draft", proposals: [] } }
+  };
+  await store.initializeWorkspace({ state: { campaigns: [{ id: "campaign-1", sessionWorkflow }] } });
+  await store.saveState({ campaigns: [{ id: "campaign-1", sessionWorkflow }] });
+  const backupPath = await store.createSafetyBackup("session-test");
+  const backup = JSON.parse(await fs.readFile(backupPath, "utf8"));
+  assert.equal(backup.state.campaigns[0].sessionWorkflow.desks["desk-1"].scratch, "Door opened");
+  assert.equal(backup.state.campaigns[0].sessionWorkflow.reconciliations["draft-1"].status, "draft");
+});
+
 test("imports legacy state files and creates a pre-import safety backup", async t => {
   const { directory, store } = await temporaryStore(t);
   await store.initializeWorkspace({ state: state("Before import"), archivist: {} });
