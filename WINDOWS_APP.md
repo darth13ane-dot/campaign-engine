@@ -53,6 +53,8 @@ Open **Settings → Private data & backups**.
 
 The encrypted AI credential is intentionally excluded from workspace backups and cannot be decrypted by a different Windows account.
 
+Live Session Desk notes and unapplied Consequence Inbox drafts are normal workspace data. They are included in manual exports, automatic previous-file recovery, and local safety copies. Immediately before Campaign Engine applies an approved consequence batch, the desktop app creates an additional `before-session-reconciliation` safety copy. The browser/PWA keeps the same workflow state in its local workspace, but cannot create a Windows AppData safety file.
+
 ## Automated GitHub releases
 
 The workflow at `.github/workflows/windows-release.yml` runs for tags beginning with `v`.

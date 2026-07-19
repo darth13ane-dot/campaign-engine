@@ -21,3 +21,5 @@ The legacy top-level `campaign.pf2e` bucket is migrated automatically. Populated
 5. Add tests proving that its view appears only when the system is enabled.
 
 Do not add system-specific state initialization, navigation, rules tables, or handlers to the shared application files.
+
+The Live Session Desk owns only system-neutral play aids: reorderable beats, notes, generic clocks/counters, and clue checkoffs. Initiative, combat, conditions, and rules automation remain inside system packages and must not be added to the core session workflow.
