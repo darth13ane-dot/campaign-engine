@@ -33,6 +33,17 @@ test("client uses bearer-authenticated HTTPS requests and surfaces API errors", 
   await assert.rejects(client.request("/actors/missing"), /Actor not found/);
 });
 
+test("client invokes browser fetch with the global receiver", async () => {
+  async function fetchImpl(url, options) {
+    assert.equal(this, globalThis);
+    assert.equal(url, "https://api.example.test/v1/world");
+    assert.equal(options.headers.Authorization, "Bearer pk_test");
+    return jsonResponse({ data: { title: "Bound World" } });
+  }
+  const client = new FoundryApiClient({ url: "https://api.example.test/v1", apiKey: "pk_test", fetchImpl });
+  assert.equal((await client.request("/world")).title, "Bound World");
+});
+
 test("syncActors follows pagination and resolves actor refs into complete records", async () => {
   const calls = [];
   const fetchImpl = async (url) => {

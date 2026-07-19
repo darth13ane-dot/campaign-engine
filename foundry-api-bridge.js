@@ -33,7 +33,7 @@
       const controller = typeof AbortController === "function" ? new AbortController() : null;
       const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
       try {
-        const response = await this.fetchImpl(`${this.url}${path}`, {
+        const response = await this.fetchImpl.call(globalThis, `${this.url}${path}`, {
           method: options.method || "GET",
           headers: {
             Accept: "application/json",

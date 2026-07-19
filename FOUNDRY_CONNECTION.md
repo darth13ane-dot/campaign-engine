@@ -1,6 +1,6 @@
 # Foundry VTT connection
 
-Campaign Engine 1.1.2 uses **Foundry API Bridge** as its recommended Foundry connection. The Foundry module maintains its own two WebSocket connections. Campaign Engine talks to the bridge's public HTTPS API, which relays commands over the module's existing connection instead of opening or replacing a WebSocket.
+Campaign Engine 1.1.3 uses **Foundry API Bridge** as its recommended Foundry connection. The Foundry module maintains its own two WebSocket connections. Campaign Engine talks to the bridge's public HTTPS API, which relays commands over the module's existing connection instead of opening or replacing a WebSocket.
 
 ## Recommended setup: Foundry API Bridge
 
