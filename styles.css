@@ -233,6 +233,13 @@ button { cursor: pointer; }
 .ai-record-action { border-color: rgba(224,183,95,.38); color: var(--gold-pale); }
 .local-edit-tag { border-color: rgba(224,183,95,.42); color: var(--gold-pale); background: rgba(224,183,95,.09); }
 .timeline { position: relative; padding-left: 27px; display: grid; gap: 19px; }
+.session-workflow-intro { align-items: center; display: flex; gap: 28px; justify-content: space-between; margin-bottom: 24px; padding: 24px; }
+.session-workflow-intro h2 { margin: 4px 0 8px; }
+.session-workflow-intro p:last-child { color: var(--muted); margin: 0; max-width: 760px; }
+@media (max-width: 760px) {
+  .session-workflow-intro { align-items: stretch; flex-direction: column; }
+  .session-workflow-intro .primary-button { align-self: start; }
+}
 .timeline::before { content: ""; position: absolute; left: 7px; top: 7px; bottom: 20px; width: 1px; background: var(--line); }
 .timeline-item { position: relative; padding: 19px; }
 .timeline-item::before { content: ""; position: absolute; left: -26px; top: 27px; width: 11px; height: 11px; border: 2px solid var(--gold); border-radius: 50%; background: var(--ink); }
@@ -699,6 +706,7 @@ button { cursor: pointer; }
 
 @media (max-width: 940px) {
   .source-import, .builder-workspace { grid-template-columns: 1fr; }
+  .integration-grid { grid-template-columns: 1fr; }
   .builder-field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .builder-assistant-form { grid-template-columns: 1fr; }
 }

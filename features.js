@@ -372,9 +372,16 @@ async function sendFoundryExport() {
     return;
   }
   try {
-    const response = await fetch(foundry.bridgeUrl.replace(/\/+$/, "") + "/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    if (!response.ok) throw new Error("Bridge returned " + response.status + ".");
-    foundry.lastStatus = "Builder content sent to Foundry";
+    let result;
+    if (foundry.bridgeType === "foundry-api") {
+      if (!FOUNDRY_API_BRIDGE) throw new Error("Foundry API Bridge support did not load.");
+      if (!foundryToken) throw new Error("Test or sync the Foundry API Bridge first so its key is ready for this app session.");
+      result = await FOUNDRY_API_BRIDGE.sendBuilderContent({ url: foundry.bridgeUrl, apiKey: foundryToken }, payload);
+    } else {
+      const response = await fetch(foundry.bridgeUrl.replace(/\/+$/, "") + "/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!response.ok) throw new Error("Bridge returned " + response.status + ".");
+    }
+    foundry.lastStatus = result ? `${result.actors.length} actors and ${result.tables.length} tables sent to Foundry` : "Builder content sent to Foundry";
     foundry.lastSync = new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
     saveState();
     render();
@@ -386,7 +393,7 @@ async function sendFoundryExport() {
 
 function foundryExportPanel(campaign) {
   const count = (campaign.builders || []).length;
-  return "<section class=\"card integration-card foundry-export-card\"><div class=\"section-title\"><h2>Export builder content</h2><span class=\"tag\">" + count + " saved</span></div><p>Download a portable Foundry package with Actor data for characters and monsters plus RollTable data for rollable tools. A compatible bridge can also receive it directly through <code>POST /import</code>.</p><div class=\"foundry-export-actions\"><button class=\"secondary-button\" type=\"button\" data-export-foundry>Download Foundry package</button><button class=\"primary-button\" type=\"button\" data-send-foundry>Send through bridge <span>→</span></button></div></section>";
+  return "<section class=\"card integration-card foundry-export-card\"><div class=\"section-title\"><h2>Export builder content</h2><span class=\"tag\">" + count + " saved</span></div><p>Download a portable Foundry package, or send characters, monsters, and rollable tables through the configured Foundry API Bridge module.</p><div class=\"foundry-export-actions\"><button class=\"secondary-button\" type=\"button\" data-export-foundry>Download Foundry package</button><button class=\"primary-button\" type=\"button\" data-send-foundry>Send through bridge <span>→</span></button></div></section>";
 }
 
 function appearancePanel() {

@@ -8,6 +8,7 @@ let ARCHIVIST_DETAILS = ARCHIVIST_DETAILS_ROOT.campaigns || {};
 const ARCHIVIST_MERGE = window.CampaignArchivistMerge || null;
 const CAMPAIGN_CLEANUP = window.CampaignCleanup || null;
 const SESSION_WORKFLOW = window.CampaignSessionWorkflow || null;
+const FOUNDRY_API_BRIDGE = window.CampaignFoundryApiBridge || null;
 const DESKTOP_API = window.campaignEngineDesktop || null;
 
 const seed = {
@@ -541,7 +542,15 @@ function recordRow(type, item) {
   return `<article class="card record clickable-record" tabindex="0" data-open-entity data-entity-type="${entityType}" data-entity-name="${esc(title)}"><div class="record-emblem">${esc(initials(title))}</div><div><h3>${esc(title)}</h3><span class="record-subtitle">${esc(subtitle)}</span></div><p class="record-description">${esc(description)}</p><div class="record-tags">${quickTagControls(entry, item)}${editedTag}${sheetAction}${editAction}${reviseAction}</div></article>`;
 }
 function sessionsView(campaign) {
+  const upcoming = campaign.sessions.find(session => session.upcoming);
+  const activeDesk = Object.values(campaign.sessionWorkflow?.desks || {}).find(desk => desk.status === "active");
+  const sessionAction = activeDesk
+    ? `<button class="primary-button" type="button" data-open-session-desk="${esc(activeDesk.id)}">Resume live desk <span>→</span></button>`
+    : upcoming
+      ? `<button class="primary-button" type="button" data-start-session-desk="${esc(upcoming.title)}">Run ${esc(upcoming.title)} <span>→</span></button>`
+      : `<button class="primary-button" type="button" data-open-record="session">Plan the next session <span>＋</span></button>`;
   return `${header("Sessions", "CHRONICLE", "A chronological memory of what happened and what still needs to happen.", `<button class="primary-button" data-open-record="session">Plan session <span>＋</span></button>`)}
+    <section class="card session-workflow-intro"><div><p class="eyebrow">LIVE SESSION WORKFLOW</p><h2>${activeDesk ? "A session is in progress." : upcoming ? "Your next session is ready to run." : "Plan a session to open the Live Session Desk."}</h2><p>Capture the table in one focused workspace, then end the session to review an approval-only Consequence Inbox. Existing campaign canon never changes until you approve it.</p></div>${sessionAction}</section>
     <div class="timeline">${campaign.sessions.map(session => {
       const directions = Array.isArray(session.directions) ? session.directions.filter(Boolean) : [];
       const patterns = [session.archetype, ...(Array.isArray(session.tropes) ? session.tropes : [])].filter(Boolean);
@@ -736,6 +745,8 @@ function entityDetailView(campaign) {
 function getFoundryState() {
   if (!state.foundry) state.foundry = { bridgeUrl: "", lastStatus: "Not connected", lastSync: null, actors: [] };
   if (!Array.isArray(state.foundry.actors)) state.foundry.actors = [];
+  if (!state.foundry.bridgeType) state.foundry.bridgeType = /^wss?:/i.test(state.foundry.bridgeUrl || "") || !state.foundry.bridgeUrl ? "foundry-api" : "legacy-rest";
+  if (state.foundry.bridgeType === "foundry-api" && !state.foundry.bridgeUrl) state.foundry.bridgeUrl = FOUNDRY_API_BRIDGE?.DEFAULT_URL || "wss://api.foundry-mcp.com/v1/connect";
   return state.foundry;
 }
 function nameKey(value = "") { return String(value).toLocaleLowerCase().replace(/[^a-z0-9]/g, ""); }
@@ -937,12 +948,14 @@ function settingsView() {
 function foundryView(campaign) {
   const foundry = getFoundryState();
   const count = foundryActors().length;
-  return `${header("Foundry VTT", "INTEGRATION", "Bring in trusted actor data without losing your campaign records.", "")}
+  const moduleBridge = foundry.bridgeType !== "legacy-rest";
+  const world = foundry.world?.world || foundry.world || null;
+  return `${header("Foundry VTT", "INTEGRATION", "Connect through Foundry API Bridge, or import actor data locally without losing campaign records.", "")}
     <div class="integration-grid">
-      <section class="card integration-card integration-lead"><p class="eyebrow">CONNECTION STATUS</p><h2>${esc(foundry.lastStatus || "Not connected")}</h2><p>${foundry.bridgeUrl ? `Bridge: ${esc(foundry.bridgeUrl)}` : "No remote bridge is configured. Importing an Actor JSON file works without a bridge."}</p><div class="connection-metrics"><span><strong>${count}</strong> actors for this campaign</span><span><strong>${foundry.lastSync ? esc(foundry.lastSync) : "—"}</strong> last import</span></div></section>
-      <section class="card integration-card"><div class="section-title"><h2>Foundry bridge</h2><span class="tag">Optional</span></div><p>A bridge is a trusted Foundry module or service that exposes the two endpoints below with CORS enabled. The access key is used for this request only; Campaign Engine does not save it.</p><form id="foundryBridgeForm" class="compact-form"><label>Bridge URL<input name="bridgeUrl" type="url" value="${esc(foundry.bridgeUrl || "")}" placeholder="https://foundry.example.com/campaign-engine" /></label><label>Access key<input name="accessKey" type="password" autocomplete="off" placeholder="Optional bridge key" /></label><div><button class="secondary-button" type="submit" name="foundryAction" value="test">Test connection</button><button class="primary-button" type="submit" name="foundryAction" value="sync">Sync actors <span>↓</span></button></div></form></section>
+      <section class="card integration-card integration-lead"><p class="eyebrow">CONNECTION STATUS</p><h2>${esc(foundry.lastStatus || "Not connected")}</h2><p>${world ? `${esc(world.title || world.name || "Foundry world")} · ${esc(world.system || "Unknown system")}` : foundry.bridgeUrl ? `Bridge: ${esc(foundry.bridgeUrl)}` : "No remote bridge is configured. Importing Actor JSON still works offline."}</p><div class="connection-metrics"><span><strong>${count}</strong> actors for this campaign</span><span><strong>${foundry.lastSync ? esc(foundry.lastSync) : "—"}</strong> last import</span></div></section>
+      <section class="card integration-card"><div class="section-title"><h2>Foundry API Bridge</h2><span class="tag">Recommended</span></div><p>Campaign Engine can use the module's public WebSocket channel. Keep the Foundry world open as GM, enable both API connections in the module, and use the same <code>pk_…</code> key here.</p><form id="foundryBridgeForm" class="compact-form"><label>Bridge type<select name="bridgeType"><option value="foundry-api" ${moduleBridge ? "selected" : ""}>Foundry API Bridge module</option><option value="legacy-rest" ${moduleBridge ? "" : "selected"}>Legacy Campaign Engine REST bridge</option></select></label><label>${moduleBridge ? "API WebSocket URL" : "Legacy bridge URL"}<input required name="bridgeUrl" type="url" value="${esc(foundry.bridgeUrl || FOUNDRY_API_BRIDGE?.DEFAULT_URL || "")}" placeholder="${moduleBridge ? "wss://api.foundry-mcp.com/v1/connect" : "https://foundry.example.com/campaign-engine"}" /></label><label>${moduleBridge ? "Foundry API key" : "Access key"}<input name="accessKey" type="password" autocomplete="off" placeholder="${foundryToken ? "Key ready for this app session" : moduleBridge ? "pk_…" : "Optional bridge key"}" /></label><div><button class="secondary-button" type="submit" name="foundryAction" value="test">Test connection</button><button class="primary-button" type="submit" name="foundryAction" value="sync">Sync actors <span>↓</span></button></div></form><p class="quiet-copy"><a href="https://foundryvtt.com/packages/foundry-api-bridge" target="_blank" rel="noreferrer">Install or review Foundry API Bridge ↗</a> The key remains in memory only for this app session.</p></section>
       <section class="card integration-card import-card"><div class="section-title"><h2>Import actor JSON</h2><span class="tag">Works offline</span></div><p>Choose an Actor export from Foundry. Character names are matched to the active campaign automatically; unmatched actors remain available in the bridge cache.</p><label class="file-drop"><span>⇪</span><strong>Choose Foundry JSON</strong><small>Actor, actor array, or { actors: [...] }</small><input type="file" accept=".json,application/json" data-foundry-import /></label></section>
-      <section class="card integration-card bridge-contract"><div class="section-title"><h2>Bridge contract</h2><span class="tag">For your module</span></div><p><code>GET /health</code> → <code>{ "ok": true }</code></p><p><code>GET /actors</code> → <code>{ "actors": [Foundry Actor JSON] }</code></p><p class="quiet-copy">Send a <code>X-Campaign-Engine-Key</code> header when you protect the bridge. The integration deliberately does not assume or expose Foundry’s internal world data without that explicit bridge.</p></section>
+      <section class="card integration-card bridge-contract"><div class="section-title"><h2>What this connection can do</h2><span class="tag">Explicit actions</span></div><p><code>get-world-info</code> verifies the active world.</p><p><code>get-actors</code> + <code>get-actor</code> synchronize complete actor sheets.</p><p><code>create-actor</code> + <code>create-roll-table</code> send Builder Studio content when you explicitly choose Send through bridge.</p><p class="quiet-copy">Campaign Engine does not issue combat, token, scene, deletion, or other control commands through this connection.</p></section>
     </div>`;
 }
 function getCopilotState() {
@@ -1232,26 +1245,45 @@ function ingestFoundryActors(rawActors, origin) {
   showToast(`${actors.length} Foundry actor${actors.length === 1 ? "" : "s"} imported from ${origin}.`);
 }
 async function connectFoundryBridge(form, action) {
-  const url = String(new FormData(form).get("bridgeUrl") || "").trim().replace(/\/+$/, "");
-  const key = String(new FormData(form).get("accessKey") || "").trim();
+  const data = new FormData(form);
+  const bridgeType = String(data.get("bridgeType") || "foundry-api");
+  const url = String(data.get("bridgeUrl") || "").trim().replace(bridgeType === "legacy-rest" ? /\/+$/ : /\s+$/, "");
+  const key = String(data.get("accessKey") || foundryToken || "").trim();
   if (!url) { showToast("Add a bridge URL first."); return; }
-  foundryToken = key;
-  const headers = key ? { "X-Campaign-Engine-Key": key } : {};
+  if (key) foundryToken = key;
   try {
-    const endpoint = action === "sync" ? "/actors" : "/health";
-    const response = await fetch(`${url}${endpoint}`, { headers });
-    if (!response.ok) throw new Error(`Bridge returned ${response.status}.`);
-    const payload = await response.json();
     const foundry = getFoundryState();
+    foundry.bridgeType = bridgeType;
     foundry.bridgeUrl = url;
-    if (action === "sync") {
-      const actors = Array.isArray(payload) ? payload : payload.actors || payload.data?.actors;
-      ingestFoundryActors(actors, "your Foundry bridge");
+    if (bridgeType === "foundry-api") {
+      if (!FOUNDRY_API_BRIDGE) throw new Error("Foundry API Bridge support did not load.");
+      if (!key) throw new Error("Add the pk_… key configured in Foundry API Bridge.");
+      const options = { url, apiKey: key };
+      if (action === "sync") {
+        const result = await FOUNDRY_API_BRIDGE.syncActors(options);
+        foundry.world = result.world;
+        ingestFoundryActors(result.actors, "Foundry API Bridge");
+        if (result.warnings.length) showToast(`${result.actors.length} actors synced; ${result.warnings.length} could not be expanded.`);
+      } else {
+        foundry.world = await FOUNDRY_API_BRIDGE.testConnection(options);
+        foundry.lastStatus = "Foundry API Bridge connected";
+        saveState();
+        render();
+        showToast("Foundry API Bridge connected successfully.");
+      }
     } else {
-      foundry.lastStatus = payload.ok === false ? "Bridge did not confirm ready" : "Bridge connected";
-      saveState();
-      render();
-      showToast("Foundry bridge responded successfully.");
+      const headers = key ? { "X-Campaign-Engine-Key": key } : {};
+      const endpoint = action === "sync" ? "/actors" : "/health";
+      const response = await fetch(`${url}${endpoint}`, { headers });
+      if (!response.ok) throw new Error(`Bridge returned ${response.status}.`);
+      const payload = await response.json();
+      if (action === "sync") ingestFoundryActors(Array.isArray(payload) ? payload : payload.actors || payload.data?.actors, "your legacy Foundry bridge");
+      else {
+        foundry.lastStatus = payload.ok === false ? "Bridge did not confirm ready" : "Legacy bridge connected";
+        saveState();
+        render();
+        showToast("Legacy Foundry bridge responded successfully.");
+      }
     }
   } catch (error) {
     const foundry = getFoundryState();
@@ -1259,8 +1291,6 @@ async function connectFoundryBridge(form, action) {
     saveState();
     render();
     showToast(`Foundry bridge could not connect: ${error.message}`);
-  } finally {
-    foundryToken = "";
   }
 }
 async function importFoundryFile(file) {
@@ -2595,6 +2625,15 @@ root.addEventListener("submit", event => {
   connectFoundryBridge(event.target, event.submitter?.value || "test");
 });
 root.addEventListener("change", event => {
+  if (event.target.matches('[name="bridgeType"]')) {
+    const foundry = getFoundryState();
+    foundry.bridgeType = event.target.value;
+    if (foundry.bridgeType === "foundry-api" && !/^wss?:/i.test(foundry.bridgeUrl || "")) foundry.bridgeUrl = FOUNDRY_API_BRIDGE?.DEFAULT_URL || "wss://api.foundry-mcp.com/v1/connect";
+    if (foundry.bridgeType === "legacy-rest" && /^wss?:/i.test(foundry.bridgeUrl || "")) foundry.bridgeUrl = "";
+    saveState();
+    render();
+    return;
+  }
   const workspaceFile = event.target.closest("[data-workspace-file]");
   if (workspaceFile?.files?.[0]) {
     importBrowserWorkspace(workspaceFile.files[0]);
