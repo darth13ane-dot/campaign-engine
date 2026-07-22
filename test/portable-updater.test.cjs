@@ -168,6 +168,82 @@ test("does not quit when the scheduled installer cannot be registered", async t 
   assert.equal(quitCalled, false);
 });
 
+test("does not let delayed launch cleanup terminate an update being installed", async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "campaign-engine-portable-update-test-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const executablePath = path.join(directory, "Campaign Engine Portable.exe");
+  await fs.writeFile(executablePath, "old portable executable");
+  const payload = Buffer.from("new verified portable executable");
+  const manifest = manifestFor(payload);
+  const spawnCalls = [];
+  const updater = createPortableUpdater({
+    currentVersion: "1.0.0",
+    executablePath,
+    feedUrl: () => "https://downloads.example.com/releases",
+    tempDirectory: directory,
+    fetchImpl: async url => url.endsWith("latest-portable.json")
+      ? new Response(JSON.stringify(manifest), { status: 200 })
+      : new Response(payload, { status: 200 }),
+    spawnImpl: (command, args) => {
+      spawnCalls.push({ command, args });
+      const child = new EventEmitter();
+      child.stderr = new EventEmitter();
+      setImmediate(() => child.emit("close", 0));
+      return child;
+    }
+  });
+
+  await updater.download();
+  const installPromise = updater.install(() => {});
+  await updater.cleanupAfterLaunch();
+  await installPromise;
+
+  assert.equal(spawnCalls.length, 1);
+  assert.ok(spawnCalls[0].args.includes("-File"));
+  assert.ok(!spawnCalls[0].args.includes("-Command"));
+});
+
+test("waits for in-progress launch cleanup before scheduling an update", async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "campaign-engine-portable-update-test-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const executablePath = path.join(directory, "Campaign Engine Portable.exe");
+  await fs.writeFile(executablePath, "old portable executable");
+  const payload = Buffer.from("new verified portable executable");
+  const manifest = manifestFor(payload);
+  const spawnCalls = [];
+  let finishCleanup;
+  const updater = createPortableUpdater({
+    currentVersion: "1.0.0",
+    executablePath,
+    feedUrl: () => "https://downloads.example.com/releases",
+    tempDirectory: directory,
+    fetchImpl: async url => url.endsWith("latest-portable.json")
+      ? new Response(JSON.stringify(manifest), { status: 200 })
+      : new Response(payload, { status: 200 }),
+    spawnImpl: (command, args) => {
+      spawnCalls.push({ command, args });
+      const child = new EventEmitter();
+      child.stderr = new EventEmitter();
+      if (args.includes("-Command")) finishCleanup = () => child.emit("close", 0);
+      else setImmediate(() => child.emit("close", 0));
+      return child;
+    }
+  });
+
+  await updater.download();
+  const cleanupPromise = updater.cleanupAfterLaunch();
+  const installPromise = updater.install(() => {});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(spawnCalls.length, 1);
+  assert.ok(spawnCalls[0].args.includes("-Command"));
+
+  finishCleanup();
+  await cleanupPromise;
+  await installPromise;
+  assert.equal(spawnCalls.length, 2);
+  assert.ok(spawnCalls[1].args.includes("-File"));
+});
+
 test("does not delete an active portable download during launch cleanup", async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "campaign-engine-portable-update-test-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
