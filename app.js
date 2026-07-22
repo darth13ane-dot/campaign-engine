@@ -95,6 +95,7 @@ let detailTarget = null;
 let foundryToken = "";
 let copilotToken = loadSessionApiKey();
 let desktopApiKeySaved = false;
+let desktopFoundryApiKeySaved = false;
 let desktopUpdateState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading desktop update settings…" : "Use the installable web app or Windows package." };
 let archivistBridgeState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading Archivist bridge settings…" : "The internal bridge is available in the Windows desktop app." };
 let desktopWorkspaceInfo = { mode: DESKTOP_API ? "loading" : "browser", savedAt: null, workspacePath: "" };
@@ -250,6 +251,9 @@ function systemDefinition(name) {
 function usesDesktopCredentialStore() {
   return Boolean(DESKTOP_API?.loadApiKey && DESKTOP_API?.saveApiKey && DESKTOP_API?.clearApiKey);
 }
+function usesDesktopFoundryCredentialStore() {
+  return Boolean(DESKTOP_API?.loadFoundryApiKey && DESKTOP_API?.saveFoundryApiKey && DESKTOP_API?.clearFoundryApiKey);
+}
 function supportsKeyVault() {
   return usesDesktopCredentialStore() || Boolean(globalThis.crypto?.subtle && globalThis.crypto?.getRandomValues);
 }
@@ -344,6 +348,18 @@ async function initializeDesktopApiKey() {
     showToast("The saved API key could not be restored. Open Settings to replace it.");
   }
   render();
+}
+async function initializeDesktopFoundryApiKey() {
+  if (!usesDesktopFoundryCredentialStore()) return;
+  try {
+    const result = await DESKTOP_API.loadFoundryApiKey();
+    desktopFoundryApiKeySaved = Boolean(result?.saved);
+    if (result?.apiKey) foundryToken = String(result.apiKey).trim();
+  } catch (error) {
+    console.error("Campaign Engine could not restore the saved Foundry API key.", error);
+    showToast("The saved Foundry API key could not be restored. Open Foundry VTT to replace it.");
+  }
+  if (currentView === "foundry") render();
 }
 function initials(name) { return name.split(/\s+/).map(word => word[0]).join("").slice(0, 2); }
 function showToast(message) { const toast = document.querySelector("#toast"); toast.textContent = message; toast.classList.add("show"); clearTimeout(showToast.timer); showToast.timer = setTimeout(() => toast.classList.remove("show"), 2500); }
@@ -539,7 +555,7 @@ function recordRow(type, item) {
   const title = item.name || item.title;
   const subtitle = item.role || item.status || (item.tags || []).join(" · ");
   const description = item.description || item.detail || "";
-  const sheetAction = type === "characters" ? `<button class="record-action" type="button" data-open-sheet="${esc(title)}">${findActorByName(title) ? "View sheet" : "Link sheet"}</button>` : "";
+  const sheetAction = type === "characters" ? `<button class="record-action" type="button" data-open-sheet="${esc(title)}">${findActorForCharacter(item) ? "View sheet" : "Link sheet"}</button>` : "";
   const entityType = type === "characters" ? "character" : type === "locations" ? "location" : "quest";
   const entry = { type: entityType, name: title };
   const editAction = `<button class="record-action" type="button" data-edit-record="${esc(encodeEntryRef({ type: entityType, name: title }))}">Edit</button>`;
@@ -751,6 +767,8 @@ function entityDetailView(campaign) {
 function getFoundryState() {
   if (!state.foundry) state.foundry = { bridgeUrl: "", lastStatus: "Not connected", lastSync: null, actors: [] };
   if (!Array.isArray(state.foundry.actors)) state.foundry.actors = [];
+  if (!state.foundry.filters || typeof state.foundry.filters !== "object") state.foundry.filters = {};
+  if (!Array.isArray(state.foundry.lastFilterActorIds)) state.foundry.lastFilterActorIds = [];
   if (!state.foundry.bridgeType) state.foundry.bridgeType = /^wss?:/i.test(state.foundry.bridgeUrl || "") || /api\.foundry-mcp\.com/i.test(state.foundry.bridgeUrl || "") || !state.foundry.bridgeUrl ? "foundry-api" : "legacy-rest";
   if (state.foundry.bridgeType === "foundry-api" && (!state.foundry.bridgeUrl || /^wss?:/i.test(state.foundry.bridgeUrl))) state.foundry.bridgeUrl = FOUNDRY_API_BRIDGE?.DEFAULT_URL || "https://api.foundry-mcp.com/v1";
   return state.foundry;
@@ -760,6 +778,14 @@ function foundryActors() { return getFoundryState().actors.filter(actor => !acto
 function findActorByName(name) {
   const key = nameKey(name);
   return foundryActors().find(actor => nameKey(actor.name) === key) || foundryActors().find(actor => nameKey(actor.name).includes(key) || key.includes(nameKey(actor.name)));
+}
+function findActorForCharacter(character) {
+  if (!character) return null;
+  if (character.foundryActorId) {
+    const linked = foundryActors().find(actor => String(actor.id) === String(character.foundryActorId));
+    if (linked) return linked;
+  }
+  return findActorByName(character.name);
 }
 function atPath(value, path) {
   return path.split(".").reduce((current, key) => current && current[key] !== undefined ? current[key] : undefined, value);
@@ -818,13 +844,13 @@ function sheetModalView(character, actor) {
 }
 function openSheetModal(name) {
   const character = activeCampaign().characters.find(entry => entry.name === name) || { name, role: "Foundry actor", description: "" };
-  document.querySelector("#sheetModalContent").innerHTML = sheetModalView(character, findActorByName(name));
+  document.querySelector("#sheetModalContent").innerHTML = sheetModalView(character, findActorForCharacter(character));
   document.querySelector("#sheetModal").showModal();
 }
 function sheetsView(campaign) {
-  const linked = campaign.characters.filter(character => findActorByName(character.name)).length;
+  const linked = campaign.characters.filter(character => findActorForCharacter(character)).length;
   return `${header("Sheets & stats", "TABLE READY", `${linked} of ${campaign.characters.length} character records are currently matched to a Foundry actor.`, `<button class="primary-button" data-view-jump="foundry">Link Foundry <span>→</span></button>`)}
-    <div class="sheet-list">${campaign.characters.length ? campaign.characters.map(character => { const actor = findActorByName(character.name); return `<article class="card sheet-card"><div class="record-emblem">${esc(initials(character.name))}</div><div><h2>${esc(character.name)}</h2><p>${esc(character.role)}</p></div>${actor?.stats?.length ? `<div class="sheet-card-stats">${actor.stats.slice(0, 3).map(stat => `<span><small>${esc(stat.label)}</small>${esc(stat.value)}</span>`).join("")}</div>` : `<p class="unlinked-copy">Awaiting sheet link</p>`}<button class="secondary-button" type="button" data-open-sheet="${esc(character.name)}">${actor ? "View sheet" : "Link sheet"}</button></article>`; }).join("") : `<div class="empty-state"><h2>No character records yet.</h2><p>Add the cast first, then link their Foundry actors here.</p></div>`}</div>`;
+    <div class="sheet-list">${campaign.characters.length ? campaign.characters.map(character => { const actor = findActorForCharacter(character); return `<article class="card sheet-card"><div class="record-emblem">${esc(initials(character.name))}</div><div><h2>${esc(character.name)}</h2><p>${esc(character.role)}</p></div>${actor?.stats?.length ? `<div class="sheet-card-stats">${actor.stats.slice(0, 3).map(stat => `<span><small>${esc(stat.label)}</small>${esc(stat.value)}</span>`).join("")}</div>` : `<p class="unlinked-copy">Awaiting sheet link</p>`}<button class="secondary-button" type="button" data-open-sheet="${esc(character.name)}">${actor ? "View sheet" : "Link sheet"}</button></article>`; }).join("") : `<div class="empty-state"><h2>No character records yet.</h2><p>Add the cast first, then link their Foundry actors here.</p></div>`}</div>`;
 }
 function workspaceStatusCopy() {
   if (!DESKTOP_API) return "Browser-local workspace";
@@ -956,12 +982,24 @@ function foundryView(campaign) {
   const count = foundryActors().length;
   const moduleBridge = foundry.bridgeType !== "legacy-rest";
   const world = foundry.world?.world || foundry.world || null;
-  return `${header("Foundry VTT", "INTEGRATION", "Connect through Foundry API Bridge, or import actor data locally without losing campaign records.", "")}
+  const filters = foundry.filters || {};
+  const filteredIds = new Set(foundry.lastFilterActorIds || []);
+  const filterResults = filteredIds.size ? foundryActors().filter(actor => filteredIds.has(String(actor.id))) : [];
+  const version = world?.foundry_version || world?.foundryVersion || world?.version || "";
+  const systemVersion = world?.system_version || world?.systemVersion || "";
+  const credentialCopy = usesDesktopFoundryCredentialStore()
+    ? `<label class="consent-check"><input name="rememberFoundryKey" type="checkbox" ${desktopFoundryApiKeySaved ? "checked" : ""} /> Protect this key with Windows and restore it after restarts and updates</label>${desktopFoundryApiKeySaved ? `<button class="quiet-button" type="button" data-clear-foundry-key>Clear saved Foundry key</button>` : ""}`
+    : `<p class="field-help">The key remains in memory for this browser session.</p>`;
+  const resultCards = filterResults.length
+    ? filterResults.map(actor => `<article><div class="record-emblem">${esc(initials(actor.name))}</div><div><strong>${esc(actor.name)}</strong><span>${esc(actor.type || "actor")}${actor.stats?.length ? ` · ${esc(actor.stats.slice(0, 2).map(stat => `${stat.label} ${stat.value}`).join(" · "))}` : ""}</span></div></article>`).join("")
+    : `<p class="empty-copy">Run a filtered sync to build a focused Foundry roster without removing already linked sheets.</p>`;
+  return `${header("Foundry VTT", "INTEGRATION", "Connect through Foundry API Bridge, search the live actor directory, or import actor data locally without losing campaign records.", "")}
     <div class="integration-grid">
-      <section class="card integration-card integration-lead"><p class="eyebrow">CONNECTION STATUS</p><h2>${esc(foundry.lastStatus || "Not connected")}</h2><p>${world ? `${esc(world.title || world.name || "Foundry world")} · ${esc(world.system || "Unknown system")}` : foundry.bridgeUrl ? `Bridge: ${esc(foundry.bridgeUrl)}` : "No remote bridge is configured. Importing Actor JSON still works offline."}</p><div class="connection-metrics"><span><strong>${count}</strong> actors for this campaign</span><span><strong>${foundry.lastSync ? esc(foundry.lastSync) : "—"}</strong> last import</span></div></section>
-      <section class="card integration-card"><div class="section-title"><h2>Foundry API Bridge</h2><span class="tag">Recommended</span></div><p>The module keeps its own connection open. Campaign Engine sends HTTPS requests through the public API, so testing or syncing will not replace Foundry's WebSocket connection. Keep the world open as GM and use the same <code>pk_…</code> key here.</p><form id="foundryBridgeForm" class="compact-form"><label>Bridge type<select name="bridgeType"><option value="foundry-api" ${moduleBridge ? "selected" : ""}>Foundry API Bridge module</option><option value="legacy-rest" ${moduleBridge ? "" : "selected"}>Legacy Campaign Engine REST bridge</option></select></label><label>${moduleBridge ? "Public API URL" : "Legacy bridge URL"}<input required name="bridgeUrl" type="url" value="${esc(foundry.bridgeUrl || FOUNDRY_API_BRIDGE?.DEFAULT_URL || "")}" placeholder="${moduleBridge ? "https://api.foundry-mcp.com/v1" : "https://foundry.example.com/campaign-engine"}" /></label><label>${moduleBridge ? "Foundry API key" : "Access key"}<input name="accessKey" type="password" autocomplete="off" placeholder="${foundryToken ? "Key ready for this app session" : moduleBridge ? "pk_…" : "Optional bridge key"}" /></label><div><button class="secondary-button" type="submit" name="foundryAction" value="test">Test connection</button><button class="primary-button" type="submit" name="foundryAction" value="sync">Sync actors <span>↓</span></button></div></form><p class="quiet-copy"><a href="https://foundryvtt.com/packages/foundry-api-bridge" target="_blank" rel="noreferrer">Install or review Foundry API Bridge ↗</a> The key remains in memory only for this app session.</p></section>
+      <section class="card integration-card integration-lead"><p class="eyebrow">CONNECTION STATUS</p><h2>${esc(foundry.lastStatus || "Not connected")}</h2><p>${world ? `${esc(world.title || world.name || "Foundry world")} · ${esc(world.system || "Unknown system")}${version ? ` · Foundry ${esc(version)}` : ""}${systemVersion ? ` · system ${esc(systemVersion)}` : ""}` : foundry.bridgeUrl ? `Bridge: ${esc(foundry.bridgeUrl)}` : "No remote bridge is configured. Importing Actor JSON still works offline."}</p><div class="connection-metrics"><span><strong>${count}</strong> cached actors</span><span><strong>${campaign.characters.filter(character => findActorForCharacter(character)).length}</strong> stable sheet links</span><span><strong>${foundry.lastSync ? esc(foundry.lastSync) : "—"}</strong> last import</span></div></section>
+      <section class="card integration-card"><div class="section-title"><h2>Foundry API Bridge</h2><span class="tag">Recommended</span></div><p>The module keeps its own connection open. Campaign Engine sends HTTPS requests through the public API, so testing or syncing will not replace Foundry's WebSocket connection. Keep the world open as GM and use the same <code>pk_…</code> key here.</p><form id="foundryBridgeForm" class="compact-form"><label>Bridge type<select name="bridgeType"><option value="foundry-api" ${moduleBridge ? "selected" : ""}>Foundry API Bridge module</option><option value="legacy-rest" ${moduleBridge ? "" : "selected"}>Legacy Campaign Engine REST bridge</option></select></label><label>${moduleBridge ? "Public API URL" : "Legacy bridge URL"}<input required name="bridgeUrl" type="url" value="${esc(foundry.bridgeUrl || FOUNDRY_API_BRIDGE?.DEFAULT_URL || "")}" placeholder="${moduleBridge ? "https://api.foundry-mcp.com/v1" : "https://foundry.example.com/campaign-engine"}" /></label><label>${moduleBridge ? "Foundry API key" : "Access key"}<input name="accessKey" type="password" autocomplete="off" placeholder="${foundryToken ? desktopFoundryApiKeySaved ? "Key protected by Windows" : "Key ready for this app session" : moduleBridge ? "pk_…" : "Optional bridge key"}" /></label>${moduleBridge ? credentialCopy : ""}<div><button class="secondary-button" type="submit" name="foundryAction" value="test">Test connection</button><button class="primary-button" type="submit" name="foundryAction" value="sync">Sync all actors <span>↓</span></button></div></form><p class="quiet-copy"><a href="https://foundryvtt.com/packages/foundry-api-bridge" target="_blank" rel="noreferrer">Install or review Foundry API Bridge ↗</a></p></section>
+      <section class="card integration-card foundry-filter-card"><div class="section-title"><div><p class="eyebrow">LIVE DIRECTORY</p><h2>Find the actors you need</h2></div><span class="tag">${filterResults.length ? `${filterResults.length} matched` : "Focused sync"}</span></div><p>Search the bridge without replacing the actors already linked to this campaign. Filters combine, while actor type and disposition each select one live Foundry category.</p><form id="foundryActorFilterForm" class="foundry-filter-form"><label>Name contains<input name="name" value="${esc(filters.name || "")}" placeholder="Mara, goblin, guard…" /></label><label>Actor type<select name="type"><option value="">Any type</option>${["character", "npc", "vehicle", "group"].map(value => `<option value="${value}" ${filters.type === value ? "selected" : ""}>${value === "character" ? "Player character" : value.toUpperCase()}</option>`).join("")}</select></label><label>Disposition<select name="disposition"><option value="">Any disposition</option>${["friendly", "neutral", "hostile", "secret"].map(value => `<option value="${value}" ${filters.disposition === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><label>Player ownership<select name="has_player_owner"><option value="">Any ownership</option><option value="true" ${filters.has_player_owner === true ? "selected" : ""}>Has player owner</option><option value="false" ${filters.has_player_owner === false ? "selected" : ""}>No player owner</option></select></label><label>Foundry folder<input name="folder_name" value="${esc(filters.folder_name || "")}" placeholder="Chapter 7" /></label><label class="consent-check foundry-recursive"><input name="folder_recursive" type="checkbox" ${filters.folder_recursive ? "checked" : ""} /> Include subfolders</label><div class="foundry-filter-actions"><button class="primary-button" type="submit">Sync matching actors <span>↓</span></button><button class="secondary-button" type="button" data-clear-foundry-filters>Clear filters</button></div></form><div class="foundry-filter-results">${resultCards}</div></section>
       <section class="card integration-card import-card"><div class="section-title"><h2>Import actor JSON</h2><span class="tag">Works offline</span></div><p>Choose an Actor export from Foundry. Character names are matched to the active campaign automatically; unmatched actors remain available in the bridge cache.</p><label class="file-drop"><span>⇪</span><strong>Choose Foundry JSON</strong><small>Actor, actor array, or { actors: [...] }</small><input type="file" accept=".json,application/json" data-foundry-import /></label></section>
-      <section class="card integration-card bridge-contract"><div class="section-title"><h2>What this connection can do</h2><span class="tag">Explicit actions</span></div><p><code>GET /world</code> verifies the active world.</p><p><code>GET /actors</code> synchronizes complete actor sheets.</p><p><code>POST /actors</code> + <code>POST /roll-tables</code> send Builder Studio content when you explicitly choose Send through bridge.</p><p class="quiet-copy">Campaign Engine does not issue combat, token, scene, deletion, or other control commands through this connection.</p></section>
+      <section class="card integration-card bridge-contract"><div class="section-title"><h2>What this connection can do</h2><span class="tag">Explicit actions</span></div><p><code>GET /world</code> verifies the active world and reports versions.</p><p><code>GET /actors</code> supports filtered or complete sheet synchronization.</p><p><code>POST /actors</code> + <code>POST /roll-tables</code> send Builder Studio content when you explicitly choose Send through bridge.</p><p class="quiet-copy">Campaign Engine does not yet issue combat, token, scene, deletion, or other tactical control commands through this connection.</p></section>
     </div>`;
 }
 function getCopilotState() {
@@ -1239,16 +1277,87 @@ function render() {
   }
 }
 
-function ingestFoundryActors(rawActors, origin) {
-  if (!Array.isArray(rawActors) || !rawActors.length) throw new Error("No actors were found in that source.");
+function linkFoundryActorsByExactName(actors) {
+  const campaign = activeCampaign();
+  for (const character of campaign.characters) {
+    if (character.foundryActorId) continue;
+    const matches = actors.filter(actor => nameKey(actor.name) === nameKey(character.name));
+    if (matches.length === 1) character.foundryActorId = matches[0].id;
+  }
+}
+function ingestFoundryActors(rawActors, origin, { replace = true, filterResult = false, allowEmpty = false } = {}) {
+  if (!Array.isArray(rawActors) || (!allowEmpty && !rawActors.length)) throw new Error("No actors were found in that source.");
   const foundry = getFoundryState();
   const actors = rawActors.filter(Boolean).map(normalizeFoundryActor);
-  foundry.actors = [...foundry.actors.filter(actor => actor.campaignId !== activeCampaign().id), ...actors];
+  const campaignId = activeCampaign().id;
+  const otherCampaigns = foundry.actors.filter(actor => actor.campaignId && actor.campaignId !== campaignId);
+  const currentActors = replace ? [] : foundry.actors.filter(actor => !actor.campaignId || actor.campaignId === campaignId);
+  const incomingIds = new Set(actors.map(actor => String(actor.id)));
+  foundry.actors = [...otherCampaigns, ...currentActors.filter(actor => !incomingIds.has(String(actor.id))), ...actors];
+  foundry.lastFilterActorIds = filterResult ? actors.map(actor => String(actor.id)) : [];
+  linkFoundryActorsByExactName(actors);
   foundry.lastStatus = `${actors.length} actor${actors.length === 1 ? "" : "s"} imported`;
   foundry.lastSync = new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   saveState();
   render();
   showToast(`${actors.length} Foundry actor${actors.length === 1 ? "" : "s"} imported from ${origin}.`);
+}
+function foundryErrorStatus(error) {
+  const message = String(error?.message || "").toLowerCase();
+  if (/401|authentication|invalid api key|malformed/.test(message)) return "Foundry key rejected";
+  if (/403|forbidden|tier|subscription/.test(message)) return "Foundry tier does not allow that action";
+  if (/503|not currently connected|service unavailable|offline/.test(message)) return "Foundry world offline";
+  if (/504|gateway timeout|timed out/.test(message)) return "Foundry bridge timed out";
+  return "Bridge unavailable";
+}
+async function saveFoundryCredentialIfRequested(form, key) {
+  if (!usesDesktopFoundryCredentialStore() || !form.querySelector('[name="rememberFoundryKey"]')?.checked) return false;
+  await DESKTOP_API.saveFoundryApiKey(key);
+  desktopFoundryApiKeySaved = true;
+  return true;
+}
+function foundryFiltersFromForm(form) {
+  const data = new FormData(form);
+  const ownership = String(data.get("has_player_owner") || "");
+  return {
+    name: String(data.get("name") || "").trim(),
+    type: String(data.get("type") || "").trim(),
+    disposition: String(data.get("disposition") || "").trim(),
+    has_player_owner: ownership === "" ? undefined : ownership === "true",
+    folder_name: String(data.get("folder_name") || "").trim(),
+    folder_recursive: Boolean(data.get("folder_recursive"))
+  };
+}
+async function syncFoundryActorFilter(form) {
+  const foundry = getFoundryState();
+  const filters = foundryFiltersFromForm(form);
+  foundry.filters = filters;
+  if (foundry.bridgeType !== "foundry-api") {
+    saveState();
+    render();
+    showToast("Filtered sync requires Foundry API Bridge.");
+    return;
+  }
+  if (!foundryToken) {
+    showToast("Test the Foundry connection or restore its saved key first.");
+    return;
+  }
+  try {
+    foundry.lastStatus = "Searching Foundry actors";
+    render();
+    const result = await FOUNDRY_API_BRIDGE.syncActors({ url: foundry.bridgeUrl, apiKey: foundryToken, filters });
+    foundry.world = result.world;
+    ingestFoundryActors(result.actors, "your filtered Foundry search", { replace: false, filterResult: true, allowEmpty: true });
+    foundry.lastStatus = `${result.actors.length} Foundry actor${result.actors.length === 1 ? "" : "s"} matched`;
+    saveState();
+    render();
+    if (result.warnings.length) showToast(`${result.actors.length} actors matched; ${result.warnings.length} could not be expanded.`);
+  } catch (error) {
+    foundry.lastStatus = foundryErrorStatus(error);
+    saveState();
+    render();
+    showToast(`Foundry actor search failed: ${error.message}`);
+  }
 }
 async function connectFoundryBridge(form, action) {
   const data = new FormData(form);
@@ -1277,6 +1386,8 @@ async function connectFoundryBridge(form, action) {
         render();
         showToast("Foundry API Bridge responded successfully without replacing its Foundry connection.");
       }
+      const credentialSaved = await saveFoundryCredentialIfRequested(form, key);
+      if (credentialSaved && currentView === "foundry") render();
     } else {
       const headers = key ? { "X-Campaign-Engine-Key": key } : {};
       const endpoint = action === "sync" ? "/actors" : "/health";
@@ -1293,7 +1404,7 @@ async function connectFoundryBridge(form, action) {
     }
   } catch (error) {
     const foundry = getFoundryState();
-    foundry.lastStatus = "Bridge unavailable";
+    foundry.lastStatus = foundryErrorStatus(error);
     saveState();
     render();
     showToast(`Foundry bridge could not connect: ${error.message}`);
@@ -2362,6 +2473,29 @@ nav.addEventListener("click", event => { const button = event.target.closest("[d
 settingsButton.addEventListener("click", () => { currentView = "settings"; activeFilter = "All"; document.querySelector(".sidebar").classList.remove("open"); render(); });
 root.addEventListener("click", async event => {
   const campaign = activeCampaign();
+  if (event.target.closest("[data-clear-foundry-key]")) {
+    event.stopImmediatePropagation();
+    try {
+      await DESKTOP_API.clearFoundryApiKey();
+      foundryToken = "";
+      desktopFoundryApiKeySaved = false;
+      render();
+      showToast("The saved Foundry API key was cleared from this device.");
+    } catch (error) {
+      showToast(error.message || "The saved Foundry API key could not be cleared.");
+    }
+    return;
+  }
+  if (event.target.closest("[data-clear-foundry-filters]")) {
+    event.stopImmediatePropagation();
+    const foundry = getFoundryState();
+    foundry.filters = {};
+    foundry.lastFilterActorIds = [];
+    saveState();
+    render();
+    showToast("Foundry actor filters cleared.");
+    return;
+  }
   const start = event.target.closest("[data-start-session-desk]");
   if (start) {
     event.stopImmediatePropagation();
@@ -2626,6 +2760,7 @@ root.addEventListener("submit", event => {
   if (event.target.matches("#aiSettingsForm")) { event.preventDefault(); saveAiSettings(event.target); return; }
   if (event.target.matches("#copilotForm")) { event.preventDefault(); askCopilot(event.target); return; }
   if (event.target.matches("#archivistBridgeForm")) { event.preventDefault(); runArchivistBridgeAction(event.target, event.submitter?.value || "save"); return; }
+  if (event.target.matches("#foundryActorFilterForm")) { event.preventDefault(); syncFoundryActorFilter(event.target); return; }
   if (!event.target.matches("#foundryBridgeForm")) return;
   event.preventDefault();
   connectFoundryBridge(event.target, event.submitter?.value || "test");
@@ -2861,6 +2996,7 @@ recordModal.addEventListener("close", () => { recordEditing = null; });
 
 initializeDesktopWorkspace();
 initializeDesktopApiKey();
+initializeDesktopFoundryApiKey();
 initializeDesktopUpdates();
 initializeArchivistBridge();
 render();

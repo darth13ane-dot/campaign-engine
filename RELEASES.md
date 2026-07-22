@@ -1,5 +1,15 @@
 # Sharing and desktop updates
 
+## Version 1.2.0 — Foundry workspace foundation
+
+Campaign Engine 1.2.0 makes Foundry API Bridge a dependable part of the persistent Windows workspace. The desktop app can protect the bridge key with the current Windows account and restore it after restarts or portable updates without storing it in campaign records or exports.
+
+The Foundry screen now reports the connected world's title, game system, Foundry version, system version, cached actor count, stable character-sheet links, and last import. A live-directory search can filter actors by name, actor type, disposition, player ownership, and Foundry folder. Focused syncs merge results into the existing cache instead of erasing previously linked sheets.
+
+When a Campaign Engine character has one exact Foundry name match, the Actor ID is saved as the stable link and preferred for later sheet lookups. Connection failures now distinguish rejected credentials, subscription restrictions, an offline world, and bridge timeouts.
+
+See `RELEASE_SCHEDULE.md` for the planned stabilization and live-table releases that follow this foundation.
+
 ## Version 1.1.0 — Prep → play → reconcile
 
 Campaign Engine 1.1.0 connects session planning to live play and post-session campaign upkeep.

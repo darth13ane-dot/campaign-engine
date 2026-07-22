@@ -1,6 +1,6 @@
 # Foundry VTT connection
 
-Campaign Engine 1.1.3 uses **Foundry API Bridge** as its recommended Foundry connection. The Foundry module maintains its own two WebSocket connections. Campaign Engine talks to the bridge's public HTTPS API, which relays commands over the module's existing connection instead of opening or replacing a WebSocket.
+Campaign Engine 1.2.0 uses **Foundry API Bridge** as its recommended Foundry connection. The Foundry module maintains its own two WebSocket connections. Campaign Engine talks to the bridge's public HTTPS API, which relays commands over the module's existing connection instead of opening or replacing a WebSocket.
 
 ## Recommended setup: Foundry API Bridge
 
@@ -9,17 +9,22 @@ Campaign Engine 1.1.3 uses **Foundry API Bridge** as its recommended Foundry con
 3. Keep Foundry open with a Game Master signed in and confirm the module's API connection is active.
 4. In Campaign Engine, open **Settings -> Foundry VTT** and leave **Foundry API Bridge** selected.
 5. Use the default public API URL, `https://api.foundry-mcp.com/v1`, and paste the same `pk_...` key.
-6. Choose **Test connection**, then **Sync actors**.
+6. Choose **Test connection**, then either **Sync all actors** or use the live-directory filters for a focused sync.
 
-The key is sent as a bearer credential only to the configured public API URL and remains in memory for the current Campaign Engine session. It is not written into campaign exports or local campaign records.
+The key is sent as a bearer credential only to the configured public API URL. In the Windows app, **Protect this key with Windows** encrypts it for the current Windows account in the private AppData credential store so installed and portable launches can restore it after restarts and updates. In a browser, it remains in memory for the current session. It is never written into campaign exports or local campaign records.
 
 If an older Campaign Engine workspace contains the previous `wss://api.foundry-mcp.com/v1/connect` value, 1.1.2 automatically replaces it with the HTTPS public API URL. Campaign Engine must not connect directly to the module's WebSocket endpoint because that endpoint is reserved for the Foundry module's long-lived client connection.
 
 ## What Campaign Engine can do through the module
 
 - Read the current world summary and actor list.
+- Search actors by name, actor type, disposition, player ownership, and Foundry folder without replacing the existing actor cache.
 - Fetch full actor records for Campaign Engine's sheet viewer.
 - Create actors and roll tables when you explicitly send content from the Builder.
+
+Each complete or filtered actor sync links a Campaign Engine character to its Foundry Actor ID when there is exactly one matching name. That stable ID is then preferred over name matching when opening the character sheet. A focused sync merges its results into the cache; it does not remove sheets linked by an earlier sync.
+
+Connection status distinguishes a rejected key, an unavailable subscription action, an offline Foundry world, and a bridge timeout so the next repair step is visible without opening developer tools.
 
 Builder sends create new Foundry documents. Repeating a send can therefore create duplicates. Campaign Engine does not update or delete existing Foundry documents through this connection.
 
