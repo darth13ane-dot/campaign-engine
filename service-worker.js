@@ -1,15 +1,15 @@
-const CACHE_NAME = "campaign-engine-shell-v26";
+const CACHE_NAME = "campaign-engine-shell-v27";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=14",
+  "./styles.css?v=15",
   "./workspace.css?v=1",
   "./systems/pf2e/styles.css?v=1",
-  "./app.js?v=23",
+  "./app.js?v=24",
   "./archivist-merge.js?v=3",
   "./campaign-cleanup.js?v=1",
   "./session-workflow.js?v=1",
-  "./foundry-api-bridge.js?v=3",
+  "./foundry-api-bridge.js?v=4",
   "./character-filters.js?v=1",
   "./features.js?v=11",
   "./systems/registry.js?v=1",

@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   DEFAULT_URL,
   FoundryApiClient,
+  actorFilterQuery,
   apiBaseUrl,
   numericRange,
   sendBuilderContent,
@@ -44,22 +45,44 @@ test("client invokes browser fetch with the global receiver", async () => {
   assert.equal((await client.request("/world")).title, "Bound World");
 });
 
+test("builds documented system-agnostic actor filters", () => {
+  const query = new URLSearchParams(actorFilterQuery({
+    name: "  Vale  ",
+    type: ["character", "npc"],
+    disposition: "friendly",
+    has_player_owner: true,
+    folder_name: "Chapter 7",
+    folder_recursive: true
+  }, 400));
+
+  assert.equal(query.get("name"), "Vale");
+  assert.deepEqual(query.getAll("type"), ["character", "npc"]);
+  assert.equal(query.get("disposition"), "friendly");
+  assert.equal(query.get("has_player_owner"), "true");
+  assert.equal(query.get("folder_name"), "Chapter 7");
+  assert.equal(query.get("folder_recursive"), "true");
+  assert.equal(query.get("limit"), "200");
+  assert.equal(query.get("offset"), "400");
+});
+
 test("syncActors follows pagination and resolves actor refs into complete records", async () => {
   const calls = [];
   const fetchImpl = async (url) => {
     calls.push(url);
     if (url.endsWith("/world")) return jsonResponse({ data: { id: "world", title: "Bridge World", system: "pf2e" } });
-    if (url.includes("/actors?limit=200&offset=0")) return jsonResponse({ data: [{ id: "a1", name: "Vale" }], pagination: { limit: 200, offset: 0, total: 2, has_more: true } });
-    if (url.includes("/actors?limit=200&offset=1")) return jsonResponse({ data: [{ id: "a2", name: "Mara" }], pagination: { limit: 200, offset: 1, total: 2, has_more: false } });
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/actors") && parsed.searchParams.get("offset") === "0") return jsonResponse({ data: [{ id: "a1", name: "Vale" }], pagination: { limit: 200, offset: 0, total: 2, has_more: true } });
+    if (parsed.pathname.endsWith("/actors") && parsed.searchParams.get("offset") === "1") return jsonResponse({ data: [{ id: "a2", name: "Mara" }], pagination: { limit: 200, offset: 1, total: 2, has_more: false } });
     if (url.endsWith("/actors/a1")) return jsonResponse({ data: { id: "a1", name: "Vale", type: "character", image: "vale.png", system: { attributes: { hp: { value: 12 } } }, items: [] } });
     if (url.endsWith("/actors/a2")) return jsonResponse({ data: { id: "a2", name: "Mara", type: "npc", image: "", system: {}, items: [] } });
     return jsonResponse({ error: "Unexpected test URL" }, 500);
   };
-  const result = await syncActors({ url: "https://api.example.test/v1", apiKey: "pk_test", fetchImpl });
+  const result = await syncActors({ url: "https://api.example.test/v1", apiKey: "pk_test", fetchImpl, filters: { type: "character" } });
   assert.equal(result.world.title, "Bridge World");
   assert.deepEqual(result.actors.map(actor => actor.name), ["Vale", "Mara"]);
   assert.equal(result.actors[0].system.attributes.hp.value, 12);
   assert.equal(calls.filter(url => url.includes("/actors?")).length, 2);
+  assert.ok(calls.filter(url => url.includes("/actors?")).every(url => url.includes("type=character")));
   assert.deepEqual(result.warnings, []);
 });
 

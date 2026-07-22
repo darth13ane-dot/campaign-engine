@@ -3,7 +3,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { createCredentialStore } = require("../electron/credential-store.cjs");
+const { FOUNDRY_CREDENTIAL_FILE, createCredentialStore } = require("../electron/credential-store.cjs");
 
 function protectedStorage(available = true) {
   return {
@@ -51,4 +51,26 @@ test("reports damaged credential records without exposing their contents", async
   await fs.writeFile(store.credentialPath, "{\"schemaVersion\":1,\"ciphertext\":\"%%%\"}", "utf8");
 
   await assert.rejects(() => store.loadApiKey(), /could not decrypt/);
+});
+
+test("keeps Foundry and AI credentials in separate encrypted records", async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "campaign-engine-credentials-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const safeStorage = protectedStorage();
+  const aiStore = createCredentialStore({ directory, safeStorage });
+  const foundryStore = createCredentialStore({
+    directory,
+    safeStorage,
+    fileName: FOUNDRY_CREDENTIAL_FILE,
+    credentialName: "Foundry API key"
+  });
+
+  await aiStore.saveApiKey("sk-ai-secret");
+  await foundryStore.saveApiKey("pk_foundry-secret");
+
+  assert.notEqual(aiStore.credentialPath, foundryStore.credentialPath);
+  assert.deepEqual(await aiStore.loadApiKey(), { saved: true, apiKey: "sk-ai-secret" });
+  assert.deepEqual(await foundryStore.loadApiKey(), { saved: true, apiKey: "pk_foundry-secret" });
+  const foundryRecord = await fs.readFile(foundryStore.credentialPath, "utf8");
+  assert.doesNotMatch(foundryRecord, /pk_foundry-secret/);
 });

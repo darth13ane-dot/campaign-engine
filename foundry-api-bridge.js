@@ -78,11 +78,29 @@
     return new FoundryApiClient(options).request("/world");
   }
 
-  async function listAllActorRefs(client) {
+  function actorFilterQuery(filters = {}, offset = 0) {
+    const query = new URLSearchParams();
+    const textFields = ["name", "folder_id", "folder_name"];
+    for (const field of textFields) {
+      const value = String(filters[field] || "").trim();
+      if (value) query.set(field, value);
+    }
+    for (const field of ["type", "disposition"]) {
+      const values = Array.isArray(filters[field]) ? filters[field] : [filters[field]];
+      values.map(value => String(value || "").trim()).filter(Boolean).forEach(value => query.append(field, value));
+    }
+    if (typeof filters.has_player_owner === "boolean") query.set("has_player_owner", String(filters.has_player_owner));
+    if (filters.folder_recursive && (query.has("folder_id") || query.has("folder_name"))) query.set("folder_recursive", "true");
+    query.set("limit", "200");
+    query.set("offset", String(Math.max(0, Number(offset) || 0)));
+    return query.toString();
+  }
+
+  async function listAllActorRefs(client, filters = {}) {
     const actors = [];
     let offset = 0;
     do {
-      const payload = await client.requestEnvelope(`/actors?limit=200&offset=${offset}`);
+      const payload = await client.requestEnvelope(`/actors?${actorFilterQuery(filters, offset)}`);
       const page = Array.isArray(payload.data) ? payload.data : [];
       actors.push(...page);
       if (!payload.pagination?.has_more || page.length === 0) break;
@@ -94,7 +112,7 @@
   async function syncActors(options) {
     const client = new FoundryApiClient(options);
     const world = await client.request("/world");
-    const summaries = await listAllActorRefs(client);
+    const summaries = await listAllActorRefs(client, options.filters);
     const warnings = [];
     const actors = await mapConcurrent(summaries, 4, async summary => {
       try { return await client.request(`/actors/${encodeURIComponent(summary.id)}`); }
@@ -150,6 +168,7 @@
   return {
     DEFAULT_URL,
     FoundryApiClient,
+    actorFilterQuery,
     actorCreateParams,
     apiBaseUrl,
     listAllActorRefs,
