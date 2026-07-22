@@ -238,6 +238,7 @@ function createPortableUpdater({
   let downloadedUpdate = null;
   let activeDownload = null;
   let cleanupTask = null;
+  let installPending = false;
 
   function state(nextState) {
     onState({ ...nextState, portable: true });
@@ -354,37 +355,44 @@ function createPortableUpdater({
 
   async function install(quit) {
     if (!downloadedUpdate) throw new Error("Download and verify the portable update before installing it.");
-    await fsPromises.access(path.dirname(executablePath), fs.constants.W_OK);
-    await fsPromises.access(executablePath, fs.constants.R_OK | fs.constants.W_OK);
-    const helperPath = path.join(path.dirname(downloadedUpdate.readyPath), "install-portable-update.ps1");
-    const schedulerPath = path.join(path.dirname(downloadedUpdate.readyPath), "schedule-portable-update.ps1");
-    const taskName = `Campaign Engine Portable Update ${downloadedUpdate.version} ${processId}`;
-    await fsPromises.writeFile(helperPath, portableInstallerScript(), "utf8");
-    await fsPromises.writeFile(schedulerPath, portableSchedulerScript(), "utf8");
-    const child = spawnImpl(powershellPath, [
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy", "Bypass",
-      "-File", schedulerPath,
-      "-TaskName", taskName,
-      "-PowerShellPath", powershellPath,
-      "-InstallerPath", helperPath,
-      "-ParentPid", String(processId),
-      "-Source", downloadedUpdate.readyPath,
-      "-Target", executablePath,
-      "-ExpectedSha512", downloadedUpdate.sha512,
-      "-UpdateVersion", downloadedUpdate.version
-    ], {
-      stdio: ["ignore", "ignore", "pipe"],
-      windowsHide: true
-    });
-    await waitForChild(child);
-    state({ status: "installing", version: downloadedUpdate.version, message: "Restarting to install the portable update…" });
-    setImmediate(quit);
+    installPending = true;
+    try {
+      if (cleanupTask) await cleanupTask;
+      await fsPromises.access(path.dirname(executablePath), fs.constants.W_OK);
+      await fsPromises.access(executablePath, fs.constants.R_OK | fs.constants.W_OK);
+      const helperPath = path.join(path.dirname(downloadedUpdate.readyPath), "install-portable-update.ps1");
+      const schedulerPath = path.join(path.dirname(downloadedUpdate.readyPath), "schedule-portable-update.ps1");
+      const taskName = `Campaign Engine Portable Update ${downloadedUpdate.version} ${processId}`;
+      await fsPromises.writeFile(helperPath, portableInstallerScript(), "utf8");
+      await fsPromises.writeFile(schedulerPath, portableSchedulerScript(), "utf8");
+      const child = spawnImpl(powershellPath, [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy", "Bypass",
+        "-File", schedulerPath,
+        "-TaskName", taskName,
+        "-PowerShellPath", powershellPath,
+        "-InstallerPath", helperPath,
+        "-ParentPid", String(processId),
+        "-Source", downloadedUpdate.readyPath,
+        "-Target", executablePath,
+        "-ExpectedSha512", downloadedUpdate.sha512,
+        "-UpdateVersion", downloadedUpdate.version
+      ], {
+        stdio: ["ignore", "ignore", "pipe"],
+        windowsHide: true
+      });
+      await waitForChild(child);
+      state({ status: "installing", version: downloadedUpdate.version, message: "Restarting to install the portable update…" });
+      setImmediate(quit);
+    } catch (error) {
+      installPending = false;
+      throw error;
+    }
   }
 
   async function cleanupAfterLaunch() {
-    if (activeDownload) return;
+    if (activeDownload || installPending) return;
     cleanupTask = (async () => {
       try {
         await cleanupScheduledTasks();
