@@ -9,6 +9,7 @@ const ARCHIVIST_MERGE = window.CampaignArchivistMerge || null;
 const CAMPAIGN_CLEANUP = window.CampaignCleanup || null;
 const SESSION_WORKFLOW = window.CampaignSessionWorkflow || null;
 const FOUNDRY_API_BRIDGE = window.CampaignFoundryApiBridge || null;
+const FOUNDRY_ACTOR_NORMALIZER = window.CampaignFoundryActorNormalizer || null;
 const CHARACTER_FILTERS = window.CampaignCharacterFilters || null;
 const DESKTOP_API = window.campaignEngineDesktop || null;
 
@@ -84,6 +85,9 @@ let state = loadState();
 hydrateCampaignState();
 let currentView = "dashboard";
 let activeFilter = "All";
+let sheetFilter = "All";
+let sheetSearch = "";
+let sheetLevel = "any";
 let characterDirectoryMode = "directory";
 let connectionViewMode = "board";
 let quickTagTarget = null;
@@ -787,54 +791,15 @@ function findActorForCharacter(character) {
   }
   return findActorByName(character.name);
 }
-function atPath(value, path) {
-  return path.split(".").reduce((current, key) => current && current[key] !== undefined ? current[key] : undefined, value);
-}
-function scalar(value) {
-  if (value === null || value === undefined || value === "") return null;
-  if (typeof value !== "object") return String(value);
-  for (const key of ["value", "total", "max", "current", "modified"]) if (value[key] !== undefined && value[key] !== null) return String(value[key]);
-  return null;
-}
-function firstValue(system, paths) {
-  for (const path of paths) {
-    const value = scalar(atPath(system, path));
-    if (value !== null) return value;
-  }
-  return null;
-}
 function normalizeFoundryActor(raw) {
-  const system = raw.system || raw.data?.data || {};
-  const hp = firstValue(system, ["attributes.hp.value", "attributes.hp.current", "status.wounds.value", "details.hitpoints.value"]);
-  const hpMax = firstValue(system, ["attributes.hp.max", "attributes.hp.maximum", "status.wounds.max", "details.hitpoints.max"]);
-  const ac = firstValue(system, ["attributes.ac.value", "attributes.ac.total", "status.defence.value", "status.armor.value"]);
-  const movement = firstValue(system, ["attributes.speed.value", "attributes.speed.total", "details.move.value", "status.movement.value"]);
-  const saves = ["fortitude", "reflex", "will"].map(save => {
-    const value = firstValue(system, [`saves.${save}.value`, `saves.${save}.total`]);
-    return value && { label: save[0].toUpperCase() + save.slice(1), value: value.startsWith("+") || value.startsWith("-") ? value : `+${value}` };
-  }).filter(Boolean);
-  const stats = [
-    hp && { label: hpMax ? "HP" : "Wounds", value: hpMax ? `${hp} / ${hpMax}` : hp },
-    ac && { label: "Defense", value: ac },
-    movement && { label: "Movement", value: movement },
-    ...saves
-  ].filter(Boolean);
-  const abilities = Object.entries(system.abilities || {}).map(([key, value]) => {
-    const score = firstValue(value, ["mod", "value", "total"]);
-    return score && { label: key.slice(0, 3).toUpperCase(), value: score.startsWith("+") || score.startsWith("-") ? score : `+${score}` };
-  }).filter(Boolean).slice(0, 6);
+  if (!FOUNDRY_ACTOR_NORMALIZER) throw new Error("Foundry actor normalization support did not load.");
+  const foundry = getFoundryState();
+  const world = foundry.world?.world || foundry.world || {};
+  const worldSystemId = typeof world.system === "object" ? world.system?.id : world.system;
+  const systemId = worldSystemId || world.system_id || SYSTEM_REGISTRY.get(activeCampaign().system)?.id || "";
   return {
-    id: raw._id || raw.id || `actor-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    campaignId: activeCampaign().id,
-    name: raw.name || "Unnamed Foundry actor",
-    type: raw.type || "actor",
-    img: raw.img || raw.image || raw.prototypeToken?.texture?.src || "",
-    system, stats, abilities,
-    items: (raw.items || []).map(item => ({
-      name: item.name || "Unnamed item",
-      type: item.type || "item",
-      description: String(item.system?.description?.value || item.system?.description || "").replace(/<[^>]*>/g, "").slice(0, 200)
-    })).filter(item => item.name).slice(0, 16)
+    ...FOUNDRY_ACTOR_NORMALIZER.normalizeFoundryActor(raw, { systemId }),
+    campaignId: activeCampaign().id
   };
 }
 function sheetModalView(character, actor) {
@@ -848,9 +813,31 @@ function openSheetModal(name) {
   document.querySelector("#sheetModal").showModal();
 }
 function sheetsView(campaign) {
-  const linked = campaign.characters.filter(character => findActorForCharacter(character)).length;
+  const entries = campaign.characters.map(character => ({ character, actor: findActorForCharacter(character) }));
+  const linked = entries.filter(entry => entry.actor).length;
+  const pf2eActive = enabledSystems(campaign).some(system => system.id === "pf2e") || entries.some(entry => entry.actor?.isPf2e || entry.actor?.systemId === "pf2e");
+  const levels = [...new Set(entries.map(entry => entry.actor?.level).filter(level => Number.isFinite(level)))].sort((left, right) => left - right);
+  if (sheetLevel !== "any" && !levels.some(level => String(level) === sheetLevel)) sheetLevel = "any";
+  const visibleEntries = entries.filter(({ character, actor }) =>
+    CHARACTER_FILTERS?.matchesSheetFilter(character, actor, { filter: sheetFilter, query: sheetSearch, level: sheetLevel })
+      ?? (sheetFilter === "All" || (sheetFilter === "Linked" ? actor : sheetFilter === "Unlinked" ? !actor : true))
+  );
+  const filters = [
+    ["All", "All"],
+    ["PC", "PCs"],
+    ["NPC", "NPCs"],
+    ["Linked", "Linked"],
+    ["Unlinked", "Unlinked"]
+  ];
+  const levelFilter = pf2eActive ? `<label class="sheet-level-filter">PF2e level<select data-sheet-level><option value="any">Any level</option>${levels.map(level => `<option value="${level}" ${String(level) === sheetLevel ? "selected" : ""}>Level ${level}</option>`).join("")}</select></label>` : "";
+  const cards = visibleEntries.map(({ character, actor }) => {
+    const systemTag = actor?.isPf2e || actor?.systemId === "pf2e" ? `<span class="sheet-system-tag">PF2e${Number.isFinite(actor.level) ? ` · level ${actor.level}` : ""}</span>` : "";
+    return `<article class="card sheet-card" data-sheet-card><div class="record-emblem">${esc(initials(character.name))}</div><div><h2>${esc(character.name)}</h2><p>${esc(character.role)}${systemTag}</p></div>${actor?.stats?.length ? `<div class="sheet-card-stats">${actor.stats.slice(0, 3).map(stat => `<span><small>${esc(stat.label)}</small>${esc(stat.value)}</span>`).join("")}</div>` : `<p class="unlinked-copy">Awaiting sheet link</p>`}<button class="secondary-button" type="button" data-open-sheet="${esc(character.name)}">${actor ? "View sheet" : "Link sheet"}</button></article>`;
+  }).join("");
   return `${header("Sheets & stats", "TABLE READY", `${linked} of ${campaign.characters.length} character records are currently matched to a Foundry actor.`, `<button class="primary-button" data-view-jump="foundry">Link Foundry <span>→</span></button>`)}
-    <div class="sheet-list">${campaign.characters.length ? campaign.characters.map(character => { const actor = findActorForCharacter(character); return `<article class="card sheet-card"><div class="record-emblem">${esc(initials(character.name))}</div><div><h2>${esc(character.name)}</h2><p>${esc(character.role)}</p></div>${actor?.stats?.length ? `<div class="sheet-card-stats">${actor.stats.slice(0, 3).map(stat => `<span><small>${esc(stat.label)}</small>${esc(stat.value)}</span>`).join("")}</div>` : `<p class="unlinked-copy">Awaiting sheet link</p>`}<button class="secondary-button" type="button" data-open-sheet="${esc(character.name)}">${actor ? "View sheet" : "Link sheet"}</button></article>`; }).join("") : `<div class="empty-state"><h2>No character records yet.</h2><p>Add the cast first, then link their Foundry actors here.</p></div>`}</div>`;
+    <div class="sheet-filter-toolbar"><div class="filter-group" role="group" aria-label="Sheet filters">${filters.map(([value, label]) => `<button class="filter-button ${sheetFilter === value ? "active" : ""}" type="button" data-sheet-filter="${value}">${label}</button>`).join("")}</div><div class="sheet-filter-inputs">${levelFilter}<label>Find a sheet<input class="inline-search" data-sheet-search value="${esc(sheetSearch)}" placeholder="Name, trait, stat, or item…" /></label></div></div>
+    <p class="sheet-filter-summary" data-sheet-result-count>${visibleEntries.length} of ${campaign.characters.length} sheets shown${pf2eActive ? " · PF2e statistics normalized" : ""}</p>
+    <div class="sheet-list">${cards || `<div class="empty-state"><h2>No sheets match these filters.</h2><p>Clear the role, link, level, or text filter to widen the roster.</p><button class="secondary-button" type="button" data-reset-sheet-filters>Clear sheet filters</button></div>`}</div>`;
 }
 function workspaceStatusCopy() {
   if (!DESKTOP_API) return "Browser-local workspace";
@@ -1303,12 +1290,27 @@ function ingestFoundryActors(rawActors, origin, { replace = true, filterResult =
   showToast(`${actors.length} Foundry actor${actors.length === 1 ? "" : "s"} imported from ${origin}.`);
 }
 function foundryErrorStatus(error) {
+  const status = Number(error?.status);
   const message = String(error?.message || "").toLowerCase();
-  if (/401|authentication|invalid api key|malformed/.test(message)) return "Foundry key rejected";
-  if (/403|forbidden|tier|subscription/.test(message)) return "Foundry tier does not allow that action";
-  if (/503|not currently connected|service unavailable|offline/.test(message)) return "Foundry world offline";
-  if (/504|gateway timeout|timed out/.test(message)) return "Foundry bridge timed out";
+  if (status === 401 || /401|authentication|invalid api key|malformed/.test(message)) return "Foundry key rejected";
+  if (status === 403 || /403|forbidden|tier|subscription/.test(message)) return "Foundry tier does not allow that action";
+  if (status === 429 || /429|too many requests|rate limit/.test(message)) return "Foundry bridge busy — try again";
+  if (status === 503 || /503|not currently connected|service unavailable|offline/.test(message)) return "Foundry world offline";
+  if (status === 504 || /504|gateway timeout|timed out/.test(message)) return "Foundry bridge timed out";
+  if (error?.name === "TypeError" || /failed to fetch|network/.test(message)) return "Foundry network unavailable";
   return "Bridge unavailable";
+}
+function foundryRequestOptions(foundry, url, apiKey) {
+  return {
+    url,
+    apiKey,
+    maxRetries: 1,
+    onRetry({ nextAttempt, maxAttempts }) {
+      foundry.lastStatus = `Retrying Foundry request · attempt ${nextAttempt} of ${maxAttempts}`;
+      saveState();
+      if (currentView === "foundry") render();
+    }
+  };
 }
 async function saveFoundryCredentialIfRequested(form, key) {
   if (!usesDesktopFoundryCredentialStore() || !form.querySelector('[name="rememberFoundryKey"]')?.checked) return false;
@@ -1345,7 +1347,7 @@ async function syncFoundryActorFilter(form) {
   try {
     foundry.lastStatus = "Searching Foundry actors";
     render();
-    const result = await FOUNDRY_API_BRIDGE.syncActors({ url: foundry.bridgeUrl, apiKey: foundryToken, filters });
+    const result = await FOUNDRY_API_BRIDGE.syncActors({ ...foundryRequestOptions(foundry, foundry.bridgeUrl, foundryToken), filters });
     foundry.world = result.world;
     ingestFoundryActors(result.actors, "your filtered Foundry search", { replace: false, filterResult: true, allowEmpty: true });
     foundry.lastStatus = `${result.actors.length} Foundry actor${result.actors.length === 1 ? "" : "s"} matched`;
@@ -1373,7 +1375,7 @@ async function connectFoundryBridge(form, action) {
     if (bridgeType === "foundry-api") {
       if (!FOUNDRY_API_BRIDGE) throw new Error("Foundry API Bridge support did not load.");
       if (!key) throw new Error("Add the pk_… key configured in Foundry API Bridge.");
-      const options = { url, apiKey: key };
+      const options = foundryRequestOptions(foundry, url, key);
       if (action === "sync") {
         const result = await FOUNDRY_API_BRIDGE.syncActors(options);
         foundry.world = result.world;
@@ -2652,6 +2654,9 @@ root.addEventListener("click", event => {
   const viewButton = event.target.closest("[data-view-jump]"); if (viewButton) { currentView = viewButton.dataset.viewJump; activeFilter = "All"; render(); return; }
   const recordButton = event.target.closest("[data-open-record]"); if (recordButton) { openRecordModal(recordButton.dataset.openRecord); return; }
   const directoryMode = event.target.closest("[data-character-directory]"); if (directoryMode) { characterDirectoryMode = directoryMode.dataset.characterDirectory; render(); return; }
+  const sheetFilterButton = event.target.closest("[data-sheet-filter]");
+  if (sheetFilterButton) { sheetFilter = sheetFilterButton.dataset.sheetFilter; render(); return; }
+  if (event.target.closest("[data-reset-sheet-filters]")) { sheetFilter = "All"; sheetSearch = ""; sheetLevel = "any"; render(); showToast("Sheet filters cleared."); return; }
   const filter = event.target.closest("[data-filter]"); if (filter) { activeFilter = filter.dataset.filter; root.querySelectorAll("[data-filter]").forEach(b => b.classList.toggle("active", b === filter)); render(); return; }
   const check = event.target.closest("[data-check-index]"); if (check) { const item = activeCampaign().checklist[Number(check.dataset.checkIndex)]; item.done = !item.done; saveState(); render(); return; }
   if (event.target.closest("[data-toggle-checklist]")) showToast("Checklist changes save automatically.");
@@ -2698,7 +2703,24 @@ root.addEventListener("change", event => {
   const proposal = activeReconciliation()?.proposals.find(item => item.id === approval.dataset.proposalApproval);
   if (proposal) { proposal.approved = approval.checked; saveState(); render(); }
 });
-root.addEventListener("input", event => { const input = event.target.closest("[data-list-search]"); if (!input) return; const term = input.value.trim().toLowerCase(); root.querySelectorAll(".record").forEach(record => record.style.display = record.innerText.toLowerCase().includes(term) ? "grid" : "none"); root.querySelectorAll("[data-character-group]").forEach(group => group.style.display = [...group.querySelectorAll(".record")].some(record => record.style.display !== "none") ? "grid" : "none"); });
+root.addEventListener("input", event => {
+  const sheetInput = event.target.closest("[data-sheet-search]");
+  if (sheetInput) {
+    sheetSearch = sheetInput.value.trim();
+    render();
+    const nextInput = root.querySelector("[data-sheet-search]");
+    if (nextInput) {
+      nextInput.focus();
+      nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
+    }
+    return;
+  }
+  const input = event.target.closest("[data-list-search]");
+  if (!input) return;
+  const term = input.value.trim().toLowerCase();
+  root.querySelectorAll(".record").forEach(record => record.style.display = record.innerText.toLowerCase().includes(term) ? "grid" : "none");
+  root.querySelectorAll("[data-character-group]").forEach(group => group.style.display = [...group.querySelectorAll(".record")].some(record => record.style.display !== "none") ? "grid" : "none");
+});
 root.addEventListener("submit", async event => {
   const campaign = activeCampaign();
   const desk = activeDesk(campaign);
@@ -2766,6 +2788,11 @@ root.addEventListener("submit", event => {
   connectFoundryBridge(event.target, event.submitter?.value || "test");
 });
 root.addEventListener("change", event => {
+  if (event.target.matches("[data-sheet-level]")) {
+    sheetLevel = event.target.value;
+    render();
+    return;
+  }
   if (event.target.matches('[name="bridgeType"]')) {
     const foundry = getFoundryState();
     foundry.bridgeType = event.target.value;
