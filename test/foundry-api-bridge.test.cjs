@@ -45,6 +45,58 @@ test("client invokes browser fetch with the global receiver", async () => {
   assert.equal((await client.request("/world")).title, "Bound World");
 });
 
+test("client retries one transient GET failure and reports the retry", async () => {
+  let attempts = 0;
+  const retries = [];
+  const waits = [];
+  const client = new FoundryApiClient({
+    url: "https://api.example.test/v1",
+    apiKey: "pk_test",
+    retryDelay: 25,
+    waitImpl: async delay => waits.push(delay),
+    onRetry: detail => retries.push(detail),
+    fetchImpl: async () => {
+      attempts += 1;
+      return attempts === 1
+        ? jsonResponse({ error: "Foundry world is restarting" }, 503)
+        : jsonResponse({ data: { title: "Recovered World" } });
+    }
+  });
+
+  assert.equal((await client.request("/world")).title, "Recovered World");
+  assert.equal(attempts, 2);
+  assert.deepEqual(waits, [25]);
+  assert.deepEqual(retries.map(retry => [retry.nextAttempt, retry.maxAttempts, retry.status]), [[2, 2, 503]]);
+});
+
+test("client does not retry authentication failures or write requests", async () => {
+  let authAttempts = 0;
+  const authClient = new FoundryApiClient({
+    url: "https://api.example.test/v1",
+    apiKey: "pk_bad",
+    waitImpl: async () => {},
+    fetchImpl: async () => {
+      authAttempts += 1;
+      return jsonResponse({ error: "Invalid API key" }, 401);
+    }
+  });
+  await assert.rejects(authClient.request("/world"), error => error.status === 401 && /Invalid API key/.test(error.message));
+  assert.equal(authAttempts, 1);
+
+  let writeAttempts = 0;
+  const writeClient = new FoundryApiClient({
+    url: "https://api.example.test/v1",
+    apiKey: "pk_test",
+    waitImpl: async () => {},
+    fetchImpl: async () => {
+      writeAttempts += 1;
+      return jsonResponse({ error: "Service unavailable" }, 503);
+    }
+  });
+  await assert.rejects(writeClient.request("/actors", { method: "POST", body: { name: "Scout" } }), error => error.status === 503);
+  assert.equal(writeAttempts, 1);
+});
+
 test("builds documented system-agnostic actor filters", () => {
   const query = new URLSearchParams(actorFilterQuery({
     name: "  Vale  ",

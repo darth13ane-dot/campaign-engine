@@ -16,5 +16,33 @@
     return false;
   }
 
-  return { matchesCharacterFilter, roleGroup };
+  function sheetSearchText(character, actor) {
+    return [
+      character?.name,
+      character?.role,
+      character?.description,
+      actor?.name,
+      actor?.type,
+      ...(actor?.traits || []),
+      ...(actor?.stats || []).flatMap(stat => [stat.label, stat.value]),
+      ...(actor?.items || []).map(item => item.name)
+    ].filter(Boolean).join(" ").toLocaleLowerCase();
+  }
+
+  function matchesSheetFilter(character, actor, options = {}) {
+    const filter = options.filter || "All";
+    if (filter === "PC" || filter === "NPC") {
+      if (roleGroup(character?.role) !== filter) return false;
+    } else if (filter === "Linked" && !actor) {
+      return false;
+    } else if (filter === "Unlinked" && actor) {
+      return false;
+    }
+    const level = String(options.level || "any");
+    if (level !== "any" && String(actor?.level) !== level) return false;
+    const query = String(options.query || "").trim().toLocaleLowerCase();
+    return !query || sheetSearchText(character, actor).includes(query);
+  }
+
+  return { matchesCharacterFilter, matchesSheetFilter, roleGroup, sheetSearchText };
 });

@@ -7,6 +7,7 @@
 
   const DEFAULT_URL = "https://api.foundry-mcp.com/v1";
   const DEFAULT_TIMEOUT = 30000;
+  const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
 
   function apiBaseUrl(value) {
     const candidate = String(value || DEFAULT_URL).trim() || DEFAULT_URL;
@@ -25,34 +26,51 @@
       this.apiKey = String(options.apiKey || "").trim();
       this.timeout = Math.max(1000, Number(options.timeout) || DEFAULT_TIMEOUT);
       this.fetchImpl = options.fetchImpl || globalThis.fetch;
+      this.maxRetries = Math.max(0, Math.min(2, Number.isFinite(Number(options.maxRetries)) ? Number(options.maxRetries) : 1));
+      this.retryDelay = Math.max(0, Number(options.retryDelay) || 300);
+      this.waitImpl = options.waitImpl || (delay => new Promise(resolve => setTimeout(resolve, delay)));
+      this.onRetry = typeof options.onRetry === "function" ? options.onRetry : null;
     }
 
     async requestEnvelope(path, options = {}) {
       if (!this.apiKey) throw new Error("Add the Foundry API Bridge key first.");
       if (!this.fetchImpl) throw new Error("Network requests are unavailable in this app.");
-      const controller = typeof AbortController === "function" ? new AbortController() : null;
-      const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
-      try {
-        const response = await this.fetchImpl.call(globalThis, `${this.url}${path}`, {
-          method: options.method || "GET",
-          headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${this.apiKey}`,
-            ...(options.body === undefined ? {} : { "Content-Type": "application/json" })
-          },
-          body: options.body === undefined ? undefined : JSON.stringify(options.body),
-          signal: controller?.signal
-        });
-        let payload = null;
-        try { payload = await response.json(); } catch { /* The status text below remains useful. */ }
-        if (!response.ok) throw new Error(payload?.error || `Foundry public API returned ${response.status}.`);
-        return payload || {};
-      } catch (error) {
-        if (error?.name === "AbortError") throw new Error("Foundry public API request timed out.");
-        throw error;
-      } finally {
-        if (timer) clearTimeout(timer);
+      const method = options.method || "GET";
+      const retries = method === "GET" ? this.maxRetries : 0;
+      for (let attempt = 0; attempt <= retries; attempt += 1) {
+        const controller = typeof AbortController === "function" ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
+        try {
+          const response = await this.fetchImpl.call(globalThis, `${this.url}${path}`, {
+            method,
+            headers: {
+              Accept: "application/json",
+              Authorization: `Bearer ${this.apiKey}`,
+              ...(options.body === undefined ? {} : { "Content-Type": "application/json" })
+            },
+            body: options.body === undefined ? undefined : JSON.stringify(options.body),
+            signal: controller?.signal
+          });
+          let payload = null;
+          try { payload = await response.json(); } catch { /* The status text below remains useful. */ }
+          if (!response.ok) {
+            const error = new Error(payload?.error || `Foundry public API returned ${response.status}.`);
+            error.status = response.status;
+            throw error;
+          }
+          return payload || {};
+        } catch (caught) {
+          const error = caught?.name === "AbortError" ? Object.assign(new Error("Foundry public API request timed out."), { status: 504 }) : caught;
+          const retryable = attempt < retries && (RETRYABLE_STATUS.has(Number(error?.status)) || error?.name === "TypeError");
+          if (!retryable) throw error;
+          const nextAttempt = attempt + 2;
+          this.onRetry?.({ nextAttempt, maxAttempts: retries + 1, status: Number(error?.status) || null, message: error?.message || "Network request failed" });
+          await this.waitImpl(this.retryDelay * (attempt + 1));
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
       }
+      throw new Error("Foundry public API request failed.");
     }
 
     async request(path, options = {}) {

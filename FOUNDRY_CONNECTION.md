@@ -1,6 +1,6 @@
 # Foundry VTT connection
 
-Campaign Engine 1.2.0 uses **Foundry API Bridge** as its recommended Foundry connection. The Foundry module maintains its own two WebSocket connections. Campaign Engine talks to the bridge's public HTTPS API, which relays commands over the module's existing connection instead of opening or replacing a WebSocket.
+Campaign Engine 1.2.1 uses **Foundry API Bridge** as its recommended Foundry connection. The Foundry module maintains its own two WebSocket connections. Campaign Engine talks to the bridge's public HTTPS API, which relays commands over the module's existing connection instead of opening or replacing a WebSocket.
 
 ## Recommended setup: Foundry API Bridge
 
@@ -26,9 +26,13 @@ Each complete or filtered actor sync links a Campaign Engine character to its Fo
 
 Connection status distinguishes a rejected key, an unavailable subscription action, an offline Foundry world, and a bridge timeout so the next repair step is visible without opening developer tools.
 
+Campaign Engine retries a read request once after a transient `429`, `502`, `503`, `504`, timeout, or browser-network failure. It does not retry rejected credentials or Foundry create/write requests. This keeps short bridge interruptions recoverable without risking duplicate documents.
+
 Builder sends create new Foundry documents. Repeating a send can therefore create duplicates. Campaign Engine does not update or delete existing Foundry documents through this connection.
 
 Foundry systems store statistics differently. Campaign Engine reads common fields such as name, type, portrait, HP or wounds, defense, movement, saves, ability modifiers, and embedded actions where available. Missing fields remain blank instead of being guessed.
+
+For Pathfinder 2e actors, the sheet viewer uses the PF2e schema for level, HP, AC, Perception, Speed, Fortitude, Reflex, Will, ability modifiers, traits, and embedded items. **Sheets & stats** can combine PC/NPC, link-state, PF2e-level, and text filters without changing campaign or Foundry records.
 
 ## Actor JSON fallback
 

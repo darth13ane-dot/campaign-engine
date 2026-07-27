@@ -1,5 +1,13 @@
 # Sharing and desktop updates
 
+## Version 1.2.1 — PF2e foundation stabilization
+
+Campaign Engine 1.2.1 makes Foundry-linked Pathfinder 2e sheets easier to trust and easier to navigate. Current PF2e Actor exports now normalize level, HP, AC, Perception, Speed, Fortitude, Reflex, Will, ability modifiers—including `+0`—traits, and embedded items into the sheet viewer.
+
+**Sheets & stats** now has independent filters for PCs, NPCs, linked sheets, unlinked sheets, PF2e level, and text across names, roles, traits, statistics, and item names. Filters combine, show the number of matching sheets, and can be cleared as one action.
+
+Foundry API Bridge reads retry once after a transient rate-limit, gateway, offline, or timeout response. Authentication failures are never retried, and create/write requests remain single-attempt so Campaign Engine cannot accidentally duplicate a Foundry document. The connection status reports when a safe retry is in progress and gives clearer exhausted-retry states.
+
 ## Version 1.2.0 — Foundry workspace foundation
 
 Campaign Engine 1.2.0 makes Foundry API Bridge a dependable part of the persistent Windows workspace. The desktop app can protect the bridge key with the current Windows account and restore it after restarts or portable updates without storing it in campaign records or exports.
