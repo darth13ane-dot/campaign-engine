@@ -103,14 +103,18 @@ function journalPermission(item) {
 }
 
 function mapJournals(rows) {
-  return asArray(rows).map(item => ({
-    archivistId: String(item.id || ""),
-    title: entryTitle("journals", item) || "Untitled journal",
-    body: firstText(item.content, item.body, item.summary, item.description, "Archivist did not return journal content."),
-    permission: journalPermission(item),
-    tags: unique(asArray(item.tags)),
-    source: "archivist"
-  }));
+  return asArray(rows).map(item => {
+    const permission = journalPermission(item);
+    return {
+      archivistId: String(item.id || ""),
+      title: entryTitle("journals", item) || "Untitled journal",
+      body: firstText(item.content, item.body, item.summary, item.description, "Archivist did not return journal content."),
+      permission,
+      knowledge: permission === "Player safe" ? "players" : "gm",
+      tags: unique(asArray(item.tags)),
+      source: "archivist"
+    };
+  });
 }
 
 function detailMap(rows, collection, extra = {}) {

@@ -36,6 +36,7 @@
       "styles.css",
       "workspace.css",
       "app.js",
+      "campaign-knowledge.js",
       "archivist-merge.js",
       "campaign-cleanup.js",
       "session-workflow.js",
