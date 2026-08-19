@@ -4,11 +4,11 @@
   if (root) root.CampaignArchivistMerge = tools;
 })(typeof globalThis === "object" ? globalThis : this, function createArchivistMerge() {
   const COLLECTIONS = {
-    sessions: { title: item => item?.title, detail: ["sessions"], editable: ["title", "number", "date", "recap", "tags", "directions", "archetype", "tropes", "threadGaps", "upcoming"] },
-    characters: { title: item => item?.name, detail: ["characters"], editable: ["name", "role", "description", "tags", "factions", "voice", "quirks", "relationships", "statBlock"] },
-    quests: { title: item => item?.title, detail: ["quests"], editable: ["title", "status", "detail", "tags"] },
-    locations: { title: item => item?.title, detail: ["world"], editable: ["title", "detail", "tags"] },
-    journal: { title: item => item?.title, detail: ["journals"], editable: ["title", "body", "permission", "tags"] }
+    sessions: { title: item => item?.title, detail: ["sessions"], editable: ["title", "number", "date", "recap", "tags", "knowledge", "directions", "archetype", "tropes", "threadGaps", "upcoming"] },
+    characters: { title: item => item?.name, detail: ["characters"], editable: ["name", "role", "description", "tags", "knowledge", "factions", "voice", "quirks", "relationships", "statBlock"] },
+    quests: { title: item => item?.title, detail: ["quests"], editable: ["title", "status", "detail", "tags", "knowledge"] },
+    locations: { title: item => item?.title, detail: ["world"], editable: ["title", "detail", "tags", "knowledge"] },
+    journal: { title: item => item?.title, detail: ["journals"], editable: ["title", "body", "permission", "knowledge", "tags"] }
   };
 
   function isObject(value) {
@@ -64,6 +64,8 @@
       if (!item.body && item.detail) item.body = item.detail;
       if (!item.permission) item.permission = "GM only";
     }
+    if (!item.knowledge) item.knowledge = collection === "journal" && /player|public|read/i.test(item.permission || "") ? "players" : "gm";
+    if (collection === "journal") item.permission = item.knowledge === "players" ? "Player safe" : "GM only";
     if (!Array.isArray(item.tags)) item.tags = [];
     const detail = findDetail(campaignDetails, collection, item);
     const archivistId = item.archivistId || item.sourceId || detail?.id;

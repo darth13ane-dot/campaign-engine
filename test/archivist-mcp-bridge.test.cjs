@@ -150,6 +150,7 @@ test("assembles native Archivist tools into a paginated Campaign Engine payload"
   assert.equal(campaign.sessions[0].archivistId, "session-1");
   assert.equal(campaign.quests[0].status, "Active");
   assert.equal(campaign.journal[0].body, "The full journal text.");
+  assert.equal(campaign.journal[0].knowledge, "gm");
   assert.equal(campaign.connections[0].from.name, "Vale");
   assert.equal(campaign.connections[0].to.name, "Find the Road");
   assert.equal(result.payload.archivist.campaigns["campaign-1"].characters.Vale.id, "character-1");
