@@ -1,5 +1,13 @@
 # Sharing and desktop updates
 
+## Version 1.3.0 — PF2e Live Table Actions
+
+Campaign Engine 1.3.0 adds a guarded PF2e live-table panel to the Foundry VTT workspace. After syncing a Pathfinder 2e actor, the GM can refresh its current Strikes and conditions, roll Perception, skills, saves, Strike attacks or damage, adjust one condition, draw from a live Foundry roll table, and publish a player-safe Campaign Engine journal article as a Foundry handout.
+
+Every chat-visible or mutating action requires a fresh confirmation checkbox and is sent exactly once. Campaign Engine never retries these POST requests automatically. Successes, failures, and partial journal publishes are retained in the bridge action history; when a live session desk is active, the same outcome is appended to its timestamped session log for later reconciliation.
+
+Journal publishing only lists articles explicitly marked **Player safe**. If Foundry creates a journal but disconnects before it can be shown to players, Campaign Engine reports and logs that partial result instead of inviting an unsafe blind retry.
+
 ## Version 1.2.1 — PF2e foundation stabilization
 
 Campaign Engine 1.2.1 makes Foundry-linked Pathfinder 2e sheets easier to trust and easier to navigate. Current PF2e Actor exports now normalize level, HP, AC, Perception, Speed, Fortitude, Reflex, Will, ability modifiers—including `+0`—traits, and embedded items into the sheet viewer.
