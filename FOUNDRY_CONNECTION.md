@@ -34,6 +34,18 @@ Foundry systems store statistics differently. Campaign Engine reads common field
 
 For Pathfinder 2e actors, the sheet viewer uses the PF2e schema for level, HP, AC, Perception, Speed, Fortitude, Reflex, Will, ability modifiers, traits, and embedded items. **Sheets & stats** can combine PC/NPC, link-state, PF2e-level, and text filters without changing campaign or Foundry records.
 
+## PF2e live-table actions
+
+Campaign Engine 1.3.0 uses Foundry API Bridge's native `/pf2e` endpoints for Perception, skills, saves, Strikes, Strike damage, and conditions. It also uses the bridge's live roll-table and journal endpoints. Sync a PF2e actor, choose **Refresh strikes, conditions & tables**, then confirm each individual action before sending it.
+
+Live actions follow three safety rules:
+
+- Every chat-visible roll or Foundry write requires an explicit confirmation for that single request.
+- POST requests are never retried automatically, preventing duplicate rolls, condition changes, journals, or player displays.
+- Every outcome is kept in recent bridge history and copied into the active session desk log when a session is running.
+
+Only Campaign Engine journal articles marked **Player safe** are offered as Foundry handouts. A journal creation followed by a failed player display is reported as a partial success so the GM can inspect Foundry before deciding whether to show it manually.
+
 ## Actor JSON fallback
 
 You can work without any connection. Export an actor from Foundry, then choose **Foundry VTT -> Import actor JSON** in Campaign Engine. The file stays local to Campaign Engine.
