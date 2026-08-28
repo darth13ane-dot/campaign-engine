@@ -11,8 +11,14 @@ const {
   tableCreateParams
 } = require("../foundry-api-bridge.js");
 
-function jsonResponse(payload, status = 200) {
-  return { ok: status >= 200 && status < 300, status, async json() { return payload; } };
+function jsonResponse(payload, status = 200, headers = {}) {
+  const normalizedHeaders = Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value]));
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get(name) { return normalizedHeaders[String(name).toLowerCase()] || null; } },
+    async json() { return payload; }
+  };
 }
 
 test("apiBaseUrl migrates the connection-disrupting WebSocket URL to the public REST API", () => {
@@ -69,6 +75,33 @@ test("client retries one transient GET failure and reports the retry", async () 
   assert.deepEqual(retries.map(retry => [retry.nextAttempt, retry.maxAttempts, retry.status]), [[2, 2, 503]]);
 });
 
+test("client retries a transient retry-safe POST without changing its request", async () => {
+  const calls = [];
+  const retries = [];
+  const waits = [];
+  const client = new FoundryApiClient({
+    url: "https://api.example.test/v1",
+    apiKey: "pk_test",
+    retryDelay: 40,
+    waitImpl: async delay => waits.push(delay),
+    onRetry: detail => retries.push(detail),
+    fetchImpl: async (url, options) => {
+      calls.push({ url, method: options.method, body: options.body });
+      return calls.length === 1
+        ? jsonResponse({ error: "Foundry world is restarting" }, 503)
+        : jsonResponse({ data: { conditions: [{ slug: "frightened", value: 1 }] } });
+    }
+  });
+
+  const body = { actor_id: "actor-1" };
+  const result = await client.request("/pf2e/conditions/get", { method: "POST", body, retrySafe: true });
+  assert.equal(result.conditions[0].slug, "frightened");
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(call => [call.method, JSON.parse(call.body)]), [["POST", body], ["POST", body]]);
+  assert.deepEqual(waits, [40]);
+  assert.deepEqual(retries.map(retry => [retry.nextAttempt, retry.maxAttempts, retry.status]), [[2, 2, 503]]);
+});
+
 test("client does not retry authentication failures or write requests", async () => {
   let authAttempts = 0;
   const authClient = new FoundryApiClient({
@@ -95,6 +128,63 @@ test("client does not retry authentication failures or write requests", async ()
   });
   await assert.rejects(writeClient.request("/actors", { method: "POST", body: { name: "Scout" } }), error => error.status === 503);
   assert.equal(writeAttempts, 1);
+});
+
+test("client preserves validation, tier, and request metadata without retrying writes", async () => {
+  let validationAttempts = 0;
+  const validationClient = new FoundryApiClient({
+    url: "https://api.example.test/v1",
+    apiKey: "pk_test",
+    maxRetries: 2,
+    waitImpl: async () => {},
+    fetchImpl: async () => {
+      validationAttempts += 1;
+      return jsonResponse({
+        error: "Request validation failed",
+        code: "validation_failed",
+        validation: [{ field: "map_increase", message: "must be at most 2" }]
+      }, 422, { "X-Request-ID": "req-validation-1" });
+    }
+  });
+  await assert.rejects(
+    validationClient.request("/pf2e/strikes/roll", { method: "POST", body: { actor_id: "a1", slug: "fist", map_increase: 3 } }),
+    error => error.status === 422
+      && error.code === "validation_failed"
+      && error.requestId === "req-validation-1"
+      && /map_increase: must be at most 2/.test(error.message)
+  );
+  assert.equal(validationAttempts, 1);
+
+  let tierAttempts = 0;
+  const tierClient = new FoundryApiClient({
+    url: "https://api.example.test/v1",
+    apiKey: "pk_test",
+    maxRetries: 2,
+    waitImpl: async () => {},
+    fetchImpl: async () => {
+      tierAttempts += 1;
+      return jsonResponse({
+        error: "This action is unavailable for the current subscription",
+        code: "tier_required",
+        required_tier: "hero",
+        current_tier: "free",
+        reauth_url: "https://foundry-mcp.com/reauth",
+        patreon_url: "https://patreon.com/example"
+      }, 403, { "x-request-id": "req-tier-1" });
+    }
+  });
+  await assert.rejects(
+    tierClient.request("/journals", { method: "POST", body: { name: "Handout", content: "Safe" } }),
+    error => error.status === 403
+      && error.code === "tier_required"
+      && error.requestId === "req-tier-1"
+      && error.requiredTier === "hero"
+      && error.currentTier === "free"
+      && error.reauthUrl === "https://foundry-mcp.com/reauth"
+      && error.patreonUrl === "https://patreon.com/example"
+      && /requires hero tier; current tier is free/.test(error.message)
+  );
+  assert.equal(tierAttempts, 1);
 });
 
 test("builds documented system-agnostic actor filters", () => {

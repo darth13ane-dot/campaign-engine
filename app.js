@@ -99,6 +99,7 @@ let boardDrag = null;
 let recordType = null;
 let detailTarget = null;
 let foundryToken = "";
+let foundryLiveBusy = "";
 let copilotToken = loadSessionApiKey();
 let desktopApiKeySaved = false;
 let desktopFoundryApiKeySaved = false;
@@ -862,7 +863,10 @@ function getFoundryState() {
   if (!Array.isArray(state.foundry.live.conditions)) state.foundry.live.conditions = [];
   if (!Array.isArray(state.foundry.live.tables)) state.foundry.live.tables = [];
   if (!Array.isArray(state.foundry.live.history)) state.foundry.live.history = [];
+  if (!Array.isArray(state.foundry.live.refreshWarnings)) state.foundry.live.refreshWarnings = [];
   if (!state.foundry.live.actorId) state.foundry.live.actorId = "";
+  if (!state.foundry.live.optionsActorId) state.foundry.live.optionsActorId = "";
+  delete state.foundry.live.busy;
   if (!state.foundry.bridgeType) state.foundry.bridgeType = /^wss?:/i.test(state.foundry.bridgeUrl || "") || /api\.foundry-mcp\.com/i.test(state.foundry.bridgeUrl || "") || !state.foundry.bridgeUrl ? "foundry-api" : "legacy-rest";
   if (state.foundry.bridgeType === "foundry-api" && (!state.foundry.bridgeUrl || /^wss?:/i.test(state.foundry.bridgeUrl))) state.foundry.bridgeUrl = FOUNDRY_API_BRIDGE?.DEFAULT_URL || "https://api.foundry-mcp.com/v1";
   return state.foundry;
@@ -1068,20 +1072,31 @@ function foundryLiveActionPanel(campaign, foundry) {
   const actors = foundryActors().filter(actor => actor.isPf2e || actor.systemId === "pf2e");
   if (!live.actorId || !actors.some(actor => String(actor.id) === String(live.actorId))) live.actorId = String(actors[0]?.id || "");
   const actor = actors.find(item => String(item.id) === String(live.actorId));
+  const optionsCurrent = Boolean(actor && String(live.optionsActorId || "") === String(actor.id));
+  const currentStrikes = optionsCurrent ? live.strikes : [];
+  const currentConditions = optionsCurrent ? live.conditions : [];
+  const currentTables = optionsCurrent ? live.tables : [];
   const actorOptions = actors.map(item => `<option value="${esc(item.id)}" ${String(item.id) === String(live.actorId) ? "selected" : ""}>${esc(item.name)} · level ${Number.isFinite(item.level) ? item.level : "?"}</option>`).join("");
-  const strikes = live.strikes.map(item => `<option value="${esc(item.slug || item.id || item.name)}">${esc(foundryLiveLabel(item, "Strike"))}</option>`).join("");
-  const conditions = live.conditions.map(item => `<span class="live-condition"><strong>${esc(foundryLiveLabel(item, "Condition"))}</strong>${item.value != null ? ` ${esc(item.value)}` : ""}</span>`).join("");
-  const tables = live.tables.map(item => `<option value="${esc(item.id || item._id)}">${esc(foundryLiveLabel(item, "Roll table"))}</option>`).join("");
+  const strikes = currentStrikes.map(item => {
+    const variants = Array.isArray(item.variants) && item.variants.length ? ` · ${item.variants.join(" / ")}` : "";
+    const unavailable = item.ready === false ? " · not ready" : "";
+    return `<option value="${esc(item.slug || item.id || item.name)}" ${item.ready === false ? "disabled" : ""}>${esc(foundryLiveLabel(item, "Strike") + variants + unavailable)}</option>`;
+  }).join("");
+  const conditions = currentConditions.map(item => `<span class="live-condition"><strong>${esc(foundryLiveLabel(item, "Condition"))}</strong>${item.value != null ? ` ${esc(item.value)}` : ""}</span>`).join("");
+  const tables = currentTables.map(item => `<option value="${esc(item.id || item._id)}">${esc(foundryLiveLabel(item, "Roll table"))}</option>`).join("");
   const playerJournals = campaign.journal.filter(entry => CAMPAIGN_KNOWLEDGE?.recordKnowledge(entry, "journal") === CAMPAIGN_KNOWLEDGE?.PLAYERS_KNOW);
   const journalOptions = playerJournals.map(entry => `<option value="${esc(entry.title)}">${esc(entry.title)}</option>`).join("");
   const history = live.history.slice(0, 8).map(entry => `<article class="live-action-history ${entry.status}"><time datetime="${esc(entry.at)}">${esc(deskTime(entry.at))}</time><div><strong>${esc(entry.label)}</strong><p>${esc(entry.detail || entry.status)}</p></div></article>`).join("");
-  const disabled = !actor || foundry.bridgeType === "legacy-rest" ? "disabled" : "";
+  const disabled = !actor || foundry.bridgeType === "legacy-rest" || foundryLiveBusy ? "disabled" : "";
+  const refreshWarnings = optionsCurrent && Array.isArray(live.refreshWarnings) && live.refreshWarnings.length
+    ? `<div class="live-refresh-warnings" role="status">${live.refreshWarnings.map(warning => `<p><strong>${esc(warning.source)}</strong> ${esc(warning.message)}${warning.requestId ? ` · request ${esc(warning.requestId)}` : ""}</p>`).join("")}</div>`
+    : "";
   const confirm = `<label class="consent-check live-confirm"><input required name="confirmed" type="checkbox" /> Send this one action to Foundry and record the result</label>`;
   const skills = ["acrobatics", "arcana", "athletics", "crafting", "deception", "diplomacy", "intimidation", "medicine", "nature", "occultism", "performance", "religion", "society", "stealth", "survival", "thievery"];
   return `<section class="card integration-card foundry-live-card">
     <div class="section-title"><div><p class="eyebrow">PF2E LIVE TABLE</p><h2>Explicit actions</h2></div><span class="tag">${foundryLoggingDesk(campaign) ? "Session logging on" : "Action history on"}</span></div>
     <p>Roll through Foundry, adjust one condition, draw from a live table, or publish one player-safe handout. Every submission is single-attempt and recorded; Campaign Engine never repeats a write automatically.</p>
-    ${actors.length ? `<form data-foundry-live-form data-live-action="refresh" class="foundry-live-selector"><label>Acting PF2e character<select name="actorId">${actorOptions}</select></label><button class="secondary-button" type="submit" ${live.busy ? "disabled" : ""}>${live.busy === "refresh" ? "Refreshing…" : "Refresh strikes, conditions & tables"}</button></form>` : `<div class="empty-state compact"><h3>No PF2e actors are cached.</h3><p>Sync PF2e actors first; live actions always target a stable Foundry actor ID.</p></div>`}
+    ${actors.length ? `<form data-foundry-live-form data-live-action="refresh" class="foundry-live-selector"><label>Acting PF2e character<select name="actorId" ${foundryLiveBusy ? "disabled" : ""}>${actorOptions}</select></label><button class="secondary-button" type="submit" ${foundryLiveBusy ? "disabled" : ""}>${foundryLiveBusy === "refresh" ? "Refreshing…" : "Refresh strikes, conditions & tables"}</button></form>${refreshWarnings}` : `<div class="empty-state compact"><h3>No PF2e actors are cached.</h3><p>Sync PF2e actors first; live actions always target a stable Foundry actor ID.</p></div>`}
     ${actor ? `<div class="foundry-live-grid">
       <form data-foundry-live-form data-live-action="roll" class="live-action-form"><h3>Skill, save, or Perception</h3><input type="hidden" name="actorId" value="${esc(actor.id)}" /><label>Roll type<select name="rollType"><option value="perception">Perception</option><option value="skill">Skill</option><option value="save">Save</option></select></label><label>Skill<select name="skill">${skills.map(skill => `<option value="${skill}">${skill[0].toUpperCase() + skill.slice(1)}</option>`).join("")}</select></label><label>Save<select name="save"><option value="fortitude">Fortitude</option><option value="reflex">Reflex</option><option value="will">Will</option></select></label>${confirm}<button class="primary-button" type="submit" ${disabled}>Post roll to Foundry</button></form>
       <form data-foundry-live-form data-live-action="strike" class="live-action-form"><h3>Strike</h3><input type="hidden" name="actorId" value="${esc(actor.id)}" /><label>Strike<select required name="slug"><option value="">${strikes ? "Choose a strike…" : "Refresh live options first"}</option>${strikes}</select></label><label>Result<select name="strikeAction"><option value="attack">Attack</option><option value="damage">Damage</option></select></label><label>Multiple attack penalty<select name="mapIncrease"><option value="0">None</option><option value="1">MAP 1</option><option value="2">MAP 2</option></select></label><label class="consent-check"><input name="critical" type="checkbox" /> Critical damage</label>${confirm}<button class="primary-button" type="submit" ${disabled}>Send strike</button></form>
@@ -1535,6 +1550,7 @@ function foundryErrorStatus(error) {
   const status = Number(error?.status);
   const message = String(error?.message || "").toLowerCase();
   if (status === 401 || /401|authentication|invalid api key|malformed/.test(message)) return "Foundry key rejected";
+  if (error?.code === "tier_required" && error?.requiredTier) return `Foundry ${error.requiredTier} tier required`;
   if (status === 403 || /403|forbidden|tier|subscription/.test(message)) return "Foundry tier does not allow that action";
   if (status === 429 || /429|too many requests|rate limit/.test(message)) return "Foundry bridge busy — try again";
   if (status === 503 || /503|not currently connected|service unavailable|offline/.test(message)) return "Foundry world offline";
@@ -1672,10 +1688,10 @@ async function runFoundryLiveAction(form) {
   const live = foundry.live;
   const actorId = String(data.get("actorId") || live.actorId || "");
   const actor = foundryActors().find(item => String(item.id) === actorId);
+  if (foundryLiveBusy) { showToast("Wait for the current Foundry action to finish."); return; }
   if (action !== "refresh" && !data.get("confirmed")) { showToast("Confirm this one Foundry action before sending it."); return; }
-  live.busy = action;
+  foundryLiveBusy = action;
   if (actorId) live.actorId = actorId;
-  saveState();
   render();
   let label = action;
   try {
@@ -1683,15 +1699,26 @@ async function runFoundryLiveAction(form) {
     let result;
     if (action === "refresh") {
       if (!actorId) throw new Error("Sync and choose a PF2e actor first.");
-      const [strikes, conditions, tables] = await Promise.all([
-        FOUNDRY_LIVE_ACTIONS.listStrikes(options, actorId),
-        FOUNDRY_LIVE_ACTIONS.getConditions(options, actorId),
-        FOUNDRY_LIVE_ACTIONS.listRollTables(options)
-      ]);
-      live.strikes = strikes;
-      live.conditions = conditions;
-      live.tables = tables;
-      live.lastResult = `${strikes.length} strikes, ${conditions.length} conditions, and ${tables.length} tables ready`;
+      live.optionsActorId = actorId;
+      live.strikes = [];
+      live.conditions = [];
+      live.tables = [];
+      live.refreshWarnings = [];
+      const refreshed = await FOUNDRY_LIVE_ACTIONS.refreshLiveOptions(options, actorId);
+      live.refreshWarnings = refreshed.warnings;
+      if (refreshed.strikes === null && refreshed.conditions === null && refreshed.tables === null) {
+        const primary = refreshed.warnings[0] || {};
+        throw Object.assign(new Error(refreshed.warnings.map(item => item.message).join(" · ") || "Live options are unavailable."), {
+          status: primary.status,
+          code: primary.code,
+          requestId: primary.requestId
+        });
+      }
+      live.strikes = refreshed.strikes || [];
+      live.conditions = refreshed.conditions || [];
+      live.tables = refreshed.tables || [];
+      live.lastResult = `${live.strikes.length} strikes, ${live.conditions.length} conditions, and ${live.tables.length} tables ready${refreshed.warnings.length ? ` · ${refreshed.warnings.length} source unavailable` : ""}`;
+      foundry.lastStatus = refreshed.warnings.length ? "PF2e live options partially refreshed" : "PF2e live options refreshed";
       showToast(live.lastResult);
       return;
     }
@@ -1713,7 +1740,8 @@ async function runFoundryLiveAction(form) {
     }
     if (action === "strike") {
       const slug = String(data.get("slug") || "");
-      const strike = live.strikes.find(item => String(item.slug || item.id || item.name) === slug);
+      if (String(live.optionsActorId || "") !== actorId) throw new Error("Refresh this actor's Strikes before rolling.");
+      const strike = FOUNDRY_LIVE_ACTIONS.resolveReadyStrike(live.strikes, slug);
       const strikeName = foundryLiveLabel(strike, slug);
       if (data.get("strikeAction") === "damage") {
         label = `${actor.name} · ${strikeName} ${data.get("critical") ? "critical " : ""}damage`;
@@ -1729,11 +1757,13 @@ async function runFoundryLiveAction(form) {
       const slug = String(data.get("slug") || "");
       label = `${actor.name} · ${conditionAction} ${slug}${conditionAction === "set" ? ` to ${data.get("value")}` : ""}`;
       result = await FOUNDRY_LIVE_ACTIONS.changeCondition(options, { actorId, action: conditionAction, slug, value: data.get("value") });
-      try { live.conditions = await FOUNDRY_LIVE_ACTIONS.getConditions(options, actorId); } catch { /* The confirmed change already completed; leave the previous snapshot visible. */ }
+      try { if (String(live.optionsActorId || "") === actorId) live.conditions = await FOUNDRY_LIVE_ACTIONS.getConditions(options, actorId); } catch { /* The confirmed change already completed; leave the previous snapshot visible. */ }
     }
     if (action === "table") {
       const tableId = String(data.get("tableId") || "");
+      if (String(live.optionsActorId || "") !== actorId) throw new Error("Refresh this actor's live options before rolling a table.");
       const table = live.tables.find(item => String(item.id || item._id) === tableId);
+      if (!table) throw new Error("Refresh live options and choose an available Foundry table.");
       label = `Roll table · ${foundryLiveLabel(table, tableId)}`;
       result = await FOUNDRY_LIVE_ACTIONS.rollTable(options, { tableId });
     }
@@ -1750,13 +1780,14 @@ async function runFoundryLiveAction(form) {
     foundry.lastStatus = "PF2e live action completed";
     showToast(live.lastResult);
   } catch (error) {
-    const detail = error.partial?.journal ? `journal created, but player display failed: ${error.message}` : error.message || "Unknown bridge error";
+    const request = error.requestId ? ` · request ${error.requestId}` : "";
+    const detail = `${error.partial?.journal ? `journal created, but player display failed: ${error.message}` : error.message || "Unknown bridge error"}${request}`;
     if (action !== "refresh") recordFoundryLiveAction(label, error.partial?.journal ? "partial" : "failed", detail);
     live.lastResult = `${label} · ${detail}`;
     foundry.lastStatus = foundryErrorStatus(error);
     showToast(`Foundry action failed: ${detail}`);
   } finally {
-    live.busy = "";
+    foundryLiveBusy = "";
     saveState();
     render();
   }

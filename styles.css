@@ -500,6 +500,9 @@ button.knowledge-badge:hover { filter: brightness(1.25); }
 .foundry-live-selector { align-items: end; border-bottom: 1px solid var(--line); display: grid; gap: 12px; grid-template-columns: minmax(240px, 1fr) auto; margin-top: 18px; padding-bottom: 18px; }
 .foundry-live-selector label, .live-action-form label { color: #d4d7df; display: grid; gap: 6px; font-size: 10px; font-weight: 700; }
 .foundry-live-selector select, .live-action-form input, .live-action-form select { background: rgba(255,255,255,.045); border: 1px solid var(--line); border-radius: 6px; color: var(--paper); min-width: 0; outline: none; padding: 9px; }
+.live-refresh-warnings { background: rgba(228,134,121,.08); border: 1px solid rgba(228,134,121,.28); border-radius: 8px; color: #f1c3bd; display: grid; gap: 5px; margin-top: 12px; padding: 10px 12px; }
+.live-refresh-warnings p { font-size: 10px; line-height: 1.5; margin: 0; }
+.live-refresh-warnings strong { color: #ffd4ce; margin-right: 5px; text-transform: capitalize; }
 .foundry-live-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 18px; }
 .live-action-form, .live-action-log { background: rgba(255,255,255,.025); border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 11px; padding: 15px; }
 .live-action-form h3, .live-action-log h3 { margin: 0; }

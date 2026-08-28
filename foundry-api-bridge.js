@@ -9,6 +9,31 @@
   const DEFAULT_TIMEOUT = 30000;
   const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
 
+  function responseHeader(response, name) {
+    return typeof response?.headers?.get === "function" ? String(response.headers.get(name) || "").trim() : "";
+  }
+
+  function bridgeError(payload, response) {
+    const base = typeof payload?.error === "string" && payload.error.trim()
+      ? payload.error.trim()
+      : `Foundry public API returned ${response.status}.`;
+    const validation = Array.isArray(payload?.validation)
+      ? payload.validation.map(item => `${item?.field || "field"}: ${item?.message || "invalid"}`).join("; ")
+      : "";
+    const tier = payload?.code === "tier_required"
+      ? `requires ${payload.required_tier || "a higher"} tier${payload.current_tier ? `; current tier is ${payload.current_tier}` : ""}`
+      : "";
+    const error = new Error([base, validation, tier].filter(Boolean).join(" · "));
+    error.status = Number(response.status) || 0;
+    error.code = String(payload?.code || "");
+    error.requestId = responseHeader(response, "X-Request-ID");
+    error.requiredTier = String(payload?.required_tier || "");
+    error.currentTier = String(payload?.current_tier || "");
+    error.reauthUrl = String(payload?.reauth_url || "");
+    error.patreonUrl = String(payload?.patreon_url || "");
+    return error;
+  }
+
   function apiBaseUrl(value) {
     const candidate = String(value || DEFAULT_URL).trim() || DEFAULT_URL;
     if (/^wss?:/i.test(candidate)) return DEFAULT_URL;
@@ -35,8 +60,8 @@
     async requestEnvelope(path, options = {}) {
       if (!this.apiKey) throw new Error("Add the Foundry API Bridge key first.");
       if (!this.fetchImpl) throw new Error("Network requests are unavailable in this app.");
-      const method = options.method || "GET";
-      const retries = method === "GET" ? this.maxRetries : 0;
+      const method = String(options.method || "GET").toUpperCase();
+      const retries = method === "GET" || options.retrySafe === true ? this.maxRetries : 0;
       for (let attempt = 0; attempt <= retries; attempt += 1) {
         const controller = typeof AbortController === "function" ? new AbortController() : null;
         const timer = controller ? setTimeout(() => controller.abort(), this.timeout) : null;
@@ -54,9 +79,7 @@
           let payload = null;
           try { payload = await response.json(); } catch { /* The status text below remains useful. */ }
           if (!response.ok) {
-            const error = new Error(payload?.error || `Foundry public API returned ${response.status}.`);
-            error.status = response.status;
-            throw error;
+            throw bridgeError(payload, response);
           }
           return payload || {};
         } catch (caught) {
@@ -189,6 +212,7 @@
     actorFilterQuery,
     actorCreateParams,
     apiBaseUrl,
+    bridgeError,
     listAllActorRefs,
     numericRange,
     sendBuilderContent,
