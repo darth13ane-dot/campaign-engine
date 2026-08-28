@@ -1,5 +1,13 @@
 # Sharing and desktop updates
 
+## Version 1.3.1 — PF2e Live Table stabilization
+
+Campaign Engine 1.3.1 aligns the PF2e live-table panel with Foundry API Bridge's current public response contracts. Strike, condition, and roll-table refreshes now settle independently, so an Adventurer-tier restriction on roll tables no longer prevents the tier-free PF2e Strike and condition data from loading. Read-only Strike and condition refreshes may recover from one transient bridge interruption without retrying any roll or mutation. Confirmed writes remain single-attempt, and the live panel locks concurrent submissions until the active request settles.
+
+The Strike picker now excludes actions that Foundry reports as not ready and uses the live PF2e multiple-attack labels. Roll history preserves critical-success and critical-failure results, while roll-table draws record every matched entry—including overlapping table results—instead of reducing the response to its numeric die total.
+
+Bridge failures retain field-level validation details, subscription requirements, and the request ID needed for support. Foundry API Bridge 8.11.2 supports Foundry VTT 11 through 14, but its PF2e adapter was tested against PF2e 7.12.2; compatibility with the current PF2e 8.4.1 release on Foundry 14 has not been independently confirmed. Campaign Engine reports the connected versions and treats that gap as a visible compatibility risk rather than claiming a known failure.
+
 ## Version 1.3.0 — PF2e Live Table Actions
 
 Campaign Engine 1.3.0 adds a guarded PF2e live-table panel to the Foundry VTT workspace. After syncing a Pathfinder 2e actor, the GM can refresh its current Strikes and conditions, roll Perception, skills, saves, Strike attacks or damage, adjust one condition, draw from a live Foundry roll table, and publish a player-safe Campaign Engine journal article as a Foundry handout.

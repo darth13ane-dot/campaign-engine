@@ -32,7 +32,7 @@
   }
 
   async function listStrikes(options, actorId) {
-    const value = await createClient(options).request("/pf2e/strikes/list", { method: "POST", body: actorPayload(actorId) });
+    const value = await createClient(options).request("/pf2e/strikes/list", { method: "POST", body: actorPayload(actorId), retrySafe: true });
     return listFrom(value, "strikes");
   }
 
@@ -70,7 +70,7 @@
   }
 
   async function getConditions(options, actorId) {
-    const value = await createClient(options).request("/pf2e/conditions/get", { method: "POST", body: actorPayload(actorId) });
+    const value = await createClient(options).request("/pf2e/conditions/get", { method: "POST", body: actorPayload(actorId), retrySafe: true });
     return listFrom(value, "conditions");
   }
 
@@ -118,9 +118,49 @@
     }
   }
 
+  async function refreshLiveOptions(options, actorId) {
+    const requests = [
+      ["strikes", "Strikes", () => listStrikes(options, actorId)],
+      ["conditions", "conditions", () => getConditions(options, actorId)],
+      ["tables", "roll tables", () => listRollTables(options)]
+    ];
+    const settled = await Promise.allSettled(requests.map(([, , request]) => request()));
+    const result = { strikes: null, conditions: null, tables: null, warnings: [] };
+    settled.forEach((entry, index) => {
+      const [key, label] = requests[index];
+      if (entry.status === "fulfilled") result[key] = entry.value;
+      else result.warnings.push({
+        source: label,
+        message: entry.reason?.message || "unavailable",
+        status: Number(entry.reason?.status) || null,
+        code: String(entry.reason?.code || ""),
+        requestId: String(entry.reason?.requestId || "")
+      });
+    });
+    return result;
+  }
+
+  function resolveReadyStrike(strikes, slug) {
+    const target = required(slug, "Strike");
+    const strike = (Array.isArray(strikes) ? strikes : []).find(item => String(item?.slug || item?.id || item?.name) === target);
+    if (!strike) throw new Error("Refresh this actor's Strikes before rolling.");
+    if (strike.ready === false) throw new Error(`${strike.label || strike.name || target} is not ready in Foundry.`);
+    return strike;
+  }
+
   function resultText(value) {
+    if (Array.isArray(value?.results)) {
+      const matches = value.results.map(item => String(item?.text || item?.name || item?.document_id || item?.documentId || "").trim()).filter(Boolean);
+      const total = value.roll?.total != null ? `roll ${value.roll.total}` : "roll completed";
+      return matches.length ? `${total}: ${matches.join("; ")}` : total;
+    }
     const result = value?.result || value?.roll || value;
-    if (result?.total != null) return `total ${result.total}`;
+    if (result?.total != null) {
+      const critical = result.is_critical === true || result.isCritical === true || value?.is_critical === true || value?.isCritical === true;
+      const fumble = result.is_fumble === true || result.isFumble === true || value?.is_fumble === true || value?.isFumble === true;
+      const degree = critical ? " · critical success" : fumble ? " · critical failure" : "";
+      return `total ${result.total}${degree}`;
+    }
     if (result?.text) return String(result.text);
     if (result?.name) return String(result.name);
     return "completed";
@@ -149,6 +189,8 @@
     listRollTables,
     listStrikes,
     publishJournal,
+    refreshLiveOptions,
+    resolveReadyStrike,
     resultText,
     rollPerception,
     rollSave,
