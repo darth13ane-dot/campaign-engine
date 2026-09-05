@@ -44,6 +44,10 @@ For an update release, double-click **Prepare Campaign Engine Release.cmd**. Ent
 
 ## Back up and restore campaign data
 
+The top bar reports **Unsaved changes**, **Saving**, **Saved**, or a save error. Typing is coalesced into a current workspace save. Click the status to flush or retry immediately. Closing the app waits for pending saves; if a save fails, the window stays open with retry controls.
+
+**Record history** restores an individual record edit or an approved consequence batch without replacing the whole workspace. Later edits must be undone first when they conflict. Workspace backups include this history and imported reference-page text. **Settings → Archivist sync** fetches a field comparison before applying updates; review the choices and incomplete-import messages, then choose **Apply reviewed sync**.
+
 Open **Settings → Private data & backups**.
 
 - **Back up workspace** saves a portable JSON backup wherever you choose.

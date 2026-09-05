@@ -10,9 +10,9 @@
     <title>Campaign Engine</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
     <link rel="stylesheet" href="styles.css?v=19" />
-    <link rel="stylesheet" href="workspace.css?v=1" />
+    <link rel="stylesheet" href="workspace.css?v=2" />
     <link rel="stylesheet" href="systems/pf2e/styles.css?v=1" />
   </head>
   <body>
@@ -46,6 +46,7 @@
           <button class="nav-link" data-view="connections"><span>↔</span> Connections</button>
           <button class="nav-link" data-view="locations"><span>⌖</span> World</button>
           <button class="nav-link" data-view="journal"><span>▤</span> Journal</button>
+          <button class="nav-link" data-view="history"><span>↶</span> Record history</button>
           <button class="nav-link" data-view="copilot"><span>✺</span> GM inquiry</button>
         </nav>
 
@@ -61,6 +62,7 @@
           <button class="mobile-menu" id="mobileMenu" type="button" aria-label="Open navigation">☰</button>
           <div class="breadcrumb" id="breadcrumb">CAMPAIGN / OVERVIEW</div>
           <div class="topbar-actions">
+            <button class="text-link workspace-save-status" type="button" id="workspaceSaveStatus" data-save-status>Saved</button>
             <button class="knowledge-mode-toggle" id="knowledgeModeToggle" type="button" aria-pressed="false">
               <span class="knowledge-mode-dot"></span>
               <span id="knowledgeModeLabel">GM view</span>
@@ -131,7 +133,8 @@
     <dialog class="modal search-modal" id="searchModal">
       <form method="dialog">
         <div class="modal-heading"><div><p class="eyebrow">FIND SOMETHING</p><h2>Search this campaign</h2></div><button class="close-button" type="button" data-close-modal aria-label="Close">×</button></div>
-        <label class="search-field"><span>⌕</span><input autofocus id="searchInput" placeholder="Characters, places, quests, notes…" /></label>
+        <label class="search-field"><span>⌕</span><input autofocus id="searchInput" placeholder="Records, sessions, notes, rulebooks…" /></label>
+        <label>Search in<select id="searchFilter"><option value="all">All records</option></select></label>
         <div id="searchResults" class="search-results"><p class="empty-copy">Start typing to search the living record.</p></div>
       </form>
     </dialog>
@@ -143,8 +146,11 @@
     <div class="toast" id="toast" role="status"></div>
     <script src="archivist-data.js"></script>
     <script src="archivist-details.js"></script>
+    <script src="workspace-persistence.js?v=1"></script>
+    <script src="campaign-history.js?v=1"></script>
+    <script src="campaign-search.js?v=1"></script>
     <script src="campaign-knowledge.js?v=1"></script>
-    <script src="archivist-merge.js?v=3"></script>
+    <script src="archivist-merge.js?v=4"></script>
     <script src="campaign-cleanup.js?v=1"></script>
     <script src="session-workflow.js?v=1"></script>
     <script src="foundry-api-bridge.js?v=6"></script>
@@ -159,13 +165,16 @@
     <script src="systems/call-of-cthulhu/definition.js?v=1"></script>
     <script src="systems/custom/definition.js?v=1"></script>
     <script src="systems/campaign-system-state.js?v=1"></script>
-    <script src="app.js?v=28"></script>
-    <script src="features.js?v=11"></script>
+    <script src="app.js?v=29"></script>
+    <script src="features.js?v=12"></script>
     <script src="systems/pf2e/toolkit.js?v=1"></script>
     <script>
       if ("serviceWorker" in navigator && location.protocol !== "file:") {
         window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js"));
       }
     </script>
+    <script src="source-library.js?v=1"></script>
+    <script src="workspace-views.js?v=1"></script>
+    <script src="bootstrap.js?v=1"></script>
   </body>
 </html>

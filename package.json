@@ -1,7 +1,7 @@
 {
   "name": "campaign-engine",
   "productName": "Campaign Engine",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "A local-first command center for tabletop RPG campaigns.",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -11,18 +11,20 @@
   "author": "Campaign Engine",
   "license": "UNLICENSED",
   "scripts": {
-    "start": "electron .",
-    "test": "node --test",
+    "start": "node scripts/prepare-assets.mjs && electron .",
+    "test": "node scripts/prepare-assets.mjs && node --test",
     "configure:release": "node scripts/configure-release.mjs",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder --win nsis portable --publish never && node scripts/generate-portable-update.mjs"
+    "pack": "node scripts/prepare-assets.mjs && electron-builder --dir && node scripts/verify-package.mjs",
+    "dist": "node scripts/prepare-assets.mjs && electron-builder --win nsis portable --publish never && node scripts/verify-package.mjs && node scripts/generate-portable-update.mjs",
+    "prepare:assets": "node scripts/prepare-assets.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "electron": "^37.2.6",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "pdfjs-dist": "5.6.205"
   },
   "build": {
     "appId": "com.campaignengine.desktop",
@@ -37,6 +39,14 @@
       "workspace.css",
       "app.js",
       "campaign-knowledge.js",
+      "vendor/**/*",
+      "bootstrap.js",
+      "workspace-views.js",
+      "source-library.js",
+      "campaign-search.js",
+      "campaign-history.js",
+      "workspace-persistence.js",
+      "foundry-actor-normalizer.js",
       "archivist-merge.js",
       "campaign-cleanup.js",
       "session-workflow.js",

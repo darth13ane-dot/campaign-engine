@@ -21,9 +21,11 @@ $releaseSnapshotPath = Join-Path $root "release-assets\archivist-data.js"
 $releaseDetailsPath = Join-Path $root "release-assets\archivist-details.js"
 $releaseSnapshotOriginal = $null
 $releaseDetailsOriginal = $null
+$privateBuildOriginal = $env:CAMPAIGN_ENGINE_PRIVATE_BUILD
 
 try {
   if ($IncludeArchivistData) {
+    $env:CAMPAIGN_ENGINE_PRIVATE_BUILD = "1"
     $releaseSnapshotOriginal = [System.IO.File]::ReadAllBytes($releaseSnapshotPath)
     $releaseDetailsOriginal = [System.IO.File]::ReadAllBytes($releaseDetailsPath)
     Copy-Item -LiteralPath (Join-Path $root "archivist-data.js") -Destination $releaseSnapshotPath -Force
@@ -55,6 +57,7 @@ try {
     Select-Object Name, @{ Name = "SizeMB"; Expression = { [math]::Round($_.Length / 1MB, 1) } } |
     Format-Table -AutoSize
 } finally {
+  $env:CAMPAIGN_ENGINE_PRIVATE_BUILD = $privateBuildOriginal
   if ($null -ne $releaseSnapshotOriginal) {
     [System.IO.File]::WriteAllBytes($releaseSnapshotPath, $releaseSnapshotOriginal)
   }

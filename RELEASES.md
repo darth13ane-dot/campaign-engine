@@ -1,5 +1,19 @@
 # Sharing and desktop updates
 
+## Version 1.4.0 — Campaign workflow improvements
+
+Campaign-wide search now includes sessions, story arcs, live scratchpads and logs, and imported PDF pages. Results can be filtered by type and expanded beyond the first page. Player preview searches only shared campaign records; private notes and rulebooks remain in GM view.
+
+Rulebooks use local PDF.js text extraction, retaining PDF page numbers. **Read & search** opens a page reader, and GM inquiry selects passages matching the question from enabled sources, with book titles and page references. Existing legacy imports remain readable; reimport a PDF to recover its full text and page numbers. Image-only scans still require OCR before importing. PDF.js and its support assets ship with the Windows app and are cached for offline PWA use.
+
+Archivist sync now fetches a review before changing the workspace. Each changed field can use its local value or the incoming value, and existing overrides default to local. The preview reports incomplete imports and rejects application if the workspace changed during review. Source detail records refresh with an approved import. The desktop app makes a safety backup before saving it. Existing Foundry actor links, local workflow state, and history survive refreshes.
+
+**Record history** shows changed fields and can undo a record operation or a consequence batch. Undo refuses to overwrite a record edited again since that operation. History travels with workspace backups and retains up to 100 operations within a 2 MB budget, always retaining the latest operation.
+
+Rapid edits now share a pending save, with visible pending, saving, saved, and error states. The Windows app waits for unsaved work before closing and keeps the window open when saving fails. Browser startup restores valid saved campaigns even with empty bundled snapshots. Connection calculations and sheet matching reuse record lookups. Feature views render their final controls directly, without global DOM rewriting.
+
+Packaging includes the missing Foundry actor normalizer. Every release build verifies that required HTML and PDF assets are present and match source, and that public builds exclude private Archivist data.
+
 ## Version 1.3.1 — PF2e Live Table stabilization
 
 Campaign Engine 1.3.1 aligns the PF2e live-table panel with Foundry API Bridge's current public response contracts. Strike, condition, and roll-table refreshes now settle independently, so an Adventurer-tier restriction on roll tables no longer prevents the tier-free PF2e Strike and condition data from loading. Read-only Strike and condition refreshes may recover from one transient bridge interruption without retrying any roll or mutation. Confirmed writes remain single-attempt, and the live panel locks concurrent submissions until the active request settles.

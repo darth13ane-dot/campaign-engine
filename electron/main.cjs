@@ -6,6 +6,7 @@ const { createCredentialStore, FOUNDRY_CREDENTIAL_FILE } = require("./credential
 const { createPortableUpdater } = require("./portable-updater.cjs");
 const { normalizeUpdateUrl, resolveUpdateSettings } = require("./update-settings.cjs");
 const { createWorkspaceStore } = require("./workspace-store.cjs");
+const { createWorkspaceCloseGuard } = require("./workspace-close.cjs");
 const { normalizeBridgeSettings, syncArchivistBridge, testArchivistBridge } = require("./archivist-mcp-bridge.cjs");
 
 let mainWindow;
@@ -18,6 +19,7 @@ let workspaceStore;
 let credentialStore;
 let foundryCredentialStore;
 let portableUpdater;
+let workspaceCloseGuard;
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
@@ -148,6 +150,15 @@ function createWindow() {
     return { action: "deny" };
   });
   mainWindow.loadFile(path.join(__dirname, "..", "index.html"));
+  workspaceCloseGuard = createWorkspaceCloseGuard({
+    requestFlush: () => mainWindow.webContents.send("desktop:prepare-to-close"),
+    close: () => mainWindow.close(),
+    reportError: async message => {
+      const result = await dialog.showMessageBox(mainWindow, { type: "error", title: "Workspace not saved", message, detail: "Keep the app open or retry saving before closing.", buttons: ["Keep open", "Retry save"], defaultId: 1, cancelId: 0 });
+      return result.response === 1;
+    }
+  });
+  mainWindow.on("close", event => workspaceCloseGuard.onClose(event));
   mainWindow.once("ready-to-show", () => mainWindow.show());
 }
 
@@ -206,8 +217,14 @@ ipcMain.handle("desktop:workspace-replace", async (_, workspace, reason) => {
   return { workspace: saved, info: await workspaceStore.getInfo() };
 });
 ipcMain.handle("desktop:workspace-save-state", async (_, state) => {
-  await workspaceStore.saveState(state);
-  return workspaceStore.getInfo();
+  const saved = await workspaceStore.saveState(state);
+  return workspaceStore.getInfo(saved);
+});
+ipcMain.on("desktop:workspace-dirty", (event, dirty) => {
+  if (event.sender === mainWindow?.webContents) workspaceCloseGuard?.setDirty(dirty);
+});
+ipcMain.on("desktop:workspace-close-ready", (event, result) => {
+  if (event.sender === mainWindow?.webContents) workspaceCloseGuard?.finish(result).catch(error => console.error("Workspace close failed:", error));
 });
 ipcMain.handle("desktop:workspace-export", async () => {
   const date = new Date().toISOString().slice(0, 10);
@@ -230,8 +247,8 @@ ipcMain.handle("desktop:workspace-import", async () => {
   const workspace = await workspaceStore.importWorkspace(result.filePaths[0]);
   return { canceled: false, workspace, info: await workspaceStore.getInfo() };
 });
-ipcMain.handle("desktop:workspace-create-safety-backup", async () => {
-  const filePath = await workspaceStore.createSafetyBackup("manual");
+ipcMain.handle("desktop:workspace-create-safety-backup", async (_, reason) => {
+  const filePath = await workspaceStore.createSafetyBackup(reason || "manual");
   return { filePath, info: await workspaceStore.getInfo() };
 });
 ipcMain.handle("desktop:workspace-open-folder", async () => {

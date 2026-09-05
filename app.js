@@ -14,6 +14,7 @@ const FOUNDRY_LIVE_ACTIONS = window.CampaignFoundryLiveActions || null;
 const CHARACTER_FILTERS = window.CampaignCharacterFilters || null;
 const CAMPAIGN_KNOWLEDGE = window.CampaignKnowledge || null;
 const DESKTOP_API = window.campaignEngineDesktop || null;
+const historyTracker = window.CampaignHistory.createTracker();
 
 const seed = {
   activeCampaignId: "vey",
@@ -106,7 +107,8 @@ let desktopFoundryApiKeySaved = false;
 let desktopUpdateState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading desktop update settings…" : "Use the installable web app or Windows package." };
 let archivistBridgeState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading Archivist bridge settings…" : "The internal bridge is available in the Windows desktop app." };
 let desktopWorkspaceInfo = { mode: DESKTOP_API ? "loading" : "browser", savedAt: null, workspacePath: "" };
-let desktopSaveQueue = Promise.resolve();
+let nextHistoryLabel = "Campaign edit";
+let workspaceSaveStatus = "saved";
 let builderTab = "character";
 let builderSystem = "";
 const SYSTEM_LIBRARY = Object.fromEntries(SYSTEM_REGISTRY.all().map(definition => [
@@ -150,8 +152,8 @@ function createInitialState() {
 function loadState() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved?.source === "archivist" || !ARCHIVIST_SNAPSHOT) return saved || createInitialState();
-    return createInitialState();
+    if (saved?.state && saved.archivist) { ARCHIVIST_DETAILS_ROOT = saved.archivist; ARCHIVIST_DETAILS = saved.archivist.campaigns || {}; }
+    return window.CampaignPersistence.initialState(saved?.state || saved, ARCHIVIST_SNAPSHOT, seed);
   } catch { return createInitialState(); }
 }
 function ensureCampaignPlanning(campaign) {
@@ -166,22 +168,35 @@ function ensureCampaignPlanning(campaign) {
   return CAMPAIGN_KNOWLEDGE?.normalizeCampaign(normalized) || normalized;
 }
 function hydrateCampaignState() {
-  if (!Array.isArray(state?.campaigns)) state = createInitialState();
+  if (!Array.isArray(state?.campaigns) || !state.campaigns.length) state = createInitialState();
   state.campaigns.forEach(ensureCampaignPlanning);
+  historyTracker.reset(state.campaigns);
 }
-function saveState() {
-  if (!DESKTOP_API?.saveWorkspaceState) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    return;
+const workspaceSaver = window.CampaignPersistence.createSaveController({
+  snapshot() {
+    historyTracker.capture(state.campaigns, nextHistoryLabel);
+    nextHistoryLabel = "Campaign edit";
+    return structuredClone(state);
+  },
+  write(snapshot) {
+    if (!DESKTOP_API?.saveWorkspaceState) return localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: 1, state: snapshot, archivist: ARCHIVIST_DETAILS_ROOT }));
+    return DESKTOP_API.saveWorkspaceState(snapshot).then(info => { desktopWorkspaceInfo = info || desktopWorkspaceInfo; });
+  },
+  onStatus({ status, error, dirty }) {
+    workspaceSaveStatus = status;
+    DESKTOP_API?.setWorkspaceDirty?.(dirty);
+    updateSaveStatus();
+    if (error) showToast(`Workspace save failed: ${error.message}. Retry saving before closing.`);
   }
-  const snapshot = structuredClone(state);
-  desktopSaveQueue = desktopSaveQueue
-    .then(() => DESKTOP_API.saveWorkspaceState(snapshot))
-    .then(info => { desktopWorkspaceInfo = info || desktopWorkspaceInfo; })
-    .catch(error => {
-      console.error("Campaign Engine could not save the desktop workspace.", error);
-      showToast("Desktop data could not be saved. Create a backup before closing.");
-    });
+});
+function updateSaveStatus() {
+  const copy = { pending: "Unsaved changes", saving: "Saving…", saved: "Saved", error: "Save failed · retry" }[workspaceSaveStatus];
+  document.querySelectorAll("[data-save-status]").forEach(node => { node.textContent = copy; node.dataset.status = workspaceSaveStatus; });
+}
+function saveState(label = "Campaign edit") {
+  nextHistoryLabel = typeof label === "string" ? label : "Campaign edit";
+  if (typeof invalidateCampaignSearch === "function") invalidateCampaignSearch();
+  workspaceSaver.request();
 }
 function workspacePayload() {
   return {
@@ -212,7 +227,7 @@ function isDemoWorkspace(workspace) {
   return campaignIds.length === 2 && campaignIds.join(",") === "gut,vey";
 }
 async function flushDesktopSaves() {
-  await desktopSaveQueue;
+  await workspaceSaver.flush();
 }
 async function initializeDesktopWorkspace() {
   if (!DESKTOP_API?.loadWorkspace) return;
@@ -236,7 +251,7 @@ async function initializeDesktopWorkspace() {
   }
   render();
 }
-function activeCampaign() { return ensureCampaignPlanning(state.campaigns.find(c => c.id === state.activeCampaignId) || state.campaigns[0]); }
+function activeCampaign() { return state.campaigns.find(c => c.id === state.activeCampaignId) || state.campaigns[0]; }
 function esc(value = "") { return String(value).replace(/[&<>'"]/g, char => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" }[char])); }
 function knowledgeMode() { return state.knowledgeMode === CAMPAIGN_KNOWLEDGE?.PLAYERS_KNOW ? CAMPAIGN_KNOWLEDGE.PLAYERS_KNOW : "gm"; }
 function playerPreviewActive() { return knowledgeMode() === CAMPAIGN_KNOWLEDGE?.PLAYERS_KNOW; }
@@ -357,11 +372,6 @@ async function clearApiKeyVault() {
   }
   setCopilotToken("");
 }
-async function persistApiKeyIfRequested(form, apiKey) {
-  if (!form.querySelector('[name="rememberApiKey"]')?.checked) return;
-  const passphrase = String(new FormData(form).get("vaultPassphrase") || "");
-  await saveApiKeyInVault(apiKey, passphrase);
-}
 async function initializeDesktopApiKey() {
   if (!usesDesktopCredentialStore()) return;
   try {
@@ -418,21 +428,24 @@ function decodeEntryRef(value) {
   const [type, ...nameParts] = String(value || "").split(":");
   return { type: decodeURIComponent(type || ""), name: decodeURIComponent(nameParts.join(":") || "") };
 }
-function findCampaignEntry(campaign, entry) {
-  return campaignEntries(campaign).find(candidate => entryKey(candidate) === entryKey(entry));
+function campaignEntryIndex(campaign) {
+  return new Map(campaignEntries(campaign).map(entry => [entryKey(entry), entry]));
+}
+function findCampaignEntry(campaign, entry, index) {
+  return index ? index.get(entryKey(entry)) : campaignEntries(campaign).find(candidate => entryKey(candidate) === entryKey(entry));
 }
 function entryLinkLabel(entry) { return ENTRY_TYPES[entry.type] || entry.type; }
 function entryLinkToken(entry) { return `[[${entryLinkLabel(entry)}: ${entry.name}]]`; }
-function entryFromLinkText(campaign, text) {
+function entryFromLinkText(campaign, text, index) {
   const value = String(text || "").trim();
   const labelled = value.match(/^([^:]+):\s*(.+)$/);
   if (labelled) {
     const label = labelled[1].trim().toLocaleLowerCase();
     const name = labelled[2].trim();
     const type = Object.entries(ENTRY_TYPES).find(([, title]) => title.toLocaleLowerCase() === label)?.[0] || (ENTRY_RECORD_TYPES[label] ? label : "");
-    if (type) return findCampaignEntry(campaign, { type, name });
+    if (type) return findCampaignEntry(campaign, { type, name }, index);
   }
-  return campaign.journal.map(entry => ({ type: "journal", name: entry.title })).find(entry => entry.name.toLocaleLowerCase() === value.toLocaleLowerCase()) || findCampaignEntry(campaign, { type: "journal", name: value });
+  return findCampaignEntry(campaign, { type: "journal", name: value }, index);
 }
 function internalLinkMatches(text = "") {
   return [...String(text || "").matchAll(/\[\[([^\]]+)\]\]/g)];
@@ -451,7 +464,7 @@ function recordTextForLinks(type, item) {
   if (type === "journal") return item.body || "";
   return "";
 }
-function journalReferenceConnections(campaign) {
+function journalReferenceConnections(campaign, index = campaignEntryIndex(campaign)) {
   const sources = [
     ...campaign.sessions.map(item => ({ type: "session", item })),
     ...campaign.characters.map(item => ({ type: "characters", item })),
@@ -463,7 +476,7 @@ function journalReferenceConnections(campaign) {
   return sources.flatMap(source => {
     const from = recordSourceEntry(source.type, source.item);
     if (!from) return [];
-    return internalLinkMatches(recordTextForLinks(source.type, source.item)).map(match => entryFromLinkText(campaign, match[1])).filter(Boolean).filter(to => entryKey(to) !== entryKey(from)).map(to => {
+    return internalLinkMatches(recordTextForLinks(source.type, source.item)).map(match => entryFromLinkText(campaign, match[1], index)).filter(Boolean).filter(to => entryKey(to) !== entryKey(from)).map(to => {
       const key = `${entryKey(from)}>${entryKey(to)}`;
       if (seen.has(key)) return null;
       seen.add(key);
@@ -472,8 +485,9 @@ function journalReferenceConnections(campaign) {
   });
 }
 function campaignConnections(campaign) {
-  const explicit = campaign.connections.filter(connection => findCampaignEntry(campaign, connection.from) && findCampaignEntry(campaign, connection.to)).map(connection => ({ ...connection, inferred: false }));
-  return [...explicit, ...journalReferenceConnections(campaign)].sort((left, right) => left.type.localeCompare(right.type) || left.from.name.localeCompare(right.from.name) || left.to.name.localeCompare(right.to.name));
+  const index = campaignEntryIndex(campaign);
+  const explicit = campaign.connections.filter(connection => findCampaignEntry(campaign, connection.from, index) && findCampaignEntry(campaign, connection.to, index)).map(connection => ({ ...connection, inferred: false }));
+  return [...explicit, ...journalReferenceConnections(campaign, index)].sort((left, right) => left.type.localeCompare(right.type) || left.from.name.localeCompare(right.from.name) || left.to.name.localeCompare(right.to.name));
 }
 
 function updateCampaignChrome() {
@@ -872,18 +886,22 @@ function getFoundryState() {
   return state.foundry;
 }
 function nameKey(value = "") { return String(value).toLocaleLowerCase().replace(/[^a-z0-9]/g, ""); }
-function foundryActors() { return getFoundryState().actors.filter(actor => !actor.campaignId || actor.campaignId === activeCampaign().id); }
-function findActorByName(name) {
-  const key = nameKey(name);
-  return foundryActors().find(actor => nameKey(actor.name) === key) || foundryActors().find(actor => nameKey(actor.name).includes(key) || key.includes(nameKey(actor.name)));
+function foundryActors(campaign = activeCampaign()) { return getFoundryState().actors.filter(actor => !actor.campaignId || actor.campaignId === campaign.id); }
+function foundryActorIndex(campaign = activeCampaign()) {
+  const actors = foundryActors(campaign);
+  return { actors, byId: new Map(actors.map(actor => [String(actor.id), actor])), byName: new Map(actors.map(actor => [nameKey(actor.name), actor])) };
 }
-function findActorForCharacter(character) {
+function findActorByName(name, index = foundryActorIndex()) {
+  const key = nameKey(name);
+  return index.byName.get(key) || index.actors.find(actor => nameKey(actor.name).includes(key) || key.includes(nameKey(actor.name)));
+}
+function findActorForCharacter(character, index = foundryActorIndex()) {
   if (!character) return null;
   if (character.foundryActorId) {
-    const linked = foundryActors().find(actor => String(actor.id) === String(character.foundryActorId));
+    const linked = index.byId.get(String(character.foundryActorId));
     if (linked) return linked;
   }
-  return findActorByName(character.name);
+  return findActorByName(character.name, index);
 }
 function normalizeFoundryActor(raw) {
   if (!FOUNDRY_ACTOR_NORMALIZER) throw new Error("Foundry actor normalization support did not load.");
@@ -907,7 +925,8 @@ function openSheetModal(name) {
   document.querySelector("#sheetModal").showModal();
 }
 function sheetsView(campaign) {
-  const entries = campaign.characters.map(character => ({ character, actor: findActorForCharacter(character) }));
+  const actorIndex = foundryActorIndex(campaign);
+  const entries = campaign.characters.map(character => ({ character, actor: findActorForCharacter(character, actorIndex) }));
   const linked = entries.filter(entry => entry.actor).length;
   const pf2eActive = enabledSystems(campaign).some(system => system.id === "pf2e") || entries.some(entry => entry.actor?.isPf2e || entry.actor?.systemId === "pf2e");
   const levels = [...new Set(entries.map(entry => entry.actor?.level).filter(level => Number.isFinite(level)))].sort((left, right) => left - right);
@@ -1151,11 +1170,11 @@ function apiKeyVaultFields() {
   }
   const hasSavedKey = Boolean(savedKeyVault());
   const ready = Boolean(copilotToken);
-  return `<details class="ai-vault" ${hasSavedKey && !ready ? "open" : ""}><summary>${ready ? "Saved API key ready for this app session" : hasSavedKey ? "Unlock saved API key" : "Save API key on this device"}</summary><div><p class="field-help">The key is encrypted in this browser with a passphrase you choose. The passphrase is never saved. Once unlocked, it stays available for this app session.</p><label>Vault passphrase<input name="vaultPassphrase" type="password" autocomplete="off" placeholder="At least 12 characters" /></label>${hasSavedKey ? `<div class="vault-actions">${ready ? `<span class="vault-ready">Ready</span>` : `<button class="secondary-button" type="button" data-unlock-ai-key>Unlock saved key</button>`}<button class="quiet-button" type="button" data-clear-ai-key>Clear saved key</button></div>` : ""}<label class="consent-check"><input name="rememberApiKey" type="checkbox" /> Remember the current API key in this encrypted vault</label></div></details>`;
+  return `<details class="ai-vault" ${hasSavedKey && !ready ? "open" : ""}><summary>${ready ? "Saved API key ready for this app session" : hasSavedKey ? "Unlock saved API key" : "Save API key on this device"}</summary><div><p class="field-help">The key is encrypted in this browser with a passphrase you choose. The passphrase is never saved. Once unlocked, it stays available for this app session.</p><label>Vault passphrase<input name="vaultPassphrase" type="password" autocomplete="off" placeholder="At least 12 characters" /></label>${hasSavedKey ? `<div class="vault-actions">${ready ? `<span class="vault-ready">Ready</span>` : `<button class="secondary-button" type="button" data-unlock-ai-key>Unlock saved key</button>`}<button class="quiet-button" type="button" data-clear-ai-key>Clear saved key</button></div>` : ""}<button class="secondary-button" type="button" data-save-ai-key>Save encrypted key</button></div></details>`;
 }
 function aiConnectionFields(copilot, consentCopy) {
   const keyReady = Boolean(copilotToken);
-  return `<details class="ai-connection" open><summary>AI connection</summary><div><label>Chat-completions endpoint<input required name="endpoint" type="url" value="${esc(copilot.endpoint)}" /></label><label>Model ID<input required name="model" value="${esc(copilot.model)}" placeholder="Enter the model available to your account" /></label>${keyReady ? `<p class="ai-key-ready">API key ready. Configure or replace it in Settings.</p>` : `<label>API key<input name="apiKey" type="password" autocomplete="off" placeholder="Add once in Settings, or paste for this session" /></label>`}<label class="consent-check"><input required name="consent" type="checkbox" /> ${esc(consentCopy)}</label></div></details>`;
+  return `<details class="ai-connection" open><summary>AI connection</summary><div><label>Chat-completions endpoint<input required name="endpoint" type="url" value="${esc(copilot.endpoint)}" /></label><label>Model ID<input required name="model" value="${esc(copilot.model)}" placeholder="Enter the model available to your account" /></label>${keyReady ? `<p class="ai-key-ready">API key ready. Configure or replace it in Settings.</p>` : `<label>API key<input name="apiKey" type="password" autocomplete="off" placeholder="Add once in Settings, or paste for this session" /></label>`}<p class="sending-notice">${esc(consentCopy)}</p><input type="hidden" name="consent" value="true" /></div></details>`;
 }
 async function saveAiSettings(form) {
   const data = new FormData(form);
@@ -1169,10 +1188,7 @@ async function saveAiSettings(form) {
     } else if (suppliedKey) {
       setCopilotToken(suppliedKey);
     }
-    if (!usesDesktopCredentialStore() && form.querySelector('[name="rememberApiKey"]')?.checked) {
-      if (!copilotToken) throw new Error("Paste an API key or unlock the saved key first.");
-      await persistApiKeyIfRequested(form, copilotToken);
-    }
+
   } catch (error) {
     showToast(`The API key was not saved: ${error.message}`);
     return;
@@ -1331,47 +1347,6 @@ function archivistBridgeSettingsFromForm(form) {
     timeoutMs: data.get("timeoutMs")
   };
 }
-function applyArchivistBridgePayload(payload) {
-  if (!payload || typeof payload !== "object") return false;
-  if (payload.workspace) return applyArchivistBridgePayload(payload.workspace);
-  const incomingState = payload.state?.campaigns ? payload.state : payload;
-  const incomingDetails = payload.archivist || payload.details || payload.archivistDetails || incomingState.archivist || null;
-  let changed = false;
-  if (Array.isArray(incomingState.campaigns)) {
-    if (!ARCHIVIST_MERGE) throw new Error("The Archivist merge engine is unavailable.");
-    const incomingDetailsRoot = ARCHIVIST_MERGE.asDetailsRoot(incomingDetails || {}, payload.importedAt || incomingState.importedAt || new Date().toISOString());
-    const merge = ARCHIVIST_MERGE.mergeCampaigns(
-      state.campaigns,
-      incomingState.campaigns,
-      ARCHIVIST_DETAILS_ROOT,
-      incomingDetailsRoot
-    );
-    state = {
-      ...state,
-      source: "archivist",
-      activeCampaignId: incomingState.activeCampaignId || state.activeCampaignId || merge.campaigns[0]?.id || null,
-      campaigns: merge.campaigns
-    };
-    ARCHIVIST_DETAILS_ROOT = ARCHIVIST_MERGE.mergeDetailsRoots(ARCHIVIST_DETAILS_ROOT, incomingDetailsRoot);
-    ARCHIVIST_DETAILS = ARCHIVIST_DETAILS_ROOT.campaigns || {};
-    archivistBridgeState = { ...archivistBridgeState, mergeStats: merge.stats };
-    changed = true;
-  } else if (incomingDetails && typeof incomingDetails === "object") {
-    if (!ARCHIVIST_MERGE) throw new Error("The Archivist merge engine is unavailable.");
-    ARCHIVIST_DETAILS_ROOT = ARCHIVIST_MERGE.mergeDetailsRoots(
-      ARCHIVIST_DETAILS_ROOT,
-      ARCHIVIST_MERGE.asDetailsRoot(incomingDetails, payload.importedAt || new Date().toISOString())
-    );
-    ARCHIVIST_DETAILS = ARCHIVIST_DETAILS_ROOT.campaigns || {};
-    changed = true;
-  }
-  if (changed) {
-    hydrateCampaignState();
-    if (!state.campaigns.some(item => item.id === state.activeCampaignId)) state.activeCampaignId = state.campaigns[0]?.id || null;
-  }
-  return changed;
-}
-
 function archivistMergeSummary(stats) {
   if (!stats) return "";
   const parts = [];
@@ -1407,15 +1382,9 @@ async function runArchivistBridgeAction(form, action) {
     if (action === "sync") {
       await flushDesktopSaves();
       archivistBridgeState = await DESKTOP_API.syncArchivistBridge(settings);
-      if (applyArchivistBridgePayload(archivistBridgeState.payload)) {
-        if (DESKTOP_API?.replaceWorkspace) {
-          const result = await DESKTOP_API.replaceWorkspace(workspacePayload(), "before-archivist-bridge");
-          desktopWorkspaceInfo = result.info || desktopWorkspaceInfo;
-        } else {
-          saveState();
-        }
-        showToast(`Archivist merge complete: ${archivistMergeSummary(archivistBridgeState.mergeStats)}.`);
-      } else throw new Error("The bridge returned no campaigns to merge.");
+      prepareArchivistReview(archivistBridgeState.payload);
+      currentView = "sync-review";
+      showToast("Archivist changes are ready to review.");
     }
     render();
   } catch (error) {
@@ -1443,7 +1412,7 @@ function desktopUpdateView() {
   return `${header("App updates", portable ? "PORTABLE RELEASES" : "DESKTOP RELEASES", portable ? "Download, verify, and update this portable file in place while preserving campaign data and a rollback copy." : "Configure a trusted release feed so this installed app can keep itself current.")}
     <div class="sync-grid">
       <section class="card sync-lead"><p class="eyebrow">CURRENT STATUS · ${portable ? "PORTABLE" : "INSTALLED"}</p><h2>${esc(desktopUpdateState.status || "ready")}</h2><p>${esc(desktopUpdateState.message || "Ready to check for an update.")}</p><div class="connection-metrics"><span><strong>v${esc(installedVersion)}</strong> installed</span>${targetVersion ? `<span><strong>v${esc(targetVersion)}</strong> target</span>` : ""}</div><div>${action}</div></section>
-      <section class="card sync-card"><div class="section-title"><h2>Release feed</h2><span class="tag">${portable ? "Portable self-update" : "Installed app"}</span></div><p>Use the HTTPS folder where you publish the Windows executables and update metadata. This URL is stored locally on this device.</p><form id="desktopUpdateForm" class="compact-form"><label>Release feed URL<input required name="updateUrl" type="url" value="${esc(settings.updateUrl || "")}" placeholder="https://downloads.example.com/campaign-engine" /></label><label class="consent-check"><input name="autoCheck" type="checkbox" ${settings.autoCheck ? "checked" : ""} /> Check automatically when the app opens and every six hours</label><button class="secondary-button" type="submit">Save update settings</button></form></section>
+      <section class="card sync-card"><div class="section-title"><h2>Release feed</h2><span class="tag">${portable ? "Portable self-update" : "Installed app"}</span></div><p>Use the HTTPS folder where you publish the Windows executables and update metadata. This URL is stored locally on this device.</p><form id="desktopUpdateForm" class="compact-form"><label>Release feed URL<input required name="updateUrl" type="url" value="${esc(settings.updateUrl || "")}" placeholder="https://downloads.example.com/campaign-engine" /></label><div class="toggle-row"><input type="hidden" name="autoCheck" value="on" ${settings.autoCheck ? "" : "disabled"} /><button class="system-toggle" type="button" data-toggle-auto-check aria-pressed="${settings.autoCheck ? "true" : "false"}">${settings.autoCheck ? "Automatic checks on" : "Automatic checks off"}</button></div><button class="secondary-button" type="submit">Save update settings</button></form></section>
     </div>`;
 }
 async function initializeDesktopUpdates() {
@@ -1475,7 +1444,7 @@ async function runDesktopUpdateAction(action) {
   try {
     if (action === "check") desktopUpdateState = await DESKTOP_API.checkForUpdates();
     if (action === "download") desktopUpdateState = await DESKTOP_API.downloadUpdate();
-    if (action === "install") await DESKTOP_API.installUpdate();
+    if (action === "install") { await flushDesktopSaves(); await DESKTOP_API.installUpdate(); }
     if (currentView === "updates") render();
   } catch (error) {
     desktopUpdateState = { ...desktopUpdateState, status: "error", message: error.message || "Desktop update action failed." };
@@ -1494,7 +1463,7 @@ function render() {
   nav.querySelectorAll(".nav-link").forEach(button => button.classList.toggle("active", button.dataset.view === currentView));
   settingsButton.classList.toggle("active", ["settings", "systems", "foundry", "archivist", "updates"].includes(currentView));
   const featureView = (name, fallback) => typeof globalThis[name] === "function" ? globalThis[name] : fallback;
-  const views = { dashboard: dashboardView, sessions: sessionsView, "session-desk": sessionDeskView, reconciliation: reconciliationView, characters: c => recordView("characters", c), sheets: sheetsView, builder: c => featureView("builderStudioView", () => header("Builder studio", "RULES-AWARE CREATION", "Loading builder tools…"))(c), sources: c => featureView("sourcesFeatureView", () => header("Rulebooks & PDFs", "LOCAL REFERENCE LIBRARY", "Loading source tools…"))(c), quests: c => recordView("quests", c), arcs: arcsView, connections: connectionsView, locations: c => recordView("locations", c), journal: journalView, settings: settingsView, systems: c => featureView("systemsFeatureView", () => header("Game systems", "RULES LIBRARY", "Loading system tools…"))(c), copilot: copilotView, foundry: foundryView, archivist: archivistView, updates: desktopUpdateView, detail: entityDetailView };
+  const views = { dashboard: dashboardView, sessions: sessionsView, "session-desk": sessionDeskView, reconciliation: reconciliationView, characters: c => recordView("characters", c), sheets: sheetsView, builder: c => featureView("builderStudioView", () => header("Builder studio", "RULES-AWARE CREATION", "Loading builder tools…"))(c), sources: c => featureView("sourcesFeatureView", () => header("Rulebooks & PDFs", "LOCAL REFERENCE LIBRARY", "Loading source tools…"))(c), quests: c => recordView("quests", c), arcs: arcsView, connections: connectionsView, locations: c => recordView("locations", c), journal: journalView, settings: settingsView, systems: c => featureView("systemsFeatureView", () => header("Game systems", "RULES LIBRARY", "Loading system tools…"))(c), copilot: copilotView, foundry: foundryView, archivist: archivistView, updates: desktopUpdateView, detail: entityDetailView, history: historyView, "sync-review": archivistReviewView, "source-detail": referenceDetailView };
   systemViews.forEach(view => {
     views[view.id] = campaignValue => featureView(
       view.renderer,
@@ -1505,6 +1474,9 @@ function render() {
   const playerSafeViews = new Set(["dashboard", "sessions", "characters", "quests", "locations", "journal", "detail"]);
   const restricted = playerPreviewActive() && !playerSafeViews.has(currentView);
   root.innerHTML = restricted ? playerPreviewRestrictedView() : views[currentView](campaign);
+  if (!restricted && currentView === "settings") root.querySelector(".settings-grid")?.insertAdjacentHTML("beforeend", appearancePanel());
+  if (!restricted && currentView === "foundry") root.querySelector(".integration-grid")?.insertAdjacentHTML("beforeend", foundryExportPanel(campaign));
+  updateSaveStatus();
   if (playerPreviewActive()) root.insertAdjacentHTML("afterbegin", playerPreviewBanner());
   const guideType = { sessions: "session", characters: "characters", quests: "quests", locations: "locations", journal: "journal" }[currentView];
   if (guideType && !playerPreviewActive()) {
@@ -1854,7 +1826,7 @@ ${connections || "- None labelled."}
 
 ${copilotDraftRecordContext(campaign, message)}
 
-${referenceContext(campaign)}
+${referenceContext(campaign, message)}
 
 Use the campaign context to make every question, draft, or suggestion specific and consequential.`;
 }
@@ -1876,7 +1848,6 @@ async function askCopilot(form) {
     return;
   }
   setCopilotToken(suppliedKey || copilotToken);
-  try { await persistApiKeyIfRequested(form, copilotToken); } catch (error) { showToast(`The API key was not saved: ${error.message}`); }
   const copilot = getCopilotState();
   copilot.endpoint = endpoint;
   copilot.model = model;
@@ -1884,15 +1855,7 @@ async function askCopilot(form) {
   saveState(); render();
   try {
     const history = conversation.slice(-10).map(entry => ({ role: entry.role === "assistant" ? "assistant" : "user", content: copilotHistoryContent(entry) }));
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${copilotToken}` },
-      body: JSON.stringify({ model, messages: [{ role: "system", content: planningContext(campaign, message) }, ...history] })
-    });
-    if (!response.ok) throw new Error(`AI endpoint returned ${response.status}.`);
-    const payload = await response.json();
-    const answer = asAssistantText(payload.choices?.[0]?.message?.content) || asAssistantText(payload.output_text);
-    if (!answer) throw new Error("The AI endpoint returned no readable message.");
+    const answer = await callCampaignAI(endpoint, model, [{ role: "system", content: planningContext(campaign, message) }, ...history]);
     const envelope = CAMPAIGN_KNOWLEDGE?.parseAssistantEnvelope(answer) || { message: answer, actions: [] };
     const drafts = sanitizeCopilotActions(campaign, envelope);
     conversation.push({
@@ -2369,7 +2332,6 @@ async function startStoryScout(form) {
   const key = String(data.get("apiKey") || "").trim();
   if (!endpoint || !model || !(key || copilotToken) || !data.get("consent")) { showToast("Add an endpoint, model, API key, and sending confirmation before scanning."); return; }
   setCopilotToken(key || copilotToken);
-  try { await persistApiKeyIfRequested(form, copilotToken); } catch (error) { showToast(`The API key was not saved: ${error.message}`); }
   const copilot = getCopilotState(); copilot.endpoint = endpoint; copilot.model = model;
   const campaign = activeCampaign();
   storyScoutState = { scope, endpoint, model, campaignId: campaign.id, loading: true };
@@ -2492,7 +2454,6 @@ async function startStoryCleanup(form) {
   const key = String(data.get("apiKey") || "").trim();
   if (!endpoint || !model || !(key || copilotToken) || !data.get("consent")) { showToast("Add an endpoint, model, API key, and sending confirmation before scanning."); return; }
   setCopilotToken(key || copilotToken);
-  try { await persistApiKeyIfRequested(form, copilotToken); } catch (error) { showToast(`The API key was not saved: ${error.message}`); }
   const copilot = getCopilotState(); copilot.endpoint = endpoint; copilot.model = model;
   const campaign = activeCampaign();
   storyScoutState = { mode: "cleanup", scope, endpoint, model, campaignId: campaign.id, loading: true };
@@ -2672,7 +2633,6 @@ async function startGuide(form) {
   const key = String(data.get("apiKey") || "").trim();
   if (!seed || !endpoint || !model || !(key || copilotToken) || !data.get("consent")) { showToast("Add a starting spark, model, API key, and sending confirmation first."); return; }
   setCopilotToken(key || copilotToken);
-  try { await persistApiKeyIfRequested(form, copilotToken); } catch (error) { showToast(`The API key was not saved: ${error.message}`); }
   const copilot = getCopilotState(); copilot.endpoint = endpoint; copilot.model = model;
   const campaign = activeCampaign();
   guideState = { type, track, seed, endpoint, model, campaignId: campaign.id, answers: [], loading: true };
@@ -2829,7 +2789,7 @@ function sessionDeskView(campaign) {
         <div class="desk-beats">${desk.beats.length ? desk.beats.map((beat, index) => `<div class="desk-beat ${beat.done ? "done" : ""}"><button class="check-dot" type="button" data-desk-beat-toggle="${esc(beat.id)}" aria-label="Mark ${esc(beat.title)} ${beat.done ? "not done" : "done"}">${beat.done ? "✓" : ""}</button><div><small>${esc(beat.kind)}</small><strong>${esc(beat.title)}</strong></div><div class="desk-order"><button type="button" data-desk-beat-move="${esc(beat.id)}" data-direction="up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-desk-beat-move="${esc(beat.id)}" data-direction="down" aria-label="Move down" ${index === desk.beats.length - 1 ? "disabled" : ""}>↓</button><button type="button" data-desk-beat-remove="${esc(beat.id)}" aria-label="Remove">×</button></div></div>`).join("") : `<p class="empty-copy">Add the first scene, beat, or pressure. The order stays flexible.</p>`}</div>
         <form class="desk-inline-form" data-desk-beat-form><select name="kind" aria-label="Beat type"><option>scene</option><option>beat</option><option>pressure</option></select><input required name="title" maxlength="240" placeholder="Add a flexible beat…" /><button class="secondary-button" type="submit">Add</button></form>
       </section>
-      <section class="card desk-panel desk-notes"><div class="section-title"><div><p class="eyebrow">CONTINUOUS NOTES</p><h2>Scratchpad & log</h2></div><span class="save-hint">Saves as you type</span></div>
+      <section class="card desk-panel desk-notes"><div class="section-title"><div><p class="eyebrow">CONTINUOUS NOTES</p><h2>Scratchpad & log</h2></div><span class="save-hint" data-save-status>Saved</span></div>
         <label class="desk-scratch-label">Working scratchpad<textarea data-desk-scratch rows="5" maxlength="12000" placeholder="Names, rulings, damage, questions…">${esc(desk.scratch || "")}</textarea></label>
         <form class="desk-log-form" data-desk-log-form><label>Commit a timestamped note<textarea required name="text" rows="3" maxlength="8000" placeholder="What just happened?"></textarea></label><button class="primary-button" type="submit">Add to log <span>＋</span></button></form>
         <div class="desk-log">${desk.log.length ? [...desk.log].reverse().map(entry => `<article><time datetime="${esc(entry.at)}">${esc(deskTime(entry.at))}</time><p>${esc(entry.text)}</p></article>`).join("") : `<p class="empty-copy">Timestamped events will collect here.</p>`}</div>
@@ -2869,11 +2829,11 @@ function reconciliationView(campaign) {
     ${draft.error ? `<div class="reconcile-error" role="alert"><strong>The draft is still safe.</strong><span>${esc(draft.error)}</span></div>` : ""}
     <div class="reconciliation-layout">
       <main>
-        <section class="card recap-editor"><div class="section-title"><div><p class="eyebrow">RECAP DRAFT</p><h2>What happened</h2></div><span class="save-hint">Saves as you type</span></div><textarea data-recap-draft rows="9" maxlength="12000">${esc(draft.recap)}</textarea></section>
+        <section class="card recap-editor"><div class="section-title"><div><p class="eyebrow">RECAP DRAFT</p><h2>What happened</h2></div><span class="save-hint" data-save-status>Saved</span></div><textarea data-recap-draft rows="9" maxlength="12000">${esc(draft.recap)}</textarea></section>
         <section class="proposal-list"><div class="section-title"><div><p class="eyebrow">PROPOSED CANON CHANGES</p><h2>Review one by one</h2></div><span class="tag">${draft.proposals.length}</span></div>${draft.proposals.length ? draft.proposals.map(proposal => `<article class="card proposal-card ${proposal.approved ? "approved" : ""}"><div class="proposal-heading"><div><small>${esc(proposal.action)} · ${esc(proposal.collection || "connection")}</small><h3>${esc(proposal.summary || proposal.target?.name || SESSION_WORKFLOW.recordTitle(proposal.collection, proposal.record) || "Campaign connection")}</h3></div><label class="proposal-approval"><input type="checkbox" data-proposal-approval="${esc(proposal.id)}" ${proposal.approved ? "checked" : ""} /><span>Approve</span></label></div><div class="proposal-preview"><section><small>BEFORE</small><pre>${esc(proposalValue(proposal.before))}</pre></section><span>→</span><section><small>AFTER</small><pre>${esc(proposalValue(proposal.after))}</pre></section></div><div class="proposal-evidence"><strong>Evidence</strong>${proposal.evidence.map(item => `<blockquote>${esc(item)}</blockquote>`).join("")}</div><button class="quiet-button danger" type="button" data-remove-proposal="${esc(proposal.id)}">Discard proposal</button></article>`).join("") : `<div class="empty-state compact"><h3>No changes proposed yet.</h3><p>Use the manual path below, or ask the configured assistant to draft evidence-backed proposals.</p></div>`}</section>
       </main>
       <aside class="reconcile-tools">
-        <section class="card"><p class="eyebrow">ASSISTED DRAFT</p><h2>Find consequences</h2><p>${aiReady ? "The configured assistant can read this session log and propose updates. You still approve every change." : "AI is unavailable, but the manual workflow below remains fully usable."}</p>${aiReady ? `<form data-reconciliation-ai-form><label class="consent-row"><input required type="checkbox" name="consent" /><span>I understand that this session log and relevant campaign context will be sent to my configured AI endpoint.</span></label><button class="secondary-button" type="submit">Draft with AI <span>✦</span></button></form>` : `<button class="secondary-button" type="button" data-view-jump="settings">Configure AI</button>`}</section>
+        <section class="card"><p class="eyebrow">ASSISTED DRAFT</p><h2>Find consequences</h2><p>${aiReady ? "The configured assistant can read this session log and propose updates. You still approve every change." : "AI is unavailable, but the manual workflow below remains fully usable."}</p>${aiReady ? `<form data-reconciliation-ai-form><p class="sending-notice">This session log and relevant campaign context will be sent to your configured AI endpoint.</p><input type="hidden" name="consent" value="true" /><button class="secondary-button" type="submit">Draft with AI <span>✦</span></button></form>` : `<button class="secondary-button" type="button" data-view-jump="settings">Configure AI</button>`}</section>
         <section class="card"><p class="eyebrow">MANUAL PATH</p><h2>Add a proposal</h2><details open><summary>Update a record</summary><form data-manual-proposal-form><label>Campaign field<select required name="target"><option value="">Choose a record and field…</option>${manualProposalOptions(campaign)}</select></label><label>Proposed value<textarea required name="after" rows="4" maxlength="4000"></textarea></label><label>Evidence from the session<textarea required name="evidence" rows="3" maxlength="700" placeholder="Quote or summarize the relevant log event."></textarea></label><button class="secondary-button" type="submit">Add update</button></form></details><details><summary>Create a record</summary><form data-manual-create-proposal><label>Record type<select name="collection"><option value="characters">Character / NPC</option><option value="locations">World entry</option><option value="quests">Quest</option><option value="journal">Journal note</option><option value="arcs">Story arc</option></select></label><label>Name<input required name="title" maxlength="200" /></label><label>Starting details<textarea required name="detail" rows="4" maxlength="4000"></textarea></label><label>Evidence<textarea required name="evidence" rows="3" maxlength="700"></textarea></label><button class="secondary-button" type="submit">Add new-record proposal</button></form></details><details><summary>Connect two records</summary><form data-manual-connection-proposal><label>From<select required name="from">${campaignEntries(campaign).map(entry => `<option value="${esc(encodeEntryRef(entry))}">${esc(ENTRY_TYPES[entry.type])} · ${esc(entry.name)}</option>`).join("")}</select></label><label>Relationship<select name="connectionType">${CONNECTION_TYPES.map(type => `<option>${esc(type)}</option>`).join("")}</select></label><label>To<select required name="to">${campaignEntries(campaign).map(entry => `<option value="${esc(encodeEntryRef(entry))}">${esc(ENTRY_TYPES[entry.type])} · ${esc(entry.name)}</option>`).join("")}</select></label><label>Why it matters<textarea required name="note" rows="3" maxlength="1000"></textarea></label><label>Evidence<textarea required name="evidence" rows="3" maxlength="700"></textarea></label><button class="secondary-button" type="submit">Add connection proposal</button></form></details></section>
         <button class="quiet-button danger" type="button" data-discard-reconciliation>Discard entire draft</button>
       </aside>
@@ -2988,7 +2948,7 @@ root.addEventListener("click", async event => {
       const nextDraft = next.sessionWorkflow.reconciliations[draft.id];
       const session = sessionForDesk(next, next.sessionWorkflow.desks[draft.deskId]);
       if (session) { session.recap = nextDraft.recap; if (session.archivistId || session.localOverrides) session.localOverrides = { ...(session.localOverrides || {}), recap: nextDraft.recap, upcoming: false }; }
-      saveState(); currentView = "sessions"; render(); showToast(`Applied ${selected.length} approved consequence${selected.length === 1 ? "" : "s"}.`);
+      saveState("Session consequences"); currentView = "sessions"; render(); showToast(`Applied ${selected.length} approved consequence${selected.length === 1 ? "" : "s"}.`);
     } catch (error) { draft.status = "draft"; draft.error = error.message || "The approved changes could not be applied."; saveState(); render(); }
     return;
   }
@@ -3305,6 +3265,7 @@ document.querySelector("#campaignForm").addEventListener("submit", event => {
   const date = form.get("sessionDate") ? new Date(`${form.get("sessionDate")}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "TBD";
   const definition = SYSTEM_REGISTRY.get(form.get("system"));
   state.campaigns.push({ id, title, system: definition.name, systems: [{ id: definition.id, name: definition.name, enabled: true }], systemData: {}, genre: form.get("genre") || "Unclassified", players: Number(form.get("players")), summary: form.get("summary"), nextSession: { number: 1, date, title: "The opening scene", prep: "A campaign waiting to begin" }, sessions: [{ number: 1, date: form.get("sessionDate") || "TBD", title: "The opening scene", recap: "A new story begins here.", upcoming: true }], characters: [], quests: [], locations: [], journal: [], connections: [], arcs: [], checklist: [{ text: "Sketch the first session", done: false }] });
+  ensureCampaignPlanning(state.campaigns[state.campaigns.length - 1]);
   state.activeCampaignId = id; saveState(); event.currentTarget.reset(); campaignModal.close(); currentView = "dashboard"; render(); showToast(`${title} has entered the engine.`);
 });
 document.querySelector("#recordForm").addEventListener("submit", event => {
@@ -3366,17 +3327,6 @@ document.querySelector("#arcForm").addEventListener("submit", event => {
   arcEditingId = null; saveState(); arcModal.close(); currentView = "arcs"; render(); showToast(existing ? "Story arc updated." : "Story arc saved.");
 });
 
-document.querySelector("#searchButton").addEventListener("click", () => { searchModal.showModal(); setTimeout(() => document.querySelector("#searchInput").focus(), 20); });
-document.querySelector("#searchInput").addEventListener("input", event => {
-  const q = event.target.value.trim().toLowerCase(); const container = document.querySelector("#searchResults"); if (!q) { container.innerHTML = `<p class="empty-copy">Start typing to search the living record.</p>`; return; }
-  const campaign = activeCampaign(); const things = [...campaign.characters.filter(x => playerCanSee(x, "characters")).map(x => ({ type: "Character", title: x.name, body: `${x.role} ${x.description} ${characterFactions(x).join(" ")} ${playerPreviewActive() ? "" : `${x.voice || ""} ${x.quirks || ""} ${x.relationships || ""} ${x.statBlock || ""}`}` })), ...campaign.quests.filter(x => playerCanSee(x, "quests")).map(x => ({ type: "Quest", title: x.title, body: `${x.detail} ${x.tags.join(" ")}` })), ...campaign.locations.filter(x => playerCanSee(x, "locations")).map(x => ({ type: "World", title: x.title, body: `${x.detail} ${x.tags.join(" ")}` })), ...campaign.journal.filter(x => playerCanSee(x, "journal")).map(x => ({ type: "Journal", title: x.title, body: `${x.body} ${x.tags.join(" ")}` }))].filter(item => `${item.title} ${item.body}`.toLowerCase().includes(q)).slice(0, 6);
-  container.innerHTML = things.length ? things.map(item => { const entityType = item.type === "Character" ? "character" : item.type === "Quest" ? "quest" : item.type === "World" ? "location" : "journal"; return `<button class="search-result" type="button" data-open-entity data-entity-type="${entityType}" data-entity-name="${esc(item.title)}"><span>${item.type.toUpperCase()}</span><strong>${esc(item.title)}</strong></button>`; }).join("") : `<p class="empty-copy">No trace of that in this campaign.</p>`;
-});
-document.querySelector("#searchResults").addEventListener("click", event => {
-  const result = event.target.closest("[data-open-entity]"); if (!result) return;
-  detailTarget = { type: result.dataset.entityType, name: result.dataset.entityName };
-  searchModal.close(); currentView = "detail"; render();
-});
 document.querySelector("#mobileMenu").addEventListener("click", () => document.querySelector(".sidebar").classList.toggle("open"));
 document.addEventListener("click", event => { if (!event.target.closest(".campaign-switcher") && !event.target.closest(".campaign-menu")) campaignMenu.classList.add("hidden"); });
 document.addEventListener("click", async event => {
@@ -3502,10 +3452,3 @@ aiGuideModal.addEventListener("submit", event => {
 });
 aiGuideModal.addEventListener("close", () => { guideState = null; });
 recordModal.addEventListener("close", () => { recordEditing = null; activeCopilotDraftId = null; });
-
-initializeDesktopWorkspace();
-initializeDesktopApiKey();
-initializeDesktopFoundryApiKey();
-initializeDesktopUpdates();
-initializeArchivistBridge();
-render();

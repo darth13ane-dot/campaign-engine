@@ -2,10 +2,35 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  createReview,
+  applyReview,
   findDetail,
   mergeCampaigns,
   mergeDetailsRoots
 } = require("../archivist-merge.js");
+
+test("preserves Foundry actor links across an Archivist rename", () => {
+  const original = campaign({ characters: [{ archivistId: "npc", name: "Vale", foundryActorId: "actor-7" }] });
+  const incoming = campaign({ characters: [{ archivistId: "npc", name: "Captain Vale" }] });
+  assert.equal(mergeCampaigns([original], [incoming]).campaigns[0].characters[0].foundryActorId, "actor-7");
+});
+test("custom exports match existing local ids and cannot erase local workflow or history", () => {
+  const original = campaign({ characters: [{ localId: "local-one", source: "manual", name: "Local keeper" }], arcs: [{ id: "arc", title: "Local arc" }], history: [{ id: "history" }], sessionWorkflow: { schemaVersion: 1, desks: { desk: {} } } });
+  const incoming = campaign({ characters: [{ localId: "local-one", source: "manual", name: "Local keeper" }], arcs: [], history: [], sessionWorkflow: {} });
+  const merged = mergeCampaigns([original], [incoming]).campaigns[0];
+  assert.equal(merged.characters.length, 1); assert.equal(merged.arcs.length, 1); assert.equal(merged.history.length, 1); assert(merged.sessionWorkflow.desks.desk);
+});
+test("previews conflicts without mutating data and applies field choices", () => {
+  const original = campaign({ characters: [{ archivistId: "npc", name: "Vale", description: "Local", localOverrides: { description: "Local" }, foundryActorId: "actor-7" }] });
+  const incoming = campaign({ characters: [{ archivistId: "npc", name: "Captain Vale", description: "Remote" }] });
+  const review = createReview([original], [incoming], {}, {});
+  const description = review.rows.find(row => row.field === "description");
+  assert.equal(description.choice, "local"); assert.equal(original.characters[0].name, "Vale");
+  const kept = applyReview(review, [original]); assert.equal(kept.campaigns[0].characters[0].description, "Local");
+  const changed = applyReview(review, [original], { [description.id]: "incoming" }).campaigns[0].characters[0];
+  assert.equal(changed.description, "Remote"); assert.equal(changed.localOverrides.description, undefined); assert.equal(changed.foundryActorId, "actor-7");
+  original.characters[0].description = "Edited during preview"; assert.throws(() => applyReview(review, [original]), /workspace changed/);
+});
 
 function campaign(overrides = {}) {
   return {

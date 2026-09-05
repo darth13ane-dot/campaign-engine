@@ -12,9 +12,16 @@ contextBridge.exposeInMainWorld("campaignEngineDesktop", {
   initializeWorkspace: workspace => ipcRenderer.invoke("desktop:workspace-initialize", workspace),
   replaceWorkspace: (workspace, reason) => ipcRenderer.invoke("desktop:workspace-replace", workspace, reason),
   saveWorkspaceState: state => ipcRenderer.invoke("desktop:workspace-save-state", state),
+  setWorkspaceDirty: dirty => ipcRenderer.send("desktop:workspace-dirty", dirty),
+  finishClose: result => ipcRenderer.send("desktop:workspace-close-ready", result),
+  onPrepareToClose: callback => {
+    const listener = () => callback();
+    ipcRenderer.on("desktop:prepare-to-close", listener);
+    return () => ipcRenderer.removeListener("desktop:prepare-to-close", listener);
+  },
   exportWorkspace: () => ipcRenderer.invoke("desktop:workspace-export"),
   importWorkspace: () => ipcRenderer.invoke("desktop:workspace-import"),
-  createSafetyBackup: () => ipcRenderer.invoke("desktop:workspace-create-safety-backup"),
+  createSafetyBackup: reason => ipcRenderer.invoke("desktop:workspace-create-safety-backup", reason),
   openWorkspaceFolder: () => ipcRenderer.invoke("desktop:workspace-open-folder"),
   loadApiKey: () => ipcRenderer.invoke("desktop:api-key-load"),
   saveApiKey: apiKey => ipcRenderer.invoke("desktop:api-key-save", apiKey),
