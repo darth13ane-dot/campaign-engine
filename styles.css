@@ -99,7 +99,10 @@ button { cursor: pointer; }
 .ambient-one { background: #b16d47; width: 38vw; height: 38vw; left: -15vw; top: -13vw; }
 .ambient-two { background: #368a8a; width: 32vw; height: 32vw; right: -16vw; bottom: -20vw; }
 .app-shell { position: relative; min-height: 100vh; display: grid; grid-template-columns: 260px minmax(0, 1fr); }
-.sidebar { position: sticky; top: 0; height: 100vh; padding: 29px 18px 22px; border-right: 1px solid var(--line); background: rgba(14, 17, 25, .72); backdrop-filter: blur(24px); display: flex; flex-direction: column; z-index: 4; }
+.sidebar { position: sticky; top: 0; height: 100vh; height: 100dvh; min-height: 0; padding: 29px 18px 22px; border-right: 1px solid var(--line); background: rgba(14, 17, 25, .72); backdrop-filter: blur(24px); display: flex; flex-direction: column; z-index: 4; }
+.sidebar > .brand, .sidebar > .campaign-switcher, .sidebar > .sidebar-footer { flex-shrink: 0; }
+.bridge-fields { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 14px; }
+.bridge-fields:disabled { opacity: .65; }
 .brand { color: var(--paper); display: flex; align-items: center; gap: 10px; padding: 0 9px; margin-bottom: 29px; text-decoration: none; font-family: var(--font-display); font-size: 19px; line-height: .95; letter-spacing: -.7px; }
 .brand em { color: var(--gold); font-weight: 600; }
 .brand-mark { width: 29px; height: 29px; border: 1px solid rgba(224,183,95,.72); display: grid; place-items: center; font-size: 18px; color: var(--gold); border-radius: 8px 3px 8px 3px; }
@@ -116,7 +119,7 @@ button { cursor: pointer; }
 .campaign-option:hover { background: rgba(255,255,255,.09); }
 .campaign-option span { font-size: 19px; }
 .campaign-option small { color: var(--muted); display: block; font-size: 10px; margin-top: 2px; }
-.nav-list { display: grid; gap: 3px; margin-top: 29px; }
+.nav-list { display: grid; align-content: start; gap: 3px; margin-top: 29px; margin-bottom: 14px; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: thin; scrollbar-color: var(--muted) transparent; }
 .system-nav { display: contents; }
 .nav-link, .new-campaign-link { width: 100%; border: none; padding: 10px 10px; color: var(--muted); background: transparent; border-radius: 7px; font-size: 13px; font-weight: 600; text-align: left; display: flex; align-items: center; gap: 11px; transition: .18s ease; }
 .nav-link span { width: 16px; font-size: 18px; text-align: center; font-family: var(--font-display); font-weight: 400; }

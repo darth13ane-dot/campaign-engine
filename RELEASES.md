@@ -1,5 +1,15 @@
 # Sharing and desktop updates
 
+## Version 1.4.1 — Navigation and Archivist connection diagnostics
+
+The left navigation scrolls independently on desktop and mobile, keeping the campaign selector and Settings available in shorter windows.
+
+Archivist sync offers **Use built-in connection**, using a pinned proxy and the app's bundled runtime. Its HTTP response types now agree, so OAuth errors show the server's actual rejection instead of `[object Response]`. This connection keeps its sign-in cache under the app's private data directory, separate from external npx installations. Custom commands remain supported and argument paths retain their quoting.
+
+Connection attempts cannot overlap, errors stay visible on the sync screen, and a failed tool listing no longer reports a successful connection. Closing an attempt also closes its child processes. A fetched preview is labelled as awaiting review rather than as an imported workspace.
+
+During validation, Archivist's token endpoint returned HTTP 400 `invalid_grant` after browser authorization, including with a fresh client registration. Client ID, redirect URI, and PKCE verifier matched. These app changes expose that failure; they do not resolve an authorization-code rejection by Archivist. If it persists, provide that diagnostic to Archivist support without sending tokens, authorization codes, or verifier files.
+
 ## Version 1.4.0 — Campaign workflow improvements
 
 Campaign-wide search now includes sessions, story arcs, live scratchpads and logs, and imported PDF pages. Results can be filtered by type and expanded beyond the first page. Player preview searches only shared campaign records; private notes and rulebooks remain in GM view.
