@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const {
+  mapConcurrent,
   callArchivistTool,
   normalizeBridgeSettings,
   parseArgs,
@@ -11,6 +12,15 @@ const {
   testArchivistBridge,
   toolResultPayload
 } = require("../electron/archivist-mcp-bridge.cjs");
+
+test("limits simultaneous source requests and preserves their result order", async () => {
+  let active = 0, maximum = 0;
+  const results = await mapConcurrent(Array.from({ length: 25 }, (_, i) => i), 4, async value => {
+    active++; maximum = Math.max(maximum, active);
+    await new Promise(resolve => setImmediate(resolve)); active--; return value * 2;
+  });
+  assert.equal(maximum, 4); assert.deepEqual(results, Array.from({ length: 25 }, (_, i) => i * 2));
+});
 
 async function fakeMcpServer(t) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "campaign-engine-mcp-"));
@@ -94,6 +104,10 @@ process.stdin.on("data", chunk => {
     }
     if (message.method === "tools/call") {
       const payload = toolPayload(message.params.name, message.params.arguments || {});
+      if (process.argv.includes("--fail-journal") && message.params.name === "get-journal-tool") {
+        send({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: "Journal temporarily unavailable" } });
+        continue;
+      }
       send({ jsonrpc: "2.0", id: message.id, result: {
         content: [{ type: "text", text: JSON.stringify(payload) }],
         structuredContent: payload,
@@ -154,4 +168,12 @@ test("assembles native Archivist tools into a paginated Campaign Engine payload"
   assert.equal(campaign.connections[0].from.name, "Vale");
   assert.equal(campaign.connections[0].to.name, "Find the Road");
   assert.equal(result.payload.archivist.campaigns["campaign-1"].characters.Vale.id, "character-1");
+});
+
+test("reports incomplete journals and omits listings that would erase existing full text", async t => {
+  const serverPath = await fakeNativeArchivistServer(t);
+  const result = await syncArchivistBridge({ command: process.execPath, args: [serverPath, "--fail-journal"], toolArguments: "{}", timeoutMs: 5000 });
+  assert.equal(result.payload.state.campaigns[0].journal.length, 0);
+  assert.match(result.payload.warnings[0], /Journal temporarily unavailable/);
+  assert.match(result.payload.warnings[0], /existing record is retained/);
 });

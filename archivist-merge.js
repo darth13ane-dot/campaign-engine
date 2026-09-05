@@ -112,7 +112,7 @@
   function mergeMatchedRecord(collection, existing, incoming, stats) {
     const overrides = localOverrides(collection, existing);
     const merged = { ...clone(incoming), ...overrides };
-    for (const key of ["localId", "lastEditedBy", "updatedAt"]) {
+    for (const key of ["localId", "lastEditedBy", "updatedAt", "foundryActorId"]) {
       if (existing[key] !== undefined) merged[key] = clone(existing[key]);
     }
     if (Object.keys(overrides).length) {
@@ -146,15 +146,18 @@
     const existing = Array.isArray(existingRecords) ? existingRecords : [];
     const incoming = dedupeIncoming(collection, Array.isArray(incomingRecords) ? incomingRecords : [], stats);
     const byArchivistId = new Map();
+    const byLocalId = new Map();
     const byName = new Map();
     existing.forEach((item, index) => {
       if (item.archivistId) byArchivistId.set(String(item.archivistId), index);
+      if (item.localId) byLocalId.set(String(item.localId), index);
       if (!isManualOnly(item)) byName.set(nameIdentity(collection, item), index);
     });
 
     const consumed = new Set();
     const merged = incoming.map(item => {
       let index = item.archivistId ? byArchivistId.get(String(item.archivistId)) : undefined;
+      if (index === undefined && item.localId) index = byLocalId.get(String(item.localId));
       if (index === undefined && !isManualOnly(item)) index = byName.get(nameIdentity(collection, item));
       if (index === undefined || consumed.has(index)) {
         stats.added += 1;
@@ -205,10 +208,10 @@
       merged[collection] = mergeCollection(collection, existing[collection], incoming[collection], stats);
     }
     merged.connections = mergeConnections(existing.connections, incomingCampaign.connections);
-    for (const key of ["arcs", "documents", "builders"]) {
-      if (Array.isArray(existing[key]) && !Array.isArray(incomingCampaign[key])) merged[key] = existing[key];
+    for (const key of ["arcs", "documents", "builders", "history"]) {
+      if (Array.isArray(existing[key])) merged[key] = existing[key];
     }
-    if (existing.systemData && !incomingCampaign.systemData) merged.systemData = existing.systemData;
+    for (const key of ["systemData", "sessionWorkflow", "connectionBoard"]) if (existing[key]) merged[key] = existing[key];
     stats.campaignsUpdated += 1;
     return merged;
   }
@@ -308,7 +311,69 @@
     };
   }
 
+  function createReview(existingCampaigns, incomingCampaigns, existingDetails, incomingDetails) {
+    const merged = mergeCampaigns(existingCampaigns, incomingCampaigns, existingDetails, incomingDetails);
+    const rows = [];
+    const equal = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    const add = row => rows.push({ id: `sync-${rows.length}`, choice: "incoming", ...row });
+    for (const raw of incomingCampaigns) {
+      const original = existingCampaigns.find(c => String(c.id) === String(raw.id));
+      if (!original) { add({ kind: "campaign", campaignId: raw.id, title: raw.title, before: null, incoming: raw }); continue; }
+      const before = annotateCampaign(original, existingDetails, false);
+      const remote = annotateCampaign(raw, incomingDetails, true);
+      for (const field of ["title", "summary", "system", "genre", "players", "nextSession", "checklist"]) {
+        if (raw[field] !== undefined && !equal(before[field], raw[field])) add({ kind: "metadata", campaignId: raw.id, title: raw.title, field, before: clone(before[field]), incoming: clone(raw[field]) });
+      }
+      for (const collection of Object.keys(COLLECTIONS)) {
+        for (const record of remote[collection]) {
+          const old = before[collection].find(item => record.archivistId && String(item.archivistId) === String(record.archivistId))
+            || before[collection].find(item => record.localId && item.localId === record.localId)
+            || before[collection].find(item => !isManualOnly(item) && nameIdentity(collection, item) === nameIdentity(collection, record));
+          const recordId = recordIdentity(collection, record);
+          const common = { campaignId: raw.id, collection, recordId, title: COLLECTIONS[collection].title(record) };
+          if (!old) { add({ ...common, kind: "record", before: null, incoming: clone(record) }); continue; }
+          const overrides = localOverrides(collection, old);
+          for (const field of COLLECTIONS[collection].editable) {
+            if (equal(old[field], record[field])) continue;
+            const conflict = Object.prototype.hasOwnProperty.call(overrides, field);
+            add({ ...common, kind: "field", field, before: clone(old[field]), incoming: clone(record[field]), conflict, choice: conflict ? "local" : "incoming" });
+          }
+        }
+      }
+      if (Array.isArray(raw.connections) && !equal(before.connections || [], merged.campaigns.find(c => c.id === raw.id)?.connections || [])) {
+        add({ kind: "metadata", campaignId: raw.id, title: raw.title, field: "connections", before: clone(before.connections || []), incoming: clone(merged.campaigns.find(c => c.id === raw.id).connections) });
+      }
+    }
+    return { ...merged, rows, baseline: JSON.stringify(existingCampaigns), details: mergeDetailsRoots(existingDetails, incomingDetails) };
+  }
+
+  function applyReview(review, currentCampaigns, choices = {}) {
+    if (JSON.stringify(currentCampaigns) !== review.baseline) throw new Error("The workspace changed while this preview was open. Refresh the preview before applying it.");
+    let campaigns = clone(review.campaigns);
+    for (const row of review.rows) {
+      const choice = choices[row.id] || row.choice;
+      if (!["local", "incoming"].includes(choice)) throw new Error("Choose whether to keep local data or use Archivist for each change.");
+      const campaign = campaigns.find(c => String(c.id) === String(row.campaignId));
+      if (!campaign) continue;
+      if (row.kind === "campaign") { if (choice === "local") campaigns = campaigns.filter(c => c !== campaign); continue; }
+      if (row.kind === "metadata") { campaign[row.field] = clone(choice === "local" ? row.before : row.incoming); continue; }
+      const records = campaign[row.collection];
+      const index = records.findIndex(record => recordIdentity(row.collection, record) === row.recordId);
+      if (index < 0) continue;
+      if (row.kind === "record") { if (choice === "local") records.splice(index, 1); continue; }
+      const record = records[index];
+      const value = choice === "local" ? row.before : row.incoming;
+      if (value === undefined || value === null) delete record[row.field];
+      else record[row.field] = clone(value);
+      if (choice === "local") record.localOverrides = { ...(record.localOverrides || {}), [row.field]: clone(value) };
+      else if (record.localOverrides) delete record.localOverrides[row.field];
+    }
+    return { campaigns, details: clone(review.details), stats: clone(review.stats) };
+  }
+
   return Object.freeze({
+    createReview,
+    applyReview,
     annotateCampaign,
     asDetailsRoot,
     emptyStats,

@@ -12,3 +12,5 @@ release-config.generated.json
 /archivist-details.js
 *.log
 *.tmp
+
+/vendor/

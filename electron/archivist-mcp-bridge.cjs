@@ -267,7 +267,17 @@ function importOptions(settings) {
   };
 }
 
+async function mapConcurrent(items, limit, operation) {
+  const result = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) { const index = next++; result[index] = await operation(items[index], index); }
+  }));
+  return result;
+}
+
 async function nativeCampaignBundle(client, listedCampaign, availableTools, options) {
+  const warnings = [];
   const campaignId = String(listedCampaign.id);
   const args = { campaign_id: campaignId };
   const campaign = await requestToolPayload(client, "get-campaign-tool", args);
@@ -285,13 +295,17 @@ async function nativeCampaignBundle(client, listedCampaign, availableTools, opti
   ]);
   let journals = journalRows;
   if (availableTools.has("get-journal-tool") && journalRows.length) {
-    journals = await Promise.all(journalRows.map(async journal => {
+    journals = await mapConcurrent(journalRows, 4, async journal => {
       try {
         return await requestToolPayload(client, "get-journal-tool", { journal_id: journal.id });
-      } catch {
-        return journal;
+      } catch (error) {
+        warnings.push(`Journal ${journal.title || journal.id}: ${error.message}. Its existing record is retained.`);
+        return null;
       }
-    }));
+    });
+  } else if (journalRows.some(journal => !journal.content && !journal.body)) {
+    warnings.push(`Campaign ${listedCampaign.title || campaignId}: full journal lookup is unavailable. Incomplete journal listings were skipped; existing records are retained.`);
+    journals = journalRows.filter(journal => journal.content || journal.body);
   }
   return {
     campaign: isObject(campaign) ? campaign : listedCampaign,
@@ -301,7 +315,8 @@ async function nativeCampaignBundle(client, listedCampaign, availableTools, opti
     locations,
     items,
     quests,
-    journals,
+    journals: journals.filter(Boolean),
+    warnings,
     links
   };
 }
@@ -335,10 +350,14 @@ async function nativeArchivistPayload(client, settings, availableTools) {
       ? "No Archivist campaign matched the configured campaignId."
       : "Archivist returned no campaigns.");
   }
-  const bundles = await Promise.all(selected.map(campaign => {
-    return nativeCampaignBundle(client, campaign, availableTools, options);
-  }));
-  return buildCampaignEnginePayload(bundles);
+  const warnings = [];
+  const bundles = await mapConcurrent(selected, 2, async campaign => {
+    try { return await nativeCampaignBundle(client, campaign, availableTools, options); }
+    catch (error) { warnings.push(`Campaign ${campaign.title || campaign.name || campaign.id}: ${error.message}. Existing local data is retained.`); return null; }
+  });
+  const complete = bundles.filter(Boolean);
+  if (!complete.length) throw new Error(warnings.join(" ") || "No campaigns could be imported.");
+  return { ...buildCampaignEnginePayload(complete), warnings: [...warnings, ...complete.flatMap(bundle => bundle.warnings)] };
 }
 
 async function syncArchivistBridge(settings) {
@@ -380,6 +399,7 @@ async function syncArchivistBridge(settings) {
 }
 
 module.exports = {
+  mapConcurrent,
   normalizeBridgeSettings,
   parseArgs,
   parseToolArguments,

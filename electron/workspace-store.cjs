@@ -160,8 +160,8 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
     return writeWorkspace(incoming);
   }
 
-  async function getInfo() {
-    const workspace = await loadWorkspace();
+  async function getInfo(workspace) {
+    if (workspace === undefined) workspace = await loadWorkspace();
     return {
       mode: "desktop",
       workspacePath,
