@@ -1392,7 +1392,7 @@ async function runArchivistBridgeAction(form, action) {
       showToast("Archivist changes are ready to review.");
     }
   } catch (error) {
-    const message = (error.message || "Archivist connection failed.").replace(/^Error invoking remote method [^:]+:\s*(?:Error:\s*)?/, "");
+    const message = (error.message || "Archivist connection failed.").replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, "");
     archivistBridgeState = { ...archivistBridgeState, status: "error", message, settings };
     showToast(message);
   } finally { archivistBridgeBusy = false; render(); }
