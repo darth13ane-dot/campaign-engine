@@ -1,6 +1,8 @@
 # Sharing and desktop updates
 
-## Version 1.4.1 — Navigation and Archivist connection diagnostics
+## Version 1.4.2 — Navigation and Archivist connection diagnostics
+
+The bundled proxy uses the operating system's trusted certificate authorities, allowing trusted Windows HTTPS inspection while keeping certificate verification enabled. This supersedes the 1.4.1 release attempt.
 
 The left navigation scrolls independently on desktop and mobile, keeping the campaign selector and Settings available in shorter windows.
 

@@ -9,7 +9,7 @@ function bridgeProcess(settings, options = {}) {
   if (settings.command !== "archivist") return { command: settings.command, args: settings.args, env: process.env };
   return {
     command: process.execPath,
-    args: [path.join(__dirname, "archivist-proxy.cjs")],
+    args: ["--use-system-ca", path.join(__dirname, "archivist-proxy.cjs")],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...(options.authDirectory ? { MCP_REMOTE_CONFIG_DIR: options.authDirectory } : {}) }
   };
 }

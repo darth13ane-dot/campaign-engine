@@ -27,7 +27,8 @@ test("built-in launch uses the packaged runtime and a private auth directory", (
   assert.equal(launch.command, process.execPath);
   assert.equal(launch.env.ELECTRON_RUN_AS_NODE, "1");
   assert.equal(launch.env.MCP_REMOTE_CONFIG_DIR, "private-auth");
-  assert.match(launch.args[0], /archivist-proxy\.cjs$/);
+  assert.equal(launch.args[0], "--use-system-ca");
+  assert.match(launch.args[1], /archivist-proxy\.cjs$/);
   assert.deepEqual(bridgeProcess({ command: "custom-node", args: ["server with spaces.cjs"] }).args, ["server with spaces.cjs"]);
 });
 
