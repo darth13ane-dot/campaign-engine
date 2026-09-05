@@ -42,7 +42,10 @@ process.stdin.on("data", chunk => {
     const message = JSON.parse(line);
     if (!message.id) continue;
     if (message.method === "initialize") send({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: "2024-11-05", serverInfo: { name: "Fake Archivist" } } });
-    if (message.method === "tools/list") send({ jsonrpc: "2.0", id: message.id, result: { tools: [{ name: "campaign_engine_export", description: "Export Campaign Engine workspace" }] } });
+    if (message.method === "tools/list") {
+      if (process.argv.includes("--deny-tools")) send({ jsonrpc: "2.0", id: message.id, error: { code: -32000, message: "Authorization required to list tools" } });
+      else send({ jsonrpc: "2.0", id: message.id, result: { tools: [{ name: "campaign_engine_export", description: "Export Campaign Engine workspace" }] } });
+    }
     if (message.method === "tools/call") send({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: JSON.stringify({ campaigns: [{ id: "archivist-1", title: "Archivist One" }], details: { "archivist-1": { sessions: {} } } }) }] } });
   }
 });
@@ -144,6 +147,11 @@ test("lists tools and calls an Archivist MCP import tool", async t => {
   const payload = toolResultPayload(result);
   assert.equal(payload.campaigns[0].title, "Archivist One");
   assert.equal(payload.details["archivist-1"].sessions.constructor, Object);
+});
+
+test("a tools authorization failure cannot report a successful connection", async t => {
+  const serverPath = await fakeMcpServer(t);
+  await assert.rejects(testArchivistBridge({ command: process.execPath, args: [serverPath, "--deny-tools"], timeoutMs: 5000 }), /Authorization required/);
 });
 
 test("assembles native Archivist tools into a paginated Campaign Engine payload", async t => {

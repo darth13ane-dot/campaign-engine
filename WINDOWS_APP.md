@@ -2,6 +2,8 @@
 
 Campaign Engine is packaged with Electron as a normal Windows desktop application. The installed build has its own window, Start-menu entry, desktop shortcut, private AppData workspace, backups, and update controls.
 
+Under **Settings → Archivist sync**, choose **Use built-in connection** to use the bundled proxy and sign in through your browser. No separate Node.js or npx installation is needed. The built-in proxy uses `%APPDATA%\Campaign Engine\archivist-auth` for its private OAuth cache; it is excluded from workspace backups. Custom MCP commands remain supported. An `invalid_grant` message means Archivist rejected the sign-in code; if it persists after using the built-in connection, contact Archivist support with the error and time of the attempt.
+
 ## Run the desktop app from this folder
 
 Double-click **Run Campaign Engine.cmd**.

@@ -1,4 +1,4 @@
-const CACHE_NAME = "campaign-engine-shell-v32";
+const CACHE_NAME = "campaign-engine-shell-v33";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -10,10 +10,10 @@ const APP_SHELL = [
   "./bootstrap.js?v=1",
   "./vendor/pdfjs/pdf.mjs",
   "./vendor/pdfjs/pdf.worker.mjs",
-  "./styles.css?v=19",
+  "./styles.css?v=20",
   "./workspace.css?v=2",
   "./systems/pf2e/styles.css?v=1",
-  "./app.js?v=29",
+  "./app.js?v=30",
   "./campaign-knowledge.js?v=1",
   "./archivist-merge.js?v=4",
   "./campaign-cleanup.js?v=1",

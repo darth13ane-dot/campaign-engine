@@ -1,8 +1,27 @@
 const { spawn } = require("node:child_process");
+const path = require("node:path");
 const { buildCampaignEnginePayload } = require("./archivist-import.cjs");
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const MCP_PROTOCOL_VERSION = "2024-11-05";
+
+function bridgeProcess(settings, options = {}) {
+  if (settings.command !== "archivist") return { command: settings.command, args: settings.args, env: process.env };
+  return {
+    command: process.execPath,
+    args: [path.join(__dirname, "archivist-proxy.cjs")],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", ...(options.authDirectory ? { MCP_REMOTE_CONFIG_DIR: options.authDirectory } : {}) }
+  };
+}
+
+function bridgeError(message) {
+  const text = String(message || "Archivist connection failed.");
+  if (/InvalidGrantError|invalid_grant/i.test(text)) return "Archivist rejected the sign-in code (invalid_grant). Try a fresh sign-in using the built-in connection. If it repeats, Archivist support must investigate the token exchange; no campaign data was imported.";
+  if (/Invalid OAuth error response.*\[object Response\]/s.test(text)) return "The external MCP proxy hid Archivist's OAuth error. Choose Use built-in connection, then test again to see the actual sign-in error.";
+  if (/timed out|Timeout waiting for auth/i.test(text)) return "Archivist timed out. Finish sign-in in the browser, then test the connection again. For a large sync, try one campaign using Import options.";
+  const cause = text.split(/\r?\n/).find(line => /Fatal error:|Authorization error:/.test(line)) || text.split(/\r?\n/).filter(line => !/^\s*at\s/.test(line)).slice(-3).join(" ");
+  return cause.replace(/https?:\/\/\S+/g, value => { try { const url = new URL(value); return url.origin + url.pathname; } catch { return "[URL omitted]"; } }).replace(/(?:Bearer\s+)[^\s]+/gi, "Bearer [redacted]").slice(0, 800);
+}
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -86,14 +105,15 @@ function serializeMessage(message) {
   return `${JSON.stringify(message)}\n`;
 }
 
-async function withMcpClient(settings, operation) {
+async function withMcpClient(settings, operation, options = {}) {
   const normalized = normalizeBridgeSettings(settings);
   if (!normalized.command) throw new Error("Add the Archivist MCP command first.");
 
-  const child = spawn(normalized.command, normalized.args, {
+  const launch = bridgeProcess(normalized, options);
+  const child = spawn(launch.command, launch.args, {
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
-    env: process.env
+    env: launch.env
   });
   const readState = { buffer: Buffer.alloc(0) };
   const pending = new Map();
@@ -106,7 +126,18 @@ async function withMcpClient(settings, operation) {
     child.stdout.removeAllListeners();
     child.stderr.removeAllListeners();
     child.removeAllListeners();
-    if (!child.killed) child.kill();
+    child.on("error", () => {});
+    for (const pendingRequest of pending.values()) pendingRequest.reject(new Error("Archivist connection closed."));
+    pending.clear();
+    child.stdin.on("error", () => {});
+    child.stdin.end();
+    if (!child.killed && child.pid && child.exitCode === null) {
+      if (process.platform === "win32") {
+        // cmd/npx descendants can otherwise keep OAuth callback ports occupied.
+        const killer = spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], { windowsHide: true, stdio: "ignore" });
+        killer.on("error", () => child.kill());
+      } else child.kill();
+    }
   };
 
   const request = (method, params = {}) => new Promise((resolve, reject) => {
@@ -140,9 +171,13 @@ async function withMcpClient(settings, operation) {
     for (const pendingRequest of pending.values()) pendingRequest.reject(error);
     pending.clear();
   });
+  child.stdin.on("error", error => {
+    for (const pendingRequest of pending.values()) pendingRequest.reject(error);
+    pending.clear();
+  });
   child.on("exit", code => {
     if (settled) return;
-    const error = new Error(stderr.trim() || `Archivist MCP process exited with code ${code}.`);
+    const error = new Error(bridgeError(stderr.trim() || `Archivist MCP process exited with code ${code}.`));
     for (const pendingRequest of pending.values()) pendingRequest.reject(error);
     pending.clear();
   });
@@ -167,21 +202,16 @@ async function withMcpClient(settings, operation) {
   }
 }
 
-async function testArchivistBridge(settings) {
+async function testArchivistBridge(settings, options) {
   return withMcpClient(settings, async client => {
-    let tools = [];
-    try {
-      tools = (await client.request("tools/list", {}))?.tools || [];
-    } catch {
-      tools = [];
-    }
+    const tools = (await client.request("tools/list", {}))?.tools || [];
     return {
       ok: true,
       protocolVersion: client.initialize.protocolVersion || MCP_PROTOCOL_VERSION,
       serverInfo: client.initialize.serverInfo || null,
       tools: tools.map(tool => ({ name: tool.name, description: tool.description || "" }))
     };
-  });
+  }, options);
 }
 
 async function callArchivistTool(settings, overrides = {}) {
@@ -360,7 +390,7 @@ async function nativeArchivistPayload(client, settings, availableTools) {
   return { ...buildCampaignEnginePayload(complete), warnings: [...warnings, ...complete.flatMap(bundle => bundle.warnings)] };
 }
 
-async function syncArchivistBridge(settings) {
+async function syncArchivistBridge(settings, options) {
   const normalized = normalizeBridgeSettings({
     ...settings,
     timeoutMs: Math.max(120000, Number(settings?.timeoutMs) || 0)
@@ -395,10 +425,12 @@ async function syncArchivistBridge(settings) {
       campaignCount: payload.state?.campaigns?.length || payload.campaigns?.length || 0,
       tools: publicTools(tools)
     };
-  });
+  }, options);
 }
 
 module.exports = {
+  bridgeProcess,
+  bridgeError,
   mapConcurrent,
   normalizeBridgeSettings,
   parseArgs,

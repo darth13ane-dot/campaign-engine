@@ -105,6 +105,7 @@ let copilotToken = loadSessionApiKey();
 let desktopApiKeySaved = false;
 let desktopFoundryApiKeySaved = false;
 let desktopUpdateState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading desktop update settings…" : "Use the installable web app or Windows package." };
+let archivistBridgeBusy = false;
 let archivistBridgeState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading Archivist bridge settings…" : "The internal bridge is available in the Windows desktop app." };
 let desktopWorkspaceInfo = { mode: DESKTOP_API ? "loading" : "browser", savedAt: null, workspacePath: "" };
 let nextHistoryLabel = "Campaign edit";
@@ -1334,7 +1335,7 @@ function archivistView(campaign) {
       <section class="card sync-lead"><p class="eyebrow">LAST SNAPSHOT</p><h2>${esc(importedAt)}</h2><p>${state.campaigns.length} campaigns are available in the engine, with ${totals} structured records ready for detail pages and planning context.</p><div><button class="primary-button" type="button" data-refresh-snapshot>Reload workspace <span>↻</span></button><button class="secondary-button" type="button" data-view-jump="copilot">Open GM inquiry</button></div></section>
       <section class="card sync-card"><div class="section-title"><h2>Private snapshot</h2><span class="status">Local</span></div><p>Archivist detail data now travels with your private workspace backup instead of the public Windows installer. Restore a newer workspace backup whenever you want to replace the snapshot.</p><ul><li>Campaigns, sessions, characters, quests, world records, and journals</li><li>Quest objectives, progress history, aliases, and full journal text</li><li>Your local additions remain in the same private workspace</li></ul></section>
       <section class="card sync-card"><div class="section-title"><h2>Current campaign</h2><span class="tag">${esc(campaign.system)}</span></div><p><strong>${esc(campaign.title)}</strong> currently has ${campaign.sessions.length} session records, ${campaign.characters.length} characters, ${campaign.quests.length} quests, and ${campaign.locations.length} world entries loaded from Archivist.</p><button class="text-link" type="button" data-view-jump="dashboard">Return to overview</button></section>
-      <section class="card sync-card archivist-bridge-card"><div class="section-title"><h2>Archivist Nexus MCP bridge</h2><span class="tag">${DESKTOP_API ? esc(archivistBridgeState.status || "Ready") : "Desktop only"}</span></div>${DESKTOP_API ? `<p>The Windows app connects directly to Archivist and assembles complete campaigns from its campaign, character, session, quest, world, and journal tools. Records merge by Archivist ID, and local edits remain intact.</p><form id="archivistBridgeForm" class="compact-form"><label>MCP command<input required name="command" value="${esc(bridge.command || "")}" placeholder="node, npx, uvx, or full path" /></label><label>Arguments<input name="args" value="${esc(Array.isArray(bridge.args) ? bridge.args.join(" ") : bridge.args || "")}" placeholder="path/to/archivist-server.js --flag" /></label><div class="form-row"><label>Custom export tool (optional)<input name="toolName" value="${esc(bridge.toolName || "")}" placeholder="Used only for non-Archivist MCP servers" /></label><label>Timeout ms<input name="timeoutMs" type="number" min="2000" max="120000" value="${esc(bridge.timeoutMs || 120000)}" /></label></div><label>Import options<textarea name="toolArguments" rows="4" placeholder="{&quot;campaignId&quot;:&quot;optional campaign ID&quot;,&quot;includeLinks&quot;:false}">${esc(typeof bridge.toolArguments === "string" ? bridge.toolArguments : JSON.stringify(bridge.toolArguments || {}, null, 2))}</textarea><span class="field-help">Leave as {} to sync every campaign. Archivist links are optional because large campaigns can contain hundreds.</span></label><div><button class="secondary-button" type="submit" name="bridgeAction" value="save">Save bridge</button><button class="secondary-button" type="submit" name="bridgeAction" value="test">Test connection</button><button class="primary-button" type="submit" name="bridgeAction" value="sync">Sync campaigns <span>↓</span></button></div></form>${toolOptions}<p class="quiet-copy">${esc(bridge.lastStatus || archivistBridgeState.message || "No bridge run yet.")}${bridge.lastSync ? ` Last import: ${esc(new Date(bridge.lastSync).toLocaleString())}` : ""}${mergeSummary ? ` Last merge: ${esc(mergeSummary)}.` : ""}</p>` : `<p>The internal MCP bridge runs from Electron so Campaign Engine can own the Archivist Nexus connection. Open the Windows desktop build to configure it.</p>`}</section>
+      <section class="card sync-card archivist-bridge-card"><div class="section-title"><h2>Archivist Nexus MCP bridge</h2><span class="tag">${DESKTOP_API ? esc(archivistBridgeState.status || "Ready") : "Desktop only"}</span></div>${DESKTOP_API ? `<p>The Windows app connects directly to Archivist and assembles complete campaigns from its campaign, character, session, quest, world, and journal tools. Records merge by Archivist ID, and local edits remain intact.</p><form id="archivistBridgeForm" class="compact-form"><fieldset class="bridge-fields" ${archivistBridgeBusy ? "disabled" : ""}><button class="secondary-button" type="submit" name="bridgeAction" value="builtin" formnovalidate>Use built-in connection</button><p class="field-help">The built-in connection opens Archivist sign-in and requires no Node.js installation. Custom MCP commands remain available below.</p><label>MCP command<input required name="command" value="${esc(bridge.command || "")}" placeholder="archivist, node, npx, uvx, or full path" /></label><label>Arguments<input name="args" value="${esc(Array.isArray(bridge.args) ? JSON.stringify(bridge.args) : bridge.args || "")}" placeholder="path/to/archivist-server.js --flag" /></label><div class="form-row"><label>Custom export tool (optional)<input name="toolName" value="${esc(bridge.toolName || "")}" placeholder="Used only for non-Archivist MCP servers" /></label><label>Timeout ms<input name="timeoutMs" type="number" min="2000" max="120000" value="${esc(bridge.timeoutMs || 120000)}" /></label></div><label>Import options<textarea name="toolArguments" rows="4" placeholder="{&quot;campaignId&quot;:&quot;optional campaign ID&quot;,&quot;includeLinks&quot;:false}">${esc(typeof bridge.toolArguments === "string" ? bridge.toolArguments : JSON.stringify(bridge.toolArguments || {}, null, 2))}</textarea><span class="field-help">Leave as {} to sync every campaign. Archivist links are optional because large campaigns can contain hundreds.</span></label><div><button class="secondary-button" type="submit" name="bridgeAction" value="save">Save connection</button><button class="secondary-button" type="submit" name="bridgeAction" value="test">Test connection</button><button class="primary-button" type="submit" name="bridgeAction" value="sync">Sync campaigns <span>↓</span></button></div></fieldset></form>${archivistBridgeBusy ? `<p role="status">Connecting to Archivist… Complete sign-in in your browser if prompted.</p>` : ""}${toolOptions}<p class="quiet-copy" role="${archivistBridgeState.status === "error" ? "alert" : "status"}">${esc(archivistBridgeState.message || bridge.lastStatus || "No bridge run yet.")}${bridge.lastSync ? ` Last import: ${esc(new Date(bridge.lastSync).toLocaleString())}` : ""}${mergeSummary ? ` Last merge: ${esc(mergeSummary)}.` : ""}</p>` : `<p>The internal MCP bridge runs from Electron so Campaign Engine can own the Archivist Nexus connection. Open the Windows desktop build to configure it.</p>`}</section>
     </div>`;
 }
 function archivistBridgeSettingsFromForm(form) {
@@ -1367,8 +1368,12 @@ async function initializeArchivistBridge() {
   if (currentView === "archivist") render();
 }
 async function runArchivistBridgeAction(form, action) {
-  if (!DESKTOP_API?.saveArchivistBridgeSettings) return;
+  if (!DESKTOP_API?.saveArchivistBridgeSettings || archivistBridgeBusy) return;
   const settings = archivistBridgeSettingsFromForm(form);
+  if (action === "builtin") { settings.command = "archivist"; settings.args = []; settings.toolName = ""; settings.timeoutMs = 120000; action = "test"; }
+  archivistBridgeBusy = true;
+  archivistBridgeState = { ...archivistBridgeState, settings, message: "" };
+  render();
   try {
     if (action === "save") {
       archivistBridgeState = await DESKTOP_API.saveArchivistBridgeSettings(settings);
@@ -1386,12 +1391,11 @@ async function runArchivistBridgeAction(form, action) {
       currentView = "sync-review";
       showToast("Archivist changes are ready to review.");
     }
-    render();
   } catch (error) {
-    archivistBridgeState = { ...archivistBridgeState, status: "error", message: error.message || "Archivist bridge action failed.", settings };
-    render();
-    showToast(error.message || "Archivist bridge action failed.");
-  }
+    const message = (error.message || "Archivist connection failed.").replace(/^Error invoking remote method [^:]+:\s*(?:Error:\s*)?/, "");
+    archivistBridgeState = { ...archivistBridgeState, status: "error", message, settings };
+    showToast(message);
+  } finally { archivistBridgeBusy = false; render(); }
 }
 function desktopUpdateView() {
   if (!DESKTOP_API) {

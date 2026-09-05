@@ -7,12 +7,13 @@ const { createPortableUpdater } = require("./portable-updater.cjs");
 const { normalizeUpdateUrl, resolveUpdateSettings } = require("./update-settings.cjs");
 const { createWorkspaceStore } = require("./workspace-store.cjs");
 const { createWorkspaceCloseGuard } = require("./workspace-close.cjs");
-const { normalizeBridgeSettings, syncArchivistBridge, testArchivistBridge } = require("./archivist-mcp-bridge.cjs");
+const { bridgeError, normalizeBridgeSettings, syncArchivistBridge, testArchivistBridge } = require("./archivist-mcp-bridge.cjs");
 
 let mainWindow;
 let updateSettings = { updateUrl: "", autoCheck: true };
 let updateState = { status: "ready", version: app.getVersion(), currentVersion: app.getVersion(), message: "No update feed configured." };
 let archivistBridgeSettings = normalizeBridgeSettings();
+let archivistBridgeRunning = false;
 let updateTimer;
 let updateStartupTimer;
 let workspaceStore;
@@ -264,21 +265,24 @@ ipcMain.handle("desktop:foundry-api-key-save", (_, apiKey) => foundryCredentialS
 ipcMain.handle("desktop:foundry-api-key-clear", () => foundryCredentialStore.clearApiKey());
 ipcMain.handle("desktop:archivist-bridge-state", () => archivistBridgeState({ status: archivistBridgeSettings.command ? "configured" : "not-configured" }));
 ipcMain.handle("desktop:archivist-bridge-save", (_, settings) => archivistBridgeState({ status: "saved", settings: saveArchivistBridgeSettings(settings) }));
-ipcMain.handle("desktop:archivist-bridge-test", async (_, settings) => {
-  const nextSettings = saveArchivistBridgeSettings(settings || archivistBridgeSettings);
-  const result = await testArchivistBridge(nextSettings);
-  archivistBridgeSettings = saveArchivistBridgeSettings({ ...nextSettings, lastStatus: `Connected${result.tools.length ? ` · ${result.tools.length} tool${result.tools.length === 1 ? "" : "s"}` : ""}` });
-  return archivistBridgeState({ status: "connected", result });
-});
-ipcMain.handle("desktop:archivist-bridge-sync", async (_, settings) => {
-  const nextSettings = saveArchivistBridgeSettings(settings || archivistBridgeSettings);
-  const result = await syncArchivistBridge(nextSettings);
-  const lastStatus = result.mode === "archivist-native"
-    ? `Synced ${result.campaignCount} Archivist campaign${result.campaignCount === 1 ? "" : "s"}`
-    : "Custom import tool completed";
-  archivistBridgeSettings = saveArchivistBridgeSettings({ ...nextSettings, lastStatus, lastSync: new Date().toISOString() });
-  return archivistBridgeState({ status: "synced", payload: result.payload, result });
-});
+async function runArchivistConnection(settings, sync) {
+  if (archivistBridgeRunning) throw new Error("An Archivist connection is already running. Finish that sign-in first.");
+  archivistBridgeRunning = true;
+  try {
+    const nextSettings = saveArchivistBridgeSettings(settings || archivistBridgeSettings);
+    const options = { authDirectory: path.join(app.getPath("userData"), "archivist-auth") };
+    const result = await (sync ? syncArchivistBridge : testArchivistBridge)(nextSettings, options);
+    const lastStatus = sync ? `Fetched ${result.campaignCount} campaigns for review` : `Connected · ${result.tools.length} tools`;
+    archivistBridgeSettings = saveArchivistBridgeSettings({ ...nextSettings, lastStatus });
+    return archivistBridgeState({ status: sync ? "review-ready" : "connected", payload: result.payload, result });
+  } catch (error) {
+    const message = bridgeError(error.message);
+    saveArchivistBridgeSettings({ ...archivistBridgeSettings, lastStatus: message });
+    throw new Error(message);
+  } finally { archivistBridgeRunning = false; }
+}
+ipcMain.handle("desktop:archivist-bridge-test", (_, settings) => runArchivistConnection(settings, false));
+ipcMain.handle("desktop:archivist-bridge-sync", (_, settings) => runArchivistConnection(settings, true));
 
 app.whenReady().then(() => {
   workspaceStore = createWorkspaceStore({
