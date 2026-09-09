@@ -4,7 +4,7 @@
   if (root) root.CampaignSearch = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const definitions = { characters: "character", quests: "quest", locations: "location", journal: "journal", sessions: "session", arcs: "arc" };
-  const labels = { character: "Character", quest: "Quest", location: "World", journal: "Journal", session: "Session", arc: "Story arc", note: "Live note", reference: "Reference" };
+  const labels = { character: "Character", quest: "Quest", location: "World", journal: "Journal", session: "Session", prep: "Session prep", arc: "Story arc", note: "Live note", reference: "Reference" };
   const terms = query => [...new Set(String(query || "").toLocaleLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu) || [])];
   const plain = value => String(value || "").replace(/\[\[([^\]]+)\]\]/g, "$1").replace(/\s+/g, " ").trim();
   function excerpt(text, query, length = 280) {
@@ -28,6 +28,18 @@
       }
     }
     if (!playerPreview) {
+      const rows = value => Array.isArray(value) ? value.filter(item => item && typeof item === "object") : [];
+      for (const [key, prep] of Object.entries(campaign.sessionWorkflow?.preps || {})) {
+        if (!prep || typeof prep !== "object") continue;
+        const fields = [prep.opening,
+          ...rows(prep.scenes).flatMap(scene => [scene.title, scene.detail, scene.question]),
+          ...rows(prep.revelations).map(item => item.text),
+          ...rows(prep.spotlights).flatMap(item => [item.character, item.opportunity]),
+          ...rows(prep.tasks).map(item => item.text),
+          ...rows(prep.pinned).map(item => item.name),
+          ...rows(prep.clocks).map(item => item.label)];
+        entries.push({ type: "prep", title: prep.sessionRef?.name || "Session prep", prepId: prep.id || key, text: fields.filter(Boolean).join(" ") });
+      }
       for (const desk of Object.values(campaign.sessionWorkflow?.desks || {})) {
         if (desk.scratch) entries.push({ type: "note", title: `${desk.sessionRef.name} · Scratchpad`, deskId: desk.id, text: desk.scratch });
         for (const note of desk.log || []) entries.push({ type: "note", title: `${desk.sessionRef.name} · Log`, deskId: desk.id, noteId: note.id, text: note.text });

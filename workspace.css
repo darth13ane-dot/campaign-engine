@@ -64,6 +64,26 @@
 .reference-reader .desk-inline-form { display: flex; align-items: end; gap: 12px; }
 .reference-reader .desk-inline-form label { flex: 1; }
 .source-card-foot { display: flex; flex-wrap: wrap; gap: 8px; }
+.desk-prep-copy { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; font-size: .85rem; }
+.desk-prep-opening { margin-bottom: 18px; }
+.desk-beat > div { min-width: 0; }
+.desk-pin-reference { display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.desk-pin-reference > .quiet-button { justify-self: end; width: auto; }
+.desk-layout { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(0, .9fr); }
+.desk-beat { grid-template-columns: 24px minmax(0, 1fr); align-items: start; }
+.desk-order { grid-column: 2; justify-self: end; }
+.desk-panel input, .desk-panel select, .desk-panel textarea { color: var(--paper); background: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; font: inherit; max-width: 100%; }
+.desk-panel textarea { font-size: .85rem; line-height: 1.6; resize: vertical; }
+@media (max-width: 1300px) {
+  .desk-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .desk-side { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .desk-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .desk-side { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 650px) {
   .change-comparison { grid-template-columns: 1fr; }
   .history-entry, .sync-review-row, .sync-review-summary, .reference-reader { padding: 16px; }

@@ -1,11 +1,11 @@
 (function (root, factory) {
-  const api = factory();
+  const api = factory(typeof module === "object" && module.exports ? require("./session-prep.js") : root.CampaignSessionPrep);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.CampaignSessionWorkflow = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (PREP) {
   "use strict";
 
-  const SCHEMA_VERSION = 1;
+  const SCHEMA_VERSION = 2;
   const RECORD_COLLECTIONS = ["characters", "quests", "locations", "journal", "arcs"];
   const MUTABLE_FIELDS = {
     characters: ["name", "role", "description", "tags", "factions", "voice", "quirks", "relationships", "statBlock"],
@@ -23,7 +23,7 @@
   const recordKey = (collection, record) => String(record?.archivistId || record?.id || `${collection}:${recordTitle(collection, record) || ""}`);
 
   function emptyWorkflow() {
-    return { schemaVersion: SCHEMA_VERSION, desks: {}, reconciliations: {} };
+    return { schemaVersion: SCHEMA_VERSION, preps: {}, desks: {}, reconciliations: {} };
   }
 
   function normalizeDesk(value, key) {
@@ -32,21 +32,26 @@
     const status = value.status === "completed" || value.status === "ended" ? "ended" : "active";
     return {
       id: deskId,
-      sessionRef: object(value.sessionRef) ? clone(value.sessionRef) : { name: text(value.sessionTitle || "Session", 160) },
+      sessionRef: PREP.sessionReference(value.sessionRef || { name: value.sessionTitle }),
       status,
       startedAt: text(value.startedAt, 80) || new Date().toISOString(),
       endedAt: status === "ended" ? text(value.endedAt, 80) || new Date().toISOString() : null,
-      beats: Array.isArray(value.beats) ? value.beats.filter(object).map((beat, index) => ({ id: text(beat.id, 160) || `${deskId}-beat-${index}`, title: text(beat.title || beat.text, 240), kind: ["scene", "beat", "pressure"].includes(beat.kind) ? beat.kind : "beat", done: Boolean(beat.done) })).filter(beat => beat.title) : [],
-      pinned: Array.isArray(value.pinned) ? value.pinned.filter(object).map(entry => ({ type: text(entry.type, 40), name: text(entry.name, 200), archivistId: text(entry.archivistId, 160) || undefined })).filter(entry => entry.type && entry.name) : [],
+      opening: text(value.opening, 12000),
+      durationMinutes: Math.max(15, Math.min(1440, Number(value.durationMinutes) || 180)),
+      spotlights: Array.isArray(value.spotlights) ? value.spotlights.filter(object).map((item, index) => ({ id: text(item.id, 160) || `${deskId}-spotlight-${index}`, character: text(item.character, 200), opportunity: text(item.opportunity, 4000) })).filter(item => item.character || item.opportunity) : [],
+      beats: Array.isArray(value.beats) ? value.beats.filter(object).map((beat, index) => ({ id: text(beat.id, 160) || `${deskId}-beat-${index}`, title: text(beat.title || beat.text, 240), kind: ["scene", "beat", "social", "exploration", "combat", "pressure"].includes(beat.kind) ? beat.kind : "beat", detail: text(beat.detail, 12000), question: text(beat.question, 4000), minutes: Number.isFinite(Number(beat.minutes)) && beat.minutes != null ? Math.max(0, Math.min(1440, Math.round(Number(beat.minutes)))) : 30, done: Boolean(beat.done) })).filter(beat => beat.title) : [],
+      pinned: Array.isArray(value.pinned) ? value.pinned.filter(object).map(PREP.recordReference).filter(entry => entry.type && entry.name) : [],
       scratch: text(value.scratch, 12000),
       log: Array.isArray(value.log) ? value.log.filter(object).map((entry, index) => ({ id: text(entry.id, 160) || `${deskId}-log-${index}`, at: text(entry.at, 80) || new Date().toISOString(), text: text(entry.text, 8000) })).filter(entry => entry.text) : [],
       clocks: Array.isArray(value.clocks) ? value.clocks.filter(object).map((clock, index) => ({ id: text(clock.id, 160) || `${deskId}-clock-${index}`, label: text(clock.label, 160), value: Math.max(0, Number(clock.value) || 0), max: Math.max(1, Math.min(20, Number(clock.max) || 4)) })).filter(clock => clock.label) : [],
-      revelations: Array.isArray(value.revelations) ? value.revelations.filter(object).map((item, index) => ({ id: text(item.id, 160) || `${deskId}-revelation-${index}`, text: text(item.text, 500), checked: Boolean(item.checked) })).filter(item => item.text) : []
+      revelations: Array.isArray(value.revelations) ? value.revelations.filter(object).map((item, index) => ({ id: text(item.id, 160) || `${deskId}-revelation-${index}`, text: text(item.text, 4000), checked: Boolean(item.checked) })).filter(item => item.text) : []
     };
   }
 
   function normalizeWorkflow(value) {
     if (!object(value)) return emptyWorkflow();
+    const preps = {};
+    Object.entries(object(value.preps) ? value.preps : {}).forEach(([key, prep]) => { const next = PREP.normalizePrep(prep, key); if (next) Object.defineProperty(preps, next.id, { value: next, enumerable: true, writable: true, configurable: true }); });
     const desks = {};
     const sourceDesks = object(value.desks) ? value.desks : Array.isArray(value.sessions) ? Object.fromEntries(value.sessions.map((desk, index) => [desk.id || `legacy-${index}`, desk])) : {};
     Object.entries(sourceDesks).forEach(([key, desk]) => { const next = normalizeDesk(desk, key); if (next) desks[next.id] = next; });
@@ -57,7 +62,7 @@
       const draftId = text(draft.id || key, 160) || id("reconcile");
       reconciliations[draftId] = { id: draftId, deskId: text(draft.deskId, 160), status: ["draft", "applying", "applied", "discarded"].includes(draft.status) ? draft.status : "draft", recap: text(draft.recap, 12000), proposals: sanitizeProposals(draft.proposals || []), createdAt: text(draft.createdAt, 80) || new Date().toISOString(), appliedAt: text(draft.appliedAt, 80) || null, error: text(draft.error, 1000) || "" };
     });
-    return { schemaVersion: SCHEMA_VERSION, desks, reconciliations };
+    return { schemaVersion: SCHEMA_VERSION, preps, desks, reconciliations };
   }
 
   function normalizeCampaign(campaign) {
@@ -73,27 +78,32 @@
   function ensureWorkflow(campaign) {
     normalizeCampaign(campaign);
     if (!campaign.sessionWorkflow) campaign.sessionWorkflow = emptyWorkflow();
+    for (const collection of ["preps", "desks", "reconciliations"]) if (!object(campaign.sessionWorkflow[collection])) campaign.sessionWorkflow[collection] = {};
     return campaign.sessionWorkflow;
-  }
-
-  function sessionReference(session) {
-    return { name: text(session?.title || "Session", 160), archivistId: text(session?.archivistId, 160) || undefined, number: Number(session?.number) || undefined };
   }
 
   function findDeskForSession(campaign, session) {
     const workflow = campaign?.sessionWorkflow?.schemaVersion === SCHEMA_VERSION ? campaign.sessionWorkflow : campaign?.sessionWorkflow ? normalizeWorkflow(campaign.sessionWorkflow) : null;
     if (!workflow) return null;
-    const ref = sessionReference(session);
-    return Object.values(workflow.desks).find(desk => ref.archivistId ? desk.sessionRef.archivistId === ref.archivistId : desk.sessionRef.name === ref.name) || null;
+    return PREP.findLinkedSessionItem(campaign, session, Object.values(workflow.desks || {}));
   }
 
   function startDesk(campaign, session, now = new Date().toISOString()) {
     const workflow = ensureWorkflow(campaign);
     const existing = findDeskForSession(campaign, session);
-    if (existing) return workflow.desks[existing.id] = existing;
+    const sessionRef = PREP.ensureSessionReferences(campaign, session);
+    if (existing) { existing.sessionRef = sessionRef; return workflow.desks[existing.id] = existing; }
     const deskId = id("desk");
     const directions = Array.isArray(session?.directions) ? session.directions : [];
-    const desk = normalizeDesk({ id: deskId, sessionRef: sessionReference(session), status: "active", startedAt: now, beats: directions.map((title, index) => ({ id: `${deskId}-beat-${index}`, title, kind: "beat", done: false })) }, deskId);
+    const source = PREP.findPrepForSession(campaign, session);
+    const prep = source ? PREP.normalizePrep(source) : null;
+    const scenes = (prep?.scenes || []).filter(scene => scene.title || scene.detail || scene.question).map(scene => ({ ...scene, title: scene.title || "Untitled scene", done: false }));
+    const desk = normalizeDesk({
+      id: deskId, sessionRef, status: "active", startedAt: now,
+      opening: prep?.opening, durationMinutes: prep?.durationMinutes, spotlights: prep?.spotlights,
+      pinned: prep?.pinned, clocks: prep?.clocks, revelations: prep?.revelations,
+      beats: scenes.length ? scenes : directions.map((title, index) => ({ id: `${deskId}-beat-${index}`, title, kind: "beat", done: false }))
+    }, deskId);
     workflow.desks[deskId] = desk;
     return desk;
   }
@@ -192,5 +202,5 @@
     }
   }
 
-  return { SCHEMA_VERSION, MUTABLE_FIELDS, normalizeWorkflow, normalizeCampaign, ensureWorkflow, findDeskForSession, startDesk, endDesk, createReconciliation, sanitizeProposal, sanitizeProposals, applyApproved, recordTitle };
+  return { SCHEMA_VERSION, MUTABLE_FIELDS, normalizeWorkflow, normalizeCampaign, ensureWorkflow, findDeskForSession, startDesk, endDesk, createReconciliation, sanitizeProposal, sanitizeProposals, applyApproved, recordTitle, sessionReference: PREP.sessionReference };
 });

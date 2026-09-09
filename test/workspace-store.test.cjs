@@ -56,6 +56,60 @@ test("persists versioned live-session and reconciliation state in backups", asyn
   assert.equal(backup.state.campaigns[0].sessionWorkflow.reconciliations["draft-1"].status, "draft");
 });
 
+test("schema 2 preparation and live progress survive desktop save, export, import, and reopen", async t => {
+  const { directory, store } = await temporaryStore(t);
+  const prepCore = require("../session-prep.js");
+  const workflow = require("../session-workflow.js");
+  const campaign = {
+    id: "campaign-1", title: "The Ash March",
+    sessions: [{ localId: "session-1", title: "The Crossing", number: 4, upcoming: true }],
+    characters: [{ localId: "guard-1", name: "Vale", description: "The keeper of the gate" }]
+  };
+  workflow.ensureWorkflow(campaign);
+  const prep = prepCore.ensurePrep(campaign, campaign.sessions[0]);
+  Object.assign(prep, {
+    opening: "The river bell rings.", durationMinutes: 120,
+    scenes: [{ id: "scene-1", title: "A bargain at the gate", kind: "social", minutes: 40, detail: "Vale needs a favor.", question: "Offer the relic or find another crossing?" }],
+    pinned: [{ type: "character", name: "Vale", localId: "guard-1" }],
+    revelations: [{ id: "clue-1", text: "The ferryman is missing.", checked: false }],
+    clocks: [{ id: "clock-1", label: "Rising water", max: 6, value: 1 }],
+    spotlights: [{ id: "spotlight-1", character: "Mira", opportunity: "Read the flood marks." }],
+    tasks: [{ id: "task-1", text: "Prepare the gate map", done: true }]
+  });
+  await store.initializeWorkspace({ state: { activeCampaignId: campaign.id, campaigns: [campaign] }, archivist: {} });
+  const desk = workflow.startDesk(campaign, campaign.sessions[0], "2026-09-20T18:00:00.000Z");
+  desk.beats[0].done = true;
+  desk.revelations[0].checked = true;
+  desk.clocks[0].value = 4;
+  desk.scratch = "The party keeps the relic.";
+  desk.log.push({ id: "log-1", at: "2026-09-20T18:15:00.000Z", text: "Vale offered a second crossing." });
+  prep.scenes[0].detail = "A separate preparation edit made during play.";
+  prep.tasks.push({ id: "blank-task", text: "", done: false });
+  const expected = structuredClone(campaign);
+  await store.saveState({ activeCampaignId: campaign.id, campaigns: [campaign] });
+
+  const reopenedSource = createWorkspaceStore({ directory, appVersion: "9.9.10" });
+  const saved = (await reopenedSource.loadWorkspace()).state.campaigns[0];
+  assert.deepEqual(saved, expected);
+  const exportPath = path.join(directory, "session-prep-backup.json");
+  await reopenedSource.exportWorkspace(exportPath);
+
+  const importedDirectory = path.join(directory, "restored-installation");
+  const destination = createWorkspaceStore({ directory: importedDirectory, appVersion: "9.9.11" });
+  await destination.initializeWorkspace({ state: state("Before restore"), archivist: {} });
+  await destination.importWorkspace(exportPath);
+  assert((await fs.readdir(destination.backupDirectory)).some(name => name.includes("before-import")));
+  const reopenedDestination = createWorkspaceStore({ directory: importedDirectory, appVersion: "9.9.12" });
+  const restored = (await reopenedDestination.loadWorkspace()).state.campaigns[0];
+  restored.sessionWorkflow = workflow.normalizeWorkflow(restored.sessionWorkflow);
+  assert.equal(restored.sessionWorkflow.schemaVersion, 2);
+  assert.equal(restored.sessions[0].localId, "session-1");
+  assert.deepEqual(prepCore.findPrepForSession(restored, restored.sessions[0]), expected.sessionWorkflow.preps[prep.id]);
+  assert.deepEqual(workflow.startDesk(restored, restored.sessions[0]), expected.sessionWorkflow.desks[desk.id]);
+  assert.equal(restored.sessionWorkflow.desks[desk.id].beats[0].detail, "Vale needs a favor.");
+  assert.deepEqual(restored, expected);
+});
+
 test("imports legacy state files and creates a pre-import safety backup", async t => {
   const { directory, store } = await temporaryStore(t);
   await store.initializeWorkspace({ state: state("Before import"), archivist: {} });
