@@ -2,6 +2,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const WORKSPACE_SCHEMA_VERSION = 1;
+const UNSUPPORTED_SCHEMA = "UNSUPPORTED_WORKSPACE_SCHEMA";
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -18,6 +19,14 @@ function assertState(state) {
 }
 
 function normalizeWorkspace(value, appVersion, savedAt = new Date().toISOString()) {
+  const version = isObject(value) ? value.schemaVersion : undefined;
+  if (version != null && (!Number.isInteger(Number(version)) || Number(version) < 0 || Number(version) > WORKSPACE_SCHEMA_VERSION)) {
+    const error = new Error(Number(version) > WORKSPACE_SCHEMA_VERSION
+      ? `This workspace uses schema version ${version}, which requires a newer Campaign Engine version. This app supports workspace schema ${WORKSPACE_SCHEMA_VERSION}.`
+      : `This workspace uses an unsupported schema version. This app supports workspace schema ${WORKSPACE_SCHEMA_VERSION}.`);
+    error.code = UNSUPPORTED_SCHEMA;
+    throw error;
+  }
   const source = isObject(value) && isObject(value.state)
     ? value
     : { state: value };
@@ -61,6 +70,19 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
     await fs.mkdir(backupDirectory, { recursive: true });
   }
 
+  async function assertPreviousSchemaSupported() {
+    try {
+      normalizeWorkspace(await readJson(previousPath), appVersion);
+    } catch (error) {
+      if (error.code === UNSUPPORTED_SCHEMA) {
+        error.message = `The previous workspace backup (${previousPath}) is protected. ${error.message} Use a compatible app, or move that backup to a safe location before retrying.`;
+        throw error;
+      }
+      // A missing or damaged previous copy can be replaced by the valid primary.
+      if (error.code && error.code !== "ENOENT") throw error;
+    }
+  }
+
   async function writeWorkspace(value, { preservePrevious = true } = {}) {
     await ensureDirectories();
     const workspace = normalizeWorkspace(
@@ -70,6 +92,7 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
     const temporaryPath = `${workspacePath}.${process.pid}.tmp`;
 
     if (preservePrevious && await pathExists(workspacePath)) {
+      await assertPreviousSchemaSupported();
       await fs.copyFile(workspacePath, previousPath);
     }
 
@@ -104,6 +127,8 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
     try {
       return normalizeWorkspace(await readJson(workspacePath), appVersion);
     } catch (error) {
+      // A newer workspace is valid data for another app version, so leave both files intact.
+      if (error.code === UNSUPPORTED_SCHEMA) throw error;
       return recoverPreviousWorkspace(error);
     }
   }
@@ -129,15 +154,41 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
     if (!workspace) return null;
     await ensureDirectories();
     const safeReason = String(reason).replace(/[^a-z0-9-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "manual";
-    const destination = path.join(backupDirectory, `campaign-engine-${safeReason}-${safeTimestamp(now())}.json`);
-    await fs.writeFile(destination, `${JSON.stringify(workspace, null, 2)}\n`, "utf8");
+    const createdAt = now();
+    const basename = `campaign-engine-${safeReason}-${safeTimestamp(createdAt)}`;
+    const content = `${JSON.stringify({ ...workspace, backupCreatedAt: createdAt.toISOString() }, null, 2)}\n`;
+    let destination;
+    for (let suffix = 0; ; suffix++) {
+      destination = path.join(backupDirectory, `${basename}${suffix ? `-${suffix}` : ""}.json`);
+      try {
+        await fs.writeFile(destination, content, { encoding: "utf8", flag: "wx" });
+        break;
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
+    }
 
-    const backups = (await fs.readdir(backupDirectory, { withFileTypes: true }))
-      .filter(entry => entry.isFile() && entry.name.endsWith(".json"))
-      .map(entry => entry.name)
-      .sort()
-      .reverse();
-    await Promise.all(backups.slice(12).map(name => fs.unlink(path.join(backupDirectory, name)).catch(() => {})));
+    const entries = (await fs.readdir(backupDirectory, { withFileTypes: true }))
+      .filter(entry => entry.isFile() && /^campaign-engine-.+\.json$/.test(entry.name));
+    const backups = (await Promise.all(entries.map(async entry => {
+      const backupPath = path.join(backupDirectory, entry.name);
+      try {
+        const backup = await readJson(backupPath);
+        normalizeWorkspace(backup, appVersion);
+        // Legacy copies carry their creation time in the filename; savedAt describes the workspace edit.
+        const legacy = entry.name.match(/-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z(?:-\d+)?\.json$/);
+        const legacyCreatedAt = legacy ? `${legacy[1]}T${legacy[2]}:${legacy[3]}:${legacy[4]}.${legacy[5]}Z` : "";
+        let timestamp = [backup.backupCreatedAt, legacyCreatedAt, backup.savedAt].map(value => Date.parse(value)).find(Number.isFinite);
+        if (timestamp === undefined) timestamp = (await fs.stat(backupPath)).mtimeMs;
+        return { name: entry.name, path: backupPath, timestamp };
+      } catch {
+        // Leave unreadable, damaged, and unsupported-version files available for manual recovery.
+        return null;
+      }
+    }))).filter(Boolean).sort((a, b) => b.timestamp - a.timestamp
+      || Number(b.path === destination) - Number(a.path === destination)
+      || b.name.localeCompare(a.name, undefined, { numeric: true }));
+    await Promise.all(backups.slice(12).map(backup => fs.unlink(backup.path).catch(() => {})));
     return destination;
   }
 
@@ -150,12 +201,14 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
 
   async function importWorkspace(source) {
     const incoming = normalizeWorkspace(await readJson(source), appVersion);
+    await assertPreviousSchemaSupported();
     await createSafetyBackup("before-import");
     return writeWorkspace(incoming);
   }
 
   async function replaceWorkspace(value, reason = "before-import") {
     const incoming = normalizeWorkspace(value, appVersion);
+    await assertPreviousSchemaSupported();
     await createSafetyBackup(reason);
     return writeWorkspace(incoming);
   }

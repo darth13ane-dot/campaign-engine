@@ -1,5 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
 const prep = require("../session-prep.js");
 const workflow = require("../session-workflow.js");
 const merge = require("../archivist-merge.js");
@@ -194,4 +197,149 @@ test("private Markdown packet contains prepared material and resolved pins, omit
   const missingPacket = prep.exportMarkdown(value, value.sessions[0], plan);
   assert.match(missingPacket, /linked record is unavailable/);
   assert.doesNotMatch(missingPacket, /Different record with same name/);
+});
+
+function attributedPrep() {
+  const value = campaign(), plan = filledPrep(value);
+  const source = { localId: "source-session", title: "Before the Crossing", number: 3, upcoming: false, recap: "The watch found an abandoned ferry." };
+  value.sessions.push(source);
+  const desk = workflow.startDesk(value, source);
+  workflow.endDesk(value, desk.id);
+  for (const collection of ["scenes", "revelations", "clocks", "spotlights", "tasks", "pinned"]) {
+    const row = plan[collection][0];
+    row.provenance = {
+      key: `source:${collection}:${row.id || row.localId}`,
+      sourceDeskId: desk.id, sourceSessionRef: prep.sessionReference(source),
+      sourceCollection: collection === "scenes" ? "beats" : collection,
+      sourceRowId: row.id || row.localId, label: source.title,
+      ...(collection === "pinned" ? { recordRef: prep.recordReference(row) } : {})
+    };
+  }
+  plan.continuityReview = { candidates: [{ label: "UNREVIEWED_MARKER", after: { title: "UNREVIEWED_MARKER" } }], source: { recap: "UNREVIEWED_MARKER" } };
+  return { value, plan, source, desk };
+}
+
+test("carried provenance survives normalization and exports every applied row with the current source title", () => {
+  const { value, plan, source, desk } = attributedPrep();
+  source.title = "The Renamed Crossing";
+  const before = JSON.stringify(value);
+  const normalized = prep.normalizePrep(JSON.parse(JSON.stringify(plan)));
+  for (const collection of ["scenes", "revelations", "clocks", "spotlights", "tasks", "pinned"]) {
+    assert.deepEqual(normalized[collection][0].provenance, plan[collection][0].provenance);
+    const attribution = prep.describeProvenance(value, normalized[collection][0].provenance);
+    assert.equal(attribution.label, "The Renamed Crossing");
+    assert.equal(attribution.session, source);
+    assert.equal(attribution.desk, desk);
+    assert.equal(attribution.missing, false);
+  }
+  assert.deepEqual(normalized.continuityReview, plan.continuityReview);
+  assert.notEqual(normalized.continuityReview, plan.continuityReview);
+  const packet = prep.exportMarkdown(value, value.sessions[0], normalized);
+  assert.equal((packet.match(/From The Renamed Crossing/g) || []).length, 6);
+  assert.doesNotMatch(packet, /Before the Crossing|UNREVIEWED_MARKER/);
+  assert.equal(JSON.stringify(value), before);
+});
+
+test("deleted source sessions never attach to a same-name replacement and retain only a matching ended log", () => {
+  const { value, plan, source, desk } = attributedPrep();
+  const provenance = plan.scenes[0].provenance;
+  value.sessions = value.sessions.filter(session => session !== source);
+  const replacement = { localId: "replacement-session", title: source.title, number: 3, recap: "REPLACEMENT_SECRET" };
+  value.sessions.push(replacement);
+  let attribution = prep.describeProvenance(value, provenance);
+  assert.equal(attribution.session, null);
+  assert.equal(attribution.desk, desk);
+  assert.equal(attribution.missing, true);
+  assert.match(attribution.context, /source session record is no longer available/);
+  desk.sessionRef = prep.sessionReference(replacement);
+  attribution = prep.describeProvenance(value, provenance);
+  assert.equal(attribution.desk, null, "A reused desk ID must not open another session's log");
+  assert.match(attribution.context, /source session log is no longer available/);
+  const packet = prep.exportMarkdown(value, value.sessions[0], plan);
+  assert.match(packet, /source unavailable/);
+  assert.doesNotMatch(packet, /REPLACEMENT_SECRET/);
+});
+
+test("campaign-record origins follow stable quest and arc IDs without same-name substitution", () => {
+  const value = campaign(), plan = filledPrep(value);
+  for (const [collection, type] of [["quests", "quest"], ["arcs", "arc"]]) {
+    const record = { localId: `${type}-origin`, title: "Original thread", detail: "The current lead", tension: "The current pressure" };
+    value[collection].push(record);
+    const provenance = { key: `${type}:origin`, sourceCollection: collection, sourceRowId: record.localId, recordRef: prep.recordReference({ ...record, type }), label: "Current campaign" };
+    record.title = "Renamed thread";
+    let attribution = prep.describeProvenance(value, provenance);
+    assert.equal(attribution.record, record);
+    assert.match(attribution.label, /Renamed thread/);
+    assert.equal(attribution.missing, false);
+    plan.scenes[0].provenance = provenance;
+    assert.match(prep.exportMarkdown(value, value.sessions[0], plan), /From (Quest|Story arc) · Renamed thread/);
+    value[collection] = [{ localId: `${type}-replacement`, title: "Original thread", detail: "REPLACEMENT_RECORD_SECRET" }];
+    attribution = prep.describeProvenance(value, provenance);
+    assert.equal(attribution.record, null);
+    assert.equal(attribution.missing, true);
+    const packet = prep.exportMarkdown(value, value.sessions[0], plan);
+    assert.match(packet, /source record is no longer available/);
+    assert.doesNotMatch(packet, /REPLACEMENT_RECORD_SECRET/);
+  }
+});
+
+function prepViewHarness(value) {
+  const context = {
+    window: { CampaignSessionPrep: prep, CampaignPrepContinuity: {} },
+    document: { querySelector: () => ({ addEventListener() {} }) },
+    SESSION_WORKFLOW: workflow, activeCampaign: () => value,
+    playerPreviewActive: () => false, playerPreviewRestrictedView: () => "PLAYER_PREVIEW",
+    esc: value => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character])),
+    ENTRY_TYPES: { character: "Character", quest: "Quest", arc: "Story arc" },
+    sessionActionRef: session => encodeURIComponent(JSON.stringify(prep.sessionReference(session))),
+    deskEntryAction: () => "data-open-entity", saveState() {}, render() {},
+    header: (title, label, description, actions) => `<header>${actions}</header>`
+  };
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../session-prep-views.js"), "utf8"), context);
+  context.openSessionPrep(value, value.sessions[0]);
+  return context;
+}
+
+test("source disclosures and Markdown escape source text and omit pending review material", () => {
+  const { value, plan, source } = attributedPrep();
+  source.title = '<img src=x onerror="alert(1)"> [Portal](https://example.test)';
+  source.recap = '<script>alert("source notes")</script>';
+  const view = prepViewHarness(value);
+  const markup = view.sessionPrepView(value);
+  assert.equal((markup.match(/class="prep-provenance"/g) || []).length, 6);
+  assert.match(markup, /From &lt;img/);
+  assert.match(markup, /data-open-session-desk=/);
+  assert.match(markup, /data-open-prep-continuity=/);
+  assert.match(markup, /class="prep-row-group"[^>]*><div class="prep-task is-done"/);
+  assert.match(markup, /class="prep-row-group"[^>]*><div class="prep-text-row"/);
+  assert.doesNotMatch(markup, /<img|<script>|UNREVIEWED_MARKER/);
+  const packet = prep.exportMarkdown(value, value.sessions[0], plan);
+  assert.match(packet, /From &lt;img/);
+  assert(packet.includes("\\[Portal\\]\\(https://example\\.test\\)"));
+  assert.doesNotMatch(packet, /<img|<script>|UNREVIEWED_MARKER/);
+  view.window.CampaignPrepContinuity = null;
+  assert.doesNotMatch(view.sessionPrepView(value), /data-open-prep-continuity=/);
+  view.playerPreviewActive = () => true;
+  assert.equal(view.prepProvenanceMarkup(value, plan.scenes[0]), "");
+  assert.equal(view.sessionPrepView(value), "PLAYER_PREVIEW");
+});
+
+test("source disclosures show recorded-session notes and exact source-record details safely", () => {
+  const { value, plan, source, desk } = attributedPrep();
+  delete plan.tasks[0].provenance.sourceDeskId;
+  source.recap = '<script>unsafe notes</script> Saved source notes';
+  const view = prepViewHarness(value);
+  const recorded = view.prepProvenanceMarkup(value, plan.tasks[0]);
+  assert.match(recorded, /Saved source session notes/);
+  assert.match(recorded, /&lt;script&gt;unsafe notes&lt;\/script&gt;/);
+  assert.doesNotMatch(recorded, /data-open-session-desk=|<script>/);
+  value.quests.push({ localId: "quest-source", title: "Same quest title", detail: '<svg onload="unsafe()"> Exact source detail' }, { localId: "quest-other", title: "Same quest title", detail: "UNRELATED_QUEST_DETAIL" });
+  const row = { provenance: { key: "quest-source", sourceCollection: "quests", sourceRowId: "quest-source", recordRef: { type: "quest", localId: "quest-source", name: "Same quest title" } } };
+  const recordMarkup = view.prepProvenanceMarkup(value, row);
+  assert.match(recordMarkup, /Saved details for this source record/);
+  assert.match(recordMarkup, /Exact source detail/);
+  assert.doesNotMatch(recordMarkup, /<svg|UNRELATED_QUEST_DETAIL|data-open-entity/);
+  desk.status = "active";
+  assert.doesNotMatch(view.prepProvenanceMarkup(value, plan.scenes[0]), /data-open-session-desk=/);
 });

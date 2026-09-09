@@ -67,7 +67,25 @@
   function recordReference(value) {
     const reference = { type: text(value?.type, 40), name: text(value?.name || value?.title, 200) };
     for (const field of identityFields) if (text(value?.[field], 160)) reference[field] = text(value[field], 160);
-    return reference;
+    return { ...reference, ...provenanceFields(value) };
+  }
+
+  function normalizeProvenance(value) {
+    if (!object(value) || !text(value.key, 1500)) return null;
+    const result = { key: text(value.key, 1500), sourceCollection: text(value.sourceCollection, 60), sourceRowId: text(value.sourceRowId, 200) };
+    if (text(value.sourceDeskId, 160)) result.sourceDeskId = text(value.sourceDeskId, 160);
+    if (object(value.sourceSessionRef)) result.sourceSessionRef = sessionReference(value.sourceSessionRef);
+    if (object(value.recordRef)) {
+      result.recordRef = { type: text(value.recordRef.type, 40), name: text(value.recordRef.name, 200) };
+      for (const field of identityFields) if (text(value.recordRef[field], 160)) result.recordRef[field] = text(value.recordRef[field], 160);
+    }
+    if (text(value.label, 500)) result.label = text(value.label, 500);
+    return result;
+  }
+
+  function provenanceFields(value) {
+    const provenance = normalizeProvenance(value?.provenance);
+    return provenance ? { provenance } : {};
   }
 
   function normalizePrep(value, key) {
@@ -78,16 +96,17 @@
       id: prepId,
       sessionRef: sessionReference(value.sessionRef || { name: value.sessionTitle }),
       opening: text(value.opening),
+      ...(object(value.continuityReview) ? { continuityReview: JSON.parse(JSON.stringify(value.continuityReview)) } : {}),
       durationMinutes: integer(value.durationMinutes, 180, 15, 1440),
-      scenes: rows(value.scenes).map((scene, index) => ({ id: rowId(scene, "scene", index), title: text(scene.title, 240), kind: ["scene", "social", "exploration", "combat", "pressure"].includes(scene.kind) ? scene.kind : "scene", minutes: integer(scene.minutes, 30, 0, 1440), detail: text(scene.detail), question: text(scene.question, 4000) })),
+      scenes: rows(value.scenes).map((scene, index) => ({ id: rowId(scene, "scene", index), title: text(scene.title, 240), kind: ["scene", "social", "exploration", "combat", "pressure"].includes(scene.kind) ? scene.kind : "scene", minutes: integer(scene.minutes, 30, 0, 1440), detail: text(scene.detail), question: text(scene.question, 4000), ...provenanceFields(scene) })),
       pinned: rows(value.pinned).map(recordReference).filter(entry => entry.type && entry.name),
-      revelations: rows(value.revelations).map((item, index) => ({ id: rowId(item, "revelation", index), text: text(item.text, 4000), checked: Boolean(item.checked) })),
+      revelations: rows(value.revelations).map((item, index) => ({ id: rowId(item, "revelation", index), text: text(item.text, 4000), checked: Boolean(item.checked), ...provenanceFields(item) })),
       clocks: rows(value.clocks).map((clock, index) => {
         const max = integer(clock.max, 4, 1, 20);
-        return { id: rowId(clock, "clock", index), label: text(clock.label, 160), max, value: integer(clock.value, 0, 0, max) };
+        return { id: rowId(clock, "clock", index), label: text(clock.label, 160), max, value: integer(clock.value, 0, 0, max), ...provenanceFields(clock) };
       }),
-      spotlights: rows(value.spotlights).map((item, index) => ({ id: rowId(item, "spotlight", index), character: text(item.character, 200), opportunity: text(item.opportunity, 4000) })),
-      tasks: rows(value.tasks).map((item, index) => ({ id: rowId(item, "task", index), text: text(item.text, 1000), done: Boolean(item.done) }))
+      spotlights: rows(value.spotlights).map((item, index) => ({ id: rowId(item, "spotlight", index), character: text(item.character, 200), opportunity: text(item.opportunity, 4000), ...provenanceFields(item) })),
+      tasks: rows(value.tasks).map((item, index) => ({ id: rowId(item, "task", index), text: text(item.text, 1000), done: Boolean(item.done), ...provenanceFields(item) }))
     };
   }
 
@@ -132,10 +151,53 @@
     return legacy.length === 1 ? legacy[0] : null;
   }
 
+  function describeProvenance(campaign, value) {
+    const provenance = normalizeProvenance(value);
+    if (!provenance) return null;
+    const record = provenance.recordRef ? resolvePinnedRecord(campaign, provenance.recordRef) : null;
+    const recordKinds = { character: "Character", quest: "Quest", location: "World entry", journal: "Journal", session: "Session", arc: "Story arc" };
+    const recordLabel = provenance.recordRef ? `${recordKinds[provenance.recordRef.type] || "Campaign record"} · ${text(record?.name || record?.title || provenance.recordRef.name || "Unnamed record", 200)}` : "";
+    if (!provenance.sourceDeskId && !provenance.sourceSessionRef) {
+      return {
+        label: recordLabel || provenance.label || "Earlier preparation",
+        context: record ? provenance.label || "Carried forward from this campaign record." : "The source record is no longer available. This carried material remains in your plan.",
+        missing: !record, session: null, desk: null, record, recordRef: provenance.recordRef || null
+      };
+    }
+    const session = provenance.sourceSessionRef ? findSession(campaign, provenance.sourceSessionRef) : null;
+    const matchingDesks = Object.values(campaign?.sessionWorkflow?.desks || {}).filter(desk => object(desk) && desk.id === provenance.sourceDeskId);
+    const savedDesk = matchingDesks.length === 1 ? matchingDesks[0] : null;
+    const deskSession = savedDesk ? findSession(campaign, savedDesk.sessionRef) : null;
+    const deskMatches = savedDesk && (!provenance.sourceSessionRef
+      || referencesMatch(provenance.sourceSessionRef, savedDesk.sessionRef)
+      || (session && deskSession === session));
+    const desk = deskMatches && ["ended", "completed"].includes(savedDesk.status) ? savedDesk : null;
+    const resolvedSession = session || (!provenance.sourceSessionRef ? deskSession : null);
+    const name = text(resolvedSession?.title || resolvedSession?.name || provenance.sourceSessionRef?.name || (deskMatches && savedDesk.sessionRef?.name) || "Earlier session", 200);
+    const sourceKinds = { beats: "a scene in the ended session log", scenes: "an earlier prepared scene", directions: "a saved possible direction", revelations: "an earlier clue or revelation", clocks: "an earlier clock or counter", spotlights: "an earlier character spotlight", tasks: "an earlier preparation task", pinned: "an earlier pinned campaign reference" };
+    const notices = [`Carried forward from ${sourceKinds[provenance.sourceCollection] || "this session's preparation or recorded play"}.`];
+    if (!resolvedSession) notices.push("The source session record is no longer available.");
+    if (provenance.sourceDeskId && !desk) notices.push(deskMatches ? "The source session log is available after that session has ended." : "The source session log is no longer available.");
+    if (provenance.recordRef && !record) notices.push("The linked source record is no longer available.");
+    return {
+      label: name, context: notices.join(" "),
+      missing: !resolvedSession || Boolean(provenance.sourceDeskId && !desk) || Boolean(provenance.recordRef && !record),
+      session: resolvedSession, desk, record, recordRef: provenance.recordRef || null
+    };
+  }
+
   function exportMarkdown(campaign, session, value) {
     const prep = normalizePrep(value || { sessionRef: sessionReference(session) });
     const md = value => text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/([\\`*_{}\[\]()#+.!|~-])/g, "\\$1");
     const line = value => md(value).replace(/\n/g, " ");
+    const attribution = item => {
+      const source = describeProvenance(campaign, item.provenance);
+      return source ? `From ${line(source.label)}${source.missing ? " — source unavailable" : ""}. ${line(source.context)}` : "";
+    };
+    const attributedItem = (content, item) => {
+      const source = attribution(item);
+      return source ? `${content}\n  ${source}` : content;
+    };
     const timing = readiness(prep);
     const out = [`# ${line(session?.title || prep.sessionRef.name)} — Session Prep`, "", "**GM ONLY — PRIVATE PREPARATION**", "", `Campaign: ${line(campaign?.title || "Campaign")}`, `Session: ${line(session?.number || prep.sessionRef.number || "Unnumbered")} · ${line(session?.date || "Unscheduled")}`, `Time: ${timing.plannedMinutes} minutes planned / ${timing.durationMinutes} minutes available`, "", "## Opening situation", "", md(prep.opening) || "Opening still to prepare."];
     if (text(session?.recap)) out.push("", "## Session plan", "", md(session.recap));
@@ -148,18 +210,20 @@
       out.push(`### ${index + 1}. ${line(scene.title || "Untitled scene")}`, "", `${line(scene.kind)} · ${scene.minutes} minutes`);
       if (scene.detail) out.push("", md(scene.detail));
       if (scene.question) out.push("", `**Meaningful choice:** ${md(scene.question)}`);
+      if (scene.provenance) out.push("", attribution(scene));
       out.push("");
     });
     const list = (title, entries) => { if (entries.length) out.push("", `## ${title}`, "", ...entries); };
-    list("Player spotlights", prep.spotlights.filter(item => item.character || item.opportunity).map(item => `- **${line(item.character || "Choose a character")}:** ${md(item.opportunity)}`));
-    list("Clues & revelations", prep.revelations.filter(item => item.text).map(item => `- ${md(item.text)}`));
-    list("Clocks & counters", prep.clocks.filter(clock => clock.label).map(clock => `- ${line(clock.label)}: ${clock.value}/${clock.max}`));
-    list("Prep tasks", prep.tasks.filter(item => item.text).map(item => `- [${item.done ? "x" : " "}] ${md(item.text)}`));
+    list("Player spotlights", prep.spotlights.filter(item => item.character || item.opportunity).map(item => attributedItem(`- **${line(item.character || "Choose a character")}:** ${md(item.opportunity)}`, item)));
+    list("Clues & revelations", prep.revelations.filter(item => item.text).map(item => attributedItem(`- ${md(item.text)}`, item)));
+    list("Clocks & counters", prep.clocks.filter(clock => clock.label).map(clock => attributedItem(`- ${line(clock.label)}: ${clock.value}/${clock.max}`, clock)));
+    list("Prep tasks", prep.tasks.filter(item => item.text).map(item => attributedItem(`- [${item.done ? "x" : " "}] ${md(item.text)}`, item)));
     if (prep.pinned.length) {
       out.push("", "## Pinned campaign records", "");
       for (const reference of prep.pinned) {
         const record = resolvePinnedRecord(campaign, reference);
         out.push(`### ${line(record?.name || record?.title || reference.name)} (${line(reference.type)})`, "");
+        if (reference.provenance) out.push(attribution(reference), "");
         if (!record) { out.push("This linked record is unavailable. Review its link in the campaign.", ""); continue; }
         const fields = [["Role", record.role], ["Status", record.status], ["Notes", record.description || record.detail || record.body || record.recap], ["Pressure", record.tension], ["Next step", record.nextStep], ["Voice", record.voice], ["Quirks", record.quirks], ["Relationships", record.relationships], ["Stats", record.statBlock]];
         for (const [label, content] of fields) if (text(content)) out.push(`**${label}:** ${md(content)}`, "");
@@ -168,5 +232,5 @@
     return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
   }
 
-  return { createId, sessionReference, ensureSessionReference, ensureSessionReferences, referencesMatch, findSession, resolveSession: findSession, findLinkedSessionItem, recordReference, normalizePrep, findPrepForSession, ensurePrep, readiness, resolvePinnedRecord, resolveRecord: resolvePinnedRecord, exportMarkdown };
+  return { createId, sessionReference, ensureSessionReference, ensureSessionReferences, referencesMatch, findSession, resolveSession: findSession, findLinkedSessionItem, recordReference, normalizeProvenance, provenanceFields, normalizePrep, findPrepForSession, ensurePrep, readiness, resolvePinnedRecord, resolveRecord: resolvePinnedRecord, describeProvenance, exportMarkdown };
 });

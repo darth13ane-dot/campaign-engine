@@ -1,5 +1,17 @@
 # Sharing and desktop updates
 
+## Version 1.6.0 — Session continuity
+
+**Bring forward** opens a saved review from Session Prep. Choose an earlier completed session, recorded session notes, or current campaign quests and story arcs. Review unused live scenes, unchecked revelations, incomplete clocks and prep tasks, spotlight opportunities, and pinned records. Edit the proposed copies and explicitly select what to add. Every new review begins with nothing selected.
+
+Completed live progress supplies the carry-forward state. Recorded sessions without a live desk identify their material as earlier preparation with unknown play progress. Current active quests and story arcs offer grounded scene drafts. Applied consequence evidence uses the exact proposals actually applied; older batches without that audit record are identified explicitly.
+
+Selected material appends to the target prep with its original source attached. Existing preparation and live progress survive, repeated reviews identify material already carried, and meaningful source or target changes require a fresh review. Selections and edits persist across reloads. Source attribution appears in prep and GM Markdown packets and follows stable session identities through renames. Ended desks and the Consequence Inbox provide a path to choose or create the next session and open its review.
+
+Desktop recovery now retains the twelve newest supported backups by their creation time across backup reasons. Same-time copies receive unique filenames. Unreadable and unsupported copies remain available for manual recovery. Workspaces with unsupported future schemas are rejected before load, import, or replacement can rewrite their contents or recover an older file over them.
+
+Core preparation and continuity remain available offline across game systems. See [SESSION_PREP.md](SESSION_PREP.md) for the complete workflow.
+
 ## Version 1.5.0 — Session Prep workspace
 
 **Prepare session** opens a dedicated workspace from Overview, Sessions, and session records. GMs can assemble an opening, time budget, ordered scenes with details and decisions, pinned campaign records, clues, clocks, character spotlight opportunities, and preparation tasks. Saved preparation can be searched in GM view and downloaded as a GM Markdown packet.
