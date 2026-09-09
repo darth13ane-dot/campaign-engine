@@ -38,13 +38,13 @@
       endedAt: status === "ended" ? text(value.endedAt, 80) || new Date().toISOString() : null,
       opening: text(value.opening, 12000),
       durationMinutes: Math.max(15, Math.min(1440, Number(value.durationMinutes) || 180)),
-      spotlights: Array.isArray(value.spotlights) ? value.spotlights.filter(object).map((item, index) => ({ id: text(item.id, 160) || `${deskId}-spotlight-${index}`, character: text(item.character, 200), opportunity: text(item.opportunity, 4000) })).filter(item => item.character || item.opportunity) : [],
-      beats: Array.isArray(value.beats) ? value.beats.filter(object).map((beat, index) => ({ id: text(beat.id, 160) || `${deskId}-beat-${index}`, title: text(beat.title || beat.text, 240), kind: ["scene", "beat", "social", "exploration", "combat", "pressure"].includes(beat.kind) ? beat.kind : "beat", detail: text(beat.detail, 12000), question: text(beat.question, 4000), minutes: Number.isFinite(Number(beat.minutes)) && beat.minutes != null ? Math.max(0, Math.min(1440, Math.round(Number(beat.minutes)))) : 30, done: Boolean(beat.done) })).filter(beat => beat.title) : [],
+      spotlights: Array.isArray(value.spotlights) ? value.spotlights.filter(object).map((item, index) => ({ id: text(item.id, 160) || `${deskId}-spotlight-${index}`, character: text(item.character, 200), opportunity: text(item.opportunity, 4000), ...PREP.provenanceFields(item) })).filter(item => item.character || item.opportunity) : [],
+      beats: Array.isArray(value.beats) ? value.beats.filter(object).map((beat, index) => ({ id: text(beat.id, 160) || `${deskId}-beat-${index}`, title: text(beat.title || beat.text, 240), kind: ["scene", "beat", "social", "exploration", "combat", "pressure"].includes(beat.kind) ? beat.kind : "beat", detail: text(beat.detail, 12000), question: text(beat.question, 4000), minutes: Number.isFinite(Number(beat.minutes)) && beat.minutes != null ? Math.max(0, Math.min(1440, Math.round(Number(beat.minutes)))) : 30, done: Boolean(beat.done), ...PREP.provenanceFields(beat) })).filter(beat => beat.title) : [],
       pinned: Array.isArray(value.pinned) ? value.pinned.filter(object).map(PREP.recordReference).filter(entry => entry.type && entry.name) : [],
       scratch: text(value.scratch, 12000),
       log: Array.isArray(value.log) ? value.log.filter(object).map((entry, index) => ({ id: text(entry.id, 160) || `${deskId}-log-${index}`, at: text(entry.at, 80) || new Date().toISOString(), text: text(entry.text, 8000) })).filter(entry => entry.text) : [],
-      clocks: Array.isArray(value.clocks) ? value.clocks.filter(object).map((clock, index) => ({ id: text(clock.id, 160) || `${deskId}-clock-${index}`, label: text(clock.label, 160), value: Math.max(0, Number(clock.value) || 0), max: Math.max(1, Math.min(20, Number(clock.max) || 4)) })).filter(clock => clock.label) : [],
-      revelations: Array.isArray(value.revelations) ? value.revelations.filter(object).map((item, index) => ({ id: text(item.id, 160) || `${deskId}-revelation-${index}`, text: text(item.text, 4000), checked: Boolean(item.checked) })).filter(item => item.text) : []
+      clocks: Array.isArray(value.clocks) ? value.clocks.filter(object).map((clock, index) => ({ id: text(clock.id, 160) || `${deskId}-clock-${index}`, label: text(clock.label, 160), value: Math.max(0, Number(clock.value) || 0), max: Math.max(1, Math.min(20, Number(clock.max) || 4)), ...PREP.provenanceFields(clock) })).filter(clock => clock.label) : [],
+      revelations: Array.isArray(value.revelations) ? value.revelations.filter(object).map((item, index) => ({ id: text(item.id, 160) || `${deskId}-revelation-${index}`, text: text(item.text, 4000), checked: Boolean(item.checked), ...PREP.provenanceFields(item) })).filter(item => item.text) : []
     };
   }
 
@@ -60,7 +60,7 @@
     Object.entries(sourceDrafts).forEach(([key, draft]) => {
       if (!object(draft)) return;
       const draftId = text(draft.id || key, 160) || id("reconcile");
-      reconciliations[draftId] = { id: draftId, deskId: text(draft.deskId, 160), status: ["draft", "applying", "applied", "discarded"].includes(draft.status) ? draft.status : "draft", recap: text(draft.recap, 12000), proposals: sanitizeProposals(draft.proposals || []), createdAt: text(draft.createdAt, 80) || new Date().toISOString(), appliedAt: text(draft.appliedAt, 80) || null, error: text(draft.error, 1000) || "" };
+      reconciliations[draftId] = { id: draftId, deskId: text(draft.deskId, 160), status: ["draft", "applying", "applied", "discarded"].includes(draft.status) ? draft.status : "draft", recap: text(draft.recap, 12000), proposals: sanitizeProposals(draft.proposals || []), createdAt: text(draft.createdAt, 80) || new Date().toISOString(), appliedAt: text(draft.appliedAt, 80) || null, error: text(draft.error, 1000) || "", ...(Array.isArray(draft.appliedProposalIds) ? { appliedProposalIds: [...new Set(draft.appliedProposalIds.map(value => text(value, 160)).filter(Boolean))].slice(0, 100) } : {}) };
     });
     return { schemaVersion: SCHEMA_VERSION, preps, desks, reconciliations };
   }
@@ -193,6 +193,7 @@
       approved.forEach(proposal => applyOne(next, proposal));
       nextDraft.status = "applied";
       nextDraft.appliedAt = now;
+      nextDraft.appliedProposalIds = approved.map(proposal => proposal.id);
       nextDraft.error = "";
       return next;
     } catch (error) {

@@ -12,7 +12,7 @@ function state(title) {
   };
 }
 
-async function temporaryStore(t) {
+async function temporaryStore(t, now = () => new Date("2026-06-27T12:00:00.000Z")) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "campaign-engine-test-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   return {
@@ -20,7 +20,7 @@ async function temporaryStore(t) {
     store: createWorkspaceStore({
       directory,
       appVersion: "9.9.9",
-      now: () => new Date("2026-06-27T12:00:00.000Z")
+      now
     })
   };
 }
@@ -124,6 +124,39 @@ test("imports legacy state files and creates a pre-import safety backup", async 
   assert.match(backups[0], /before-import/);
 });
 
+test("a saved continuity review survives desktop export and restore and still applies the selected edit", async t => {
+  const { directory, store } = await temporaryStore(t);
+  const prep = require("../session-prep.js"), workflow = require("../session-workflow.js"), continuity = require("../prep-continuity.js");
+  const campaign = { id: "continuing-campaign", title: "The River", sessions: [{ localId: "next", title: "The Tower", number: 2, upcoming: true }, { localId: "previous", title: "The Gate", number: 1, upcoming: false }], characters: [], quests: [], arcs: [] };
+  workflow.ensureWorkflow(campaign);
+  const sourcePrep = prep.ensurePrep(campaign, campaign.sessions[1]);
+  sourcePrep.scenes.push({ id: "unused", title: "The locked archive", kind: "exploration", minutes: 30, detail: "A chest waits below the stairs.", question: "Will the party enter?" });
+  const sourceDesk = workflow.startDesk(campaign, campaign.sessions[1]);
+  workflow.endDesk(campaign, sourceDesk.id);
+  const targetPrep = prep.ensurePrep(campaign, campaign.sessions[0]);
+  const review = continuity.buildReview(campaign, campaign.sessions[0]);
+  review.candidates[0].selected = true;
+  review.candidates[0].after.detail = "The chest is rising with the flood.";
+  targetPrep.continuityReview = review;
+  const originalDesk = structuredClone(sourceDesk);
+  await store.initializeWorkspace({ state: { activeCampaignId: campaign.id, campaigns: [campaign] } });
+  const exportPath = path.join(directory, "continuity-backup.json");
+  await store.exportWorkspace(exportPath);
+  const destination = createWorkspaceStore({ directory: path.join(directory, "continuity-restore"), appVersion: "9.9.10" });
+  await destination.importWorkspace(exportPath);
+  const restored = (await destination.loadWorkspace()).state.campaigns[0];
+  restored.sessionWorkflow = workflow.normalizeWorkflow(restored.sessionWorkflow);
+  const restoredReview = prep.findPrepForSession(restored, restored.sessions[0]).continuityReview;
+  assert.deepEqual(restoredReview, review);
+  assert.equal(continuity.validateReview(restored, restored.sessions[0], restoredReview).valid, true);
+  const selection = restoredReview.candidates.find(candidate => candidate.selected);
+  const result = continuity.applyReview(restored, restored.sessions[0], restoredReview, [{ id: selection.id, accepted: true, after: selection.after }]);
+  const carried = prep.findPrepForSession(result.campaign, result.campaign.sessions[0]).scenes[0];
+  assert.equal(carried.detail, "The chest is rising with the flood.");
+  assert.deepEqual(carried.provenance, selection.provenance);
+  assert.deepEqual(result.campaign.sessionWorkflow.desks[sourceDesk.id], originalDesk);
+});
+
 test("replaces the demo workspace with a safety backup", async t => {
   const { store } = await temporaryStore(t);
   await store.initializeWorkspace({ state: state("Sample campaign"), archivist: {} });
@@ -157,4 +190,183 @@ test("rejects files without campaign records", async t => {
   await fs.writeFile(invalidPath, JSON.stringify({ hello: "world" }), "utf8");
 
   await assert.rejects(() => store.importWorkspace(invalidPath), /valid Campaign Engine workspace/);
+});
+
+test("a future primary schema blocks load and writes without replacing either workspace file", async t => {
+  const { directory, store } = await temporaryStore(t);
+  await store.initializeWorkspace({ state: state("Previous supported workspace") });
+  await store.saveState(state("Latest supported workspace"));
+  const previousPath = path.join(directory, "campaign-engine-workspace.previous.json");
+  const previousBytes = await fs.readFile(previousPath);
+  const futureBytes = Buffer.from(JSON.stringify({ schemaVersion: 999, state: state("Future workspace"), futureFeature: { preserve: true } }, null, 3));
+  await fs.writeFile(store.workspacePath, futureBytes);
+  const supportedImport = path.join(directory, "supported-import.json");
+  await fs.writeFile(supportedImport, JSON.stringify({ schemaVersion: 1, state: state("Replacement") }));
+  const actions = [
+    () => store.loadWorkspace(),
+    () => store.saveState(state("Attempted edit")),
+    () => store.initializeWorkspace({ state: state("Attempted initialization") }),
+    () => store.replaceWorkspace({ state: state("Attempted replacement") }),
+    () => store.importWorkspace(supportedImport),
+    () => store.createSafetyBackup()
+  ];
+  for (const action of actions) {
+    await assert.rejects(action, { code: "UNSUPPORTED_WORKSPACE_SCHEMA" });
+    assert.deepEqual(await fs.readFile(store.workspacePath), futureBytes);
+    assert.deepEqual(await fs.readFile(previousPath), previousBytes);
+  }
+  assert.deepEqual(await fs.readdir(store.backupDirectory), []);
+  assert.equal((await fs.readdir(directory)).some(name => name.includes(".corrupt-") || name.endsWith(".tmp")), false);
+});
+
+test("future imports and replacements preserve the source and current workspace bytes", async t => {
+  const { directory, store } = await temporaryStore(t);
+  await store.initializeWorkspace({ state: state("Before rejected import") });
+  await store.saveState(state("Current supported data"));
+  const original = await fs.readFile(store.workspacePath);
+  const previousPath = path.join(directory, "campaign-engine-workspace.previous.json");
+  const previous = await fs.readFile(previousPath);
+  const incoming = { schemaVersion: 999, state: state("Needs a newer app"), archivist: { campaigns: {} } };
+  const incomingPath = path.join(directory, "future-import.json");
+  const incomingBytes = Buffer.from(JSON.stringify(incoming, null, 4) + "\n");
+  await fs.writeFile(incomingPath, incomingBytes);
+
+  await assert.rejects(() => store.importWorkspace(incomingPath), { code: "UNSUPPORTED_WORKSPACE_SCHEMA" });
+  await assert.rejects(() => store.replaceWorkspace(incoming), /requires a newer Campaign Engine/);
+  assert.deepEqual(await fs.readFile(incomingPath), incomingBytes);
+  assert.deepEqual(await fs.readFile(store.workspacePath), original);
+  assert.deepEqual(await fs.readFile(previousPath), previous);
+  assert.deepEqual(await fs.readdir(store.backupDirectory), []);
+});
+
+test("a future previous file cannot be downgraded during corrupt-primary recovery", async t => {
+  const { directory, store } = await temporaryStore(t);
+  await store.initializeWorkspace({ state: state("Supported") });
+  const damaged = Buffer.from("{broken primary");
+  const previous = Buffer.from(JSON.stringify({ schemaVersion: 2, state: state("Future previous data") }));
+  const previousPath = path.join(directory, "campaign-engine-workspace.previous.json");
+  await fs.writeFile(store.workspacePath, damaged);
+  await fs.writeFile(previousPath, previous);
+  await assert.rejects(() => store.loadWorkspace(), { code: "UNSUPPORTED_WORKSPACE_SCHEMA" });
+  assert.deepEqual(await fs.readFile(store.workspacePath), damaged);
+  assert.deepEqual(await fs.readFile(previousPath), previous);
+});
+
+test("save, import, and replace preserve a future previous file beside a supported primary", async t => {
+  const { directory, store } = await temporaryStore(t);
+  await store.initializeWorkspace({ state: state("Supported primary") });
+  const primaryBytes = await fs.readFile(store.workspacePath);
+  const previousPath = path.join(directory, "campaign-engine-workspace.previous.json");
+  const previousBytes = Buffer.from(JSON.stringify({ schemaVersion: 999, state: state("Future previous workspace"), futureOnlyData: { notes: ["Preserve these original bytes"] } }, null, 4) + "\n");
+  await fs.writeFile(previousPath, previousBytes);
+  const incomingPath = path.join(directory, "supported-incoming.json");
+  const incomingBytes = Buffer.from(JSON.stringify({ schemaVersion: 1, state: state("Supported replacement") }));
+  await fs.writeFile(incomingPath, incomingBytes);
+
+  assert.equal((await store.loadWorkspace()).state.campaigns[0].title, "Supported primary");
+  const actions = [
+    () => store.saveState(state("Attempted save")),
+    () => store.importWorkspace(incomingPath),
+    () => store.replaceWorkspace({ state: state("Attempted replacement") })
+  ];
+  for (const action of actions) {
+    await assert.rejects(action, error => {
+      assert.equal(error.code, "UNSUPPORTED_WORKSPACE_SCHEMA");
+      assert.match(error.message, /previous workspace backup/i);
+      assert.match(error.message, /safe location|compatible|newer/i);
+      return true;
+    });
+    assert.deepEqual(await fs.readFile(store.workspacePath), primaryBytes);
+    assert.deepEqual(await fs.readFile(previousPath), previousBytes);
+    assert.deepEqual(await fs.readFile(incomingPath), incomingBytes);
+  }
+  assert.deepEqual(await fs.readdir(store.backupDirectory), []);
+  assert.equal((await fs.readdir(directory)).some(name => name.endsWith(".tmp")), false);
+});
+
+test("legacy and current workspace formats round-trip without changing nested campaign data", async t => {
+  const { directory } = await temporaryStore(t);
+  const expectedState = state("Persistent campaign");
+  expectedState.campaigns[0].sessionWorkflow = { schemaVersion: 2, preps: { plan: { id: "plan", opening: "Keep this plan" } } };
+  const archivist = { importedAt: "2026-06-01", campaigns: { "campaign-1": { notes: ["Original detail"] } } };
+  const fixtures = [
+    { name: "bare-legacy", value: expectedState, details: {} },
+    { name: "unversioned", value: { state: expectedState, archivist }, details: archivist },
+    { name: "version-zero", value: { schemaVersion: 0, state: expectedState, archivist }, details: archivist },
+    { name: "version-one", value: { schemaVersion: 1, state: expectedState, archivist }, details: archivist }
+  ];
+  for (const fixture of fixtures) {
+    const incomingPath = path.join(directory, `${fixture.name}.json`);
+    await fs.writeFile(incomingPath, JSON.stringify(fixture.value));
+    const destinationDirectory = path.join(directory, fixture.name);
+    const destination = createWorkspaceStore({ directory: destinationDirectory, appVersion: "9.9.9" });
+    await destination.importWorkspace(incomingPath);
+    await destination.saveState(expectedState);
+    const exportedPath = path.join(directory, `${fixture.name}-export.json`);
+    await destination.exportWorkspace(exportedPath);
+    const exported = JSON.parse(await fs.readFile(exportedPath, "utf8"));
+    assert.equal(exported.schemaVersion, 1);
+    assert.deepEqual(exported.state, expectedState, fixture.name);
+    assert.deepEqual(exported.archivist, fixture.details, fixture.name);
+    const reopened = createWorkspaceStore({ directory: destinationDirectory, appVersion: "10.0.0" });
+    assert.deepEqual((await reopened.loadWorkspace()).state, expectedState, fixture.name);
+  }
+});
+
+test("backup retention keeps the twelve newest creation times across different reasons", async t => {
+  let current = new Date("2026-06-01T00:00:00.000Z");
+  const { store } = await temporaryStore(t, () => current);
+  await store.initializeWorkspace({ state: state("The workspace edit time stays unchanged") });
+  const created = [];
+  for (let index = 0; index < 14; index++) {
+    current = new Date(Date.UTC(2026, 5, index + 2));
+    const reason = index % 2 ? "before-import" : "manual";
+    const backupPath = await store.createSafetyBackup(reason);
+    const saved = JSON.parse(await fs.readFile(backupPath, "utf8"));
+    assert.equal(saved.backupCreatedAt, current.toISOString());
+    assert.equal(saved.savedAt, "2026-06-01T00:00:00.000Z");
+    // Retention must follow stored creation time even if filesystem times disagree.
+    await fs.utimes(backupPath, new Date("2030-01-01"), new Date("2030-01-01"));
+    created.push(path.basename(backupPath));
+  }
+  assert.deepEqual((await fs.readdir(store.backupDirectory)).sort(), created.slice(-12).sort());
+});
+
+test("legacy backup chronology is recovered across reason prefixes and unsafe-to-prune files are retained", async t => {
+  const { store } = await temporaryStore(t, () => new Date("2026-06-20T00:00:00.000Z"));
+  await store.initializeWorkspace({ state: state("Current campaign") });
+  const protectedFiles = {
+    "campaign-engine-damaged-2020-01-01T00-00-00-000Z.json": "{damaged",
+    "campaign-engine-future-2020-01-01T00-00-00-000Z.json": JSON.stringify({ schemaVersion: 999, state: state("Future backup") }),
+    "personal-copy.json": JSON.stringify({ schemaVersion: 1, state: state("Personal copy") })
+  };
+  for (const [name, content] of Object.entries(protectedFiles)) await fs.writeFile(path.join(store.backupDirectory, name), content);
+  const legacyNames = [];
+  for (let index = 0; index < 13; index++) {
+    const day = String(index + 1).padStart(2, "0");
+    const reason = index < 2 ? "zz-old-manual" : "aa-before-import";
+    const name = `campaign-engine-${reason}-2026-06-${day}T00-00-00-000Z.json`;
+    const backupPath = path.join(store.backupDirectory, name);
+    await fs.writeFile(backupPath, JSON.stringify({ schemaVersion: 1, savedAt: "2026-01-01T00:00:00.000Z", state: state(`Legacy ${index}`) }));
+    await fs.utimes(backupPath, new Date("2030-01-01"), new Date("2030-01-01"));
+    legacyNames.push(name);
+  }
+  const latest = await store.createSafetyBackup("before-session-reconciliation");
+  const expected = [...Object.keys(protectedFiles), ...legacyNames.slice(2), path.basename(latest)].sort();
+  assert.deepEqual((await fs.readdir(store.backupDirectory)).sort(), expected);
+  for (const [name, content] of Object.entries(protectedFiles)) assert.equal(await fs.readFile(path.join(store.backupDirectory, name), "utf8"), content);
+});
+
+test("same-timestamp backups never overwrite an earlier snapshot", async t => {
+  const { store } = await temporaryStore(t);
+  await store.initializeWorkspace({ state: state("First snapshot") });
+  const firstPath = await store.createSafetyBackup("manual");
+  const firstBytes = await fs.readFile(firstPath);
+  await store.saveState(state("Second snapshot"));
+  const secondPath = await store.createSafetyBackup("manual");
+  const concurrent = await Promise.all([store.createSafetyBackup("manual"), store.createSafetyBackup("manual")]);
+  assert.equal(new Set([firstPath, secondPath, ...concurrent]).size, 4);
+  assert.deepEqual(await fs.readFile(firstPath), firstBytes);
+  assert.equal(JSON.parse(await fs.readFile(secondPath, "utf8")).state.campaigns[0].title, "Second snapshot");
+  assert.equal((await fs.readdir(store.backupDirectory)).length, 4);
 });

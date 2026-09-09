@@ -25,8 +25,24 @@ The live desk keeps its own progress. Resuming it preserves checked scenes, disc
 
 Choose **End session** when play has finished, then review the Consequence Inbox. Approve the campaign changes you want to apply. Preparation is GM material and remains outside Player preview.
 
+## Bring the story into the next session
+
+From the ended desk or Consequence Inbox, use **Prepare the next session** to choose an upcoming session or create one. You can also open any session's prep and choose **Bring forward**.
+
+1. Choose the source under **Review from**. Completed sessions supply their recorded live progress. Older recorded sessions supply saved notes and previous preparation, with unknown play progress clearly identified. **Current campaign quests & story arcs** offers situations drawn from active records.
+2. Read the source recap, working notes, log, and available applied consequences. Older consequence batches may lack an exact application audit; their limitations appear with the evidence.
+3. Review suggestions by category. Open **Review & edit the proposed copy** to adjust a scene, revelation, clock, spotlight, or task for the coming session.
+4. Select **Bring forward** on each item you want. Suggestions begin unselected; existing carried copies are identified.
+5. Choose **Add selected to prep**. The selected copies append to the target plan with their original source attached. Existing prep and live-session progress keep their saved state.
+
+Your review selections and edits save with the target prep. Return through **Bring forward** after reopening the app to resume. If the source material, target plan, or active campaign threads change during review, refresh the review before applying it. **Refresh review** rebuilds suggestions and clears draft selections and edits; a confirmation protects work you have changed. Previously added prep remains available.
+
+Source disclosures in prep show where carried material came from, following stable identities when sessions are renamed. The GM Markdown packet includes those attributions. Missing source records are identified explicitly. Carried material retains its original identity through later sessions so reviewing the same source again can recognize an existing copy.
+
 ## Keep preparation recoverable
 
 Preparation travels with the full campaign workspace, including its backups and an approved Archivist refresh. Stable session references keep the plan and desk attached when the session is renamed. Legacy references are recovered when the corresponding session can be identified uniquely.
 
 Check the save status before closing. Use the workspace backup/export controls for a complete recovery copy; the Markdown packet is a reading copy of the selected session.
+
+Desktop safety backups retain the twelve newest supported copies by backup creation time. Older copies use their filename timestamp where available. Unreadable and unsupported-version files are preserved for manual recovery, so the folder may contain more than twelve files. A workspace from a newer schema requires a compatible app version; opening or importing it preserves the original bytes.

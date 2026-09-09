@@ -31,7 +31,7 @@ The code audit began from version **1.4.2**. These capabilities are present in t
 | Credentials and distribution | Windows-encrypted credential storage in [electron/credential-store.cjs](electron/credential-store.cjs); installer and portable release workflow in [.github/workflows/windows-release.yml](.github/workflows/windows-release.yml); public snapshot exclusion and packaged-asset checks in [scripts/verify-package.mjs](scripts/verify-package.mjs). |
 | Player knowledge and Foundry | Local player-preview filtering in [campaign-knowledge.js](campaign-knowledge.js); explicit Foundry actions in [foundry-live-actions.js](foundry-live-actions.js). Current integration limitations are recorded in [RELEASES.md](RELEASES.md). |
 
-## Active milestone: v1.5.0 — Session Prep workspace
+## Delivered milestone: v1.5.0 — Session Prep workspace
 
 **Status: implemented in v1.5.0.** This milestone turns an upcoming session into a coherent preparation workspace with a deliberate handoff to live play. The acceptance gates below define its verification; [SESSION_PREP.md](SESSION_PREP.md) explains the daily workflow.
 
@@ -49,38 +49,48 @@ Acceptance gates:
 6. Markdown output follows scene order, contains the relevant preparation, and remains readable outside Campaign Engine.
 7. Browser interaction checks cover editing, reordering, reload, export, and prep-to-play handoff. Domain tests cover identity, normalization, persistence, and repeat-start behavior. Release verification covers the packaged runtime and public data exclusion.
 
+## Active milestone: v1.6.0 — Continuity-aware preparation
+
+**Status: implemented in v1.6.0.** A saved Bring forward review assembles proposed material from earlier completed play or recorded session notes, plus current active quests and story arcs. The GM selects and edits individual copies before appending them to the target prep. Completed live scenes and revealed clues stay completed; earlier plans without a live desk state that play progress is unknown. Applied consequences use the exact executed proposal IDs, with explicit limitations for older batches.
+
+Ended desks and the Consequence Inbox let a GM choose an upcoming session or create the next one, then review material for that plan. Original source identity travels with carried rows through later prep and live play. Existing target prep, campaign records, and live progress remain intact. Source attribution is visible in prep and GM packets. A saved review retains selections and edits until the GM applies or refreshes it.
+
+Acceptance gates:
+
+1. A GM can end a session, review consequences, and assemble the following session from selected material without re-entering it.
+2. The review uses actual live completion and clock values; recorded-only material clearly states its limited play evidence.
+3. Repeated carry-forward identifies existing copies, including material carried through several sessions. Unselected suggestions remain unapplied.
+4. Source links survive stable-identity renames, and removed sources cannot silently attach to same-name replacements.
+5. Material source, target, or active-thread changes invalidate a saved review. Refresh is explicit and applying preserves campaign canon and existing live state.
+6. Saved reviews and source metadata survive normalization, restart, export, and restore. Browser checks cover explicit selection, editing, refresh, duplicate handling, narrow layouts, and offline use.
+7. Desktop recovery rejects future workspace schemas without changing originals and retains the newest supported backup copies across reason prefixes.
+
 ## Ordered next milestones
 
-### 1. Continuity-aware preparation
-
-Build the next session from the last session's actual events, unresolved clues, unused scenes, active pressures, and PC goals. Present carry-forward candidates with their source session or record and a reason for relevance. The GM selects and edits the candidates; approved consequences supply established changes.
-
-**Exit gate:** a GM can end a session, review consequences, and assemble the following session from selected material without re-entering it. Repeated carry-forward avoids duplicates. Rejected suggestions remain unapplied, and source links survive record edits.
-
-### 2. Explicit player-safe outputs
+### 1. Explicit player-safe outputs
 
 Create selected recaps, handouts, and player briefings from material approved for players. Provide a preview and an explicit export or publish action. Keep the full GM packet available separately.
 
 **Exit gate:** tests and manual inspection confirm that GM-only records, private scene notes, unrevealed clues, hidden relationships, and linked secret text stay out of each player output. The output shows exactly what will be shared. Current local player preview is a presentation feature; hosted player access would need authorization at the server boundary.
 
-### 3. Reusable and adaptable planning templates
+### 2. Reusable and adaptable planning templates
 
 Let GMs save and adapt useful session structures: investigation, social event, exploration, dungeon expedition, heist, and downtime. Templates contain optional prompts, scene structures, task defaults, and timing suggestions. They can be edited for the campaign and system without creating forced plot outcomes.
 
 **Exit gate:** applying a template is previewable, adds a distinct editable plan, preserves existing work, and retains no source campaign's private records or identity links. GMs running at least three different systems can complete the same core planning workflow; system-specific features clearly state their coverage.
 
-### 4. Trust, onboarding, performance, and beta readiness
+### 3. Trust, onboarding, performance, and beta readiness
 
 Reliability work proceeds alongside the earlier milestones. This is the gate for inviting a broader pilot and making a commercial commitment.
 
 | Area | Concrete work and acceptance gate |
 | --- | --- |
 | First use | Offer a clear path to create a campaign, import a backup, or explore an optional example. Support a valid empty workspace. Sample replacement must account for edits, rather than identifying untouched examples only by their campaign IDs. Current entry points are `initialState`, `hydrateCampaignState`, and `isDemoWorkspace`. |
-| Schema and import | Validate identities and nested data before replacing active state; reject unsupported future schema versions; add explicit migrations with recoverable originals. The audited `normalizeWorkspace` accepted schema version 999 and relabeled it as version 1, including a campaign with no ID. |
-| Recovery | Exercise corrupt-primary recovery, failed writes, interrupted saves, restore, and upgrades with representative workspaces. Retain backups by saved time: the current reason-prefixed filename sort does not guarantee the newest twelve files. Make recovery reachable through the UI. |
+| Schema and import | Future workspace schemas are rejected in v1.6.0, including during corrupt-primary recovery. Filesystem tests preserve original, previous, and imported bytes. Identity and nested-data validation, explicit migrations, and empty-workspace support remain to complete; the existing validator still permits a campaign without an ID. |
+| Recovery | v1.6.0 retains the twelve newest supported copies by backup creation time, with legacy timestamp fallback and unique same-time filenames. Unreadable and future-schema copies are preserved. Continue failed-write, interrupted-save, restore, and upgrade exercises with representative workspaces, and make recovery reachable through the UI. |
 | Large campaigns | Measure startup, search, editing, save latency, and restore with documented campaign sizes and PDF libraries. Browser storage currently writes the full workspace to `localStorage`; establish supported limits and move larger libraries to a storage tier suited to them before promising scale. |
 | Desktop security | Add and verify a Content Security Policy, navigation restrictions, and sender validation for privileged IPC. Preserve the existing sandbox, context isolation, disabled Node integration, encrypted credentials, and restricted external-link handling. Review imported content and custom MCP command boundaries. |
-| Release assurance | Run appropriate checks on pull requests as well as releases; verify installation, upgrade, rollback, portable updates, and packaged assets. Establish a signed distribution process. The inspected local 1.4.2 unpacked executable reported `NotSigned`; signing hooks exist in CI, while the published artifact's signature was not checked in this audit. |
+| Release assurance | Run appropriate checks on pull requests as well as releases; verify installation, upgrade, rollback, portable updates, and packaged assets. Establish a signed distribution process. The downloaded v1.5.0 portable release reported `NotSigned`; signing hooks exist in CI. |
 | Supportability | Provide actionable errors and an explicit diagnostic export that excludes credentials and campaign content by default. Document supported operating systems, integration versions, recovery steps, and known failures. Check keyboard operation, readable layouts, and save/error announcements. |
 
 Architecture changes should follow these needs. The existing pure data modules are useful seams for extracting preparation, import validation, and export logic from the large renderer scripts. A framework rewrite has no acceptance value by itself.

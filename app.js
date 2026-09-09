@@ -1480,11 +1480,11 @@ function render() {
   ).join("");
   if (currentView.startsWith("system-") && !systemViews.some(view => view.id === currentView)) currentView = "dashboard";
   updateCampaignChrome();
-  document.querySelector("#breadcrumb").textContent = `CAMPAIGN / ${currentView.toUpperCase()}`;
+  document.querySelector("#breadcrumb").textContent = `CAMPAIGN / ${(currentView === "prep-continuity" ? "Session continuity" : currentView.replace(/-/g, " ")).toUpperCase()}`;
   nav.querySelectorAll(".nav-link").forEach(button => button.classList.toggle("active", button.dataset.view === currentView));
   settingsButton.classList.toggle("active", ["settings", "systems", "foundry", "archivist", "updates"].includes(currentView));
   const featureView = (name, fallback) => typeof globalThis[name] === "function" ? globalThis[name] : fallback;
-  const views = { dashboard: dashboardView, sessions: sessionsView, "session-prep": sessionPrepView, "session-desk": sessionDeskView, reconciliation: reconciliationView, characters: c => recordView("characters", c), sheets: sheetsView, builder: c => featureView("builderStudioView", () => header("Builder studio", "RULES-AWARE CREATION", "Loading builder tools…"))(c), sources: c => featureView("sourcesFeatureView", () => header("Rulebooks & PDFs", "LOCAL REFERENCE LIBRARY", "Loading source tools…"))(c), quests: c => recordView("quests", c), arcs: arcsView, connections: connectionsView, locations: c => recordView("locations", c), journal: journalView, settings: settingsView, systems: c => featureView("systemsFeatureView", () => header("Game systems", "RULES LIBRARY", "Loading system tools…"))(c), copilot: copilotView, foundry: foundryView, archivist: archivistView, updates: desktopUpdateView, detail: entityDetailView, history: historyView, "sync-review": archivistReviewView, "source-detail": referenceDetailView };
+  const views = { dashboard: dashboardView, sessions: sessionsView, "session-prep": sessionPrepView, "prep-continuity": continuityView, "session-desk": sessionDeskView, reconciliation: reconciliationView, characters: c => recordView("characters", c), sheets: sheetsView, builder: c => featureView("builderStudioView", () => header("Builder studio", "RULES-AWARE CREATION", "Loading builder tools…"))(c), sources: c => featureView("sourcesFeatureView", () => header("Rulebooks & PDFs", "LOCAL REFERENCE LIBRARY", "Loading source tools…"))(c), quests: c => recordView("quests", c), arcs: arcsView, connections: connectionsView, locations: c => recordView("locations", c), journal: journalView, settings: settingsView, systems: c => featureView("systemsFeatureView", () => header("Game systems", "RULES LIBRARY", "Loading system tools…"))(c), copilot: copilotView, foundry: foundryView, archivist: archivistView, updates: desktopUpdateView, detail: entityDetailView, history: historyView, "sync-review": archivistReviewView, "source-detail": referenceDetailView };
   systemViews.forEach(view => {
     views[view.id] = campaignValue => featureView(
       view.renderer,
@@ -2803,6 +2803,16 @@ function deskPinMarkup(campaign, entry) {
   }
   return `<div class="desk-pin-reference"><button type="button" ${deskEntryAction(entry)}><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small><strong>${esc(entry.name)}</strong></button>${remove}</div>`;
 }
+function followingSessionOptions(campaign, desk) {
+  const source = sessionForDesk(campaign, desk);
+  return (campaign.sessions || []).filter(session => session !== source && session.upcoming && (!Number(source?.number) || !Number(session.number) || Number(session.number) > Number(source.number)) && SESSION_WORKFLOW.findDeskForSession(campaign, session)?.status !== "ended").sort((a, b) => Number(a.number || 0) - Number(b.number || 0));
+}
+function followingSessionPrepMarkup(campaign, desk) {
+  if (playerPreviewActive() || desk?.status !== "ended" || !window.CampaignPrepContinuity) return "";
+  const options = followingSessionOptions(campaign, desk);
+  const nextNumber = Math.max(0, ...(campaign.sessions || []).map(session => Number(session.number) || 0)) + 1;
+  return `<section class="card desk-panel following-session-prep"><p class="eyebrow">CONTINUE THE CAMPAIGN</p><h2>Prepare the next session</h2><p>Review unfinished scenes, unrevealed clues, and active pressures. Choose the material to add to the next plan.</p><form data-following-session-prep="${esc(desk.id)}" data-campaign-id="${esc(campaign.id)}"><label>Next session<select name="session" data-following-session-choice>${options.map(session => `<option value="${esc(sessionActionRef(session))}">Session ${esc(session.number || "—")} · ${esc(session.title)}</option>`).join("")}<option value="new">Create a new session</option></select></label><label data-following-session-title ${options.length ? "hidden" : ""}>New session title<input name="title" maxlength="200" value="Session ${nextNumber}" ${options.length ? "disabled" : "required"} /></label><button class="secondary-button" type="submit">${options.length ? "Review material" : "Create session & review"} <span>→</span></button></form></section>`;
+}
 function sessionDeskView(campaign) {
   if (playerPreviewActive()) return header("Session desk is GM only", "PLAYER PREVIEW", "Return to GM view to run this session.");
   const desk = activeDesk(campaign);
@@ -2818,6 +2828,7 @@ function sessionDeskView(campaign) {
   return `<div class="session-desk-page">
     ${header(session?.title || desk.sessionRef.name, desk.status === "active" ? "LIVE SESSION DESK" : "SESSION COMPLETE", desk.status === "active" ? "Run the table from one focused workspace. Everything here saves locally." : "This session is complete. Review its proposed consequences before changing canon.", `<div class="header-actions"><button class="secondary-button" type="button" data-view-jump="sessions">Sessions</button>${desk.status === "active" ? `<button class="danger-button" type="button" data-end-session>End session</button>` : `<button class="primary-button" type="button" data-open-reconciliation="${esc(desk.id)}">Review consequences <span>→</span></button>`}</div>`)}
     ${ending}
+    ${followingSessionPrepMarkup(campaign, desk)}
     ${desk.opening ? `<section class="card desk-panel desk-prep-opening"><p class="eyebrow">OPENING SITUATION</p><p class="desk-prep-copy">${esc(desk.opening)}</p></section>` : ""}
     ${desk.spotlights?.length ? `<section class="card desk-panel desk-prep-opening"><p class="eyebrow">CHARACTER SPOTLIGHTS</p>${desk.spotlights.map(item => `<p class="desk-prep-copy"><b>${esc(item.character)}:</b> ${esc(item.opportunity)}</p>`).join("")}</section>` : ""}
     <div class="desk-layout">
@@ -2854,6 +2865,7 @@ function manualProposalOptions(campaign) {
   }))).join("");
 }
 function reconciliationView(campaign) {
+  if (playerPreviewActive()) return playerPreviewRestrictedView();
   const draft = activeReconciliation(campaign);
   if (!draft) return `<div class="empty-state"><h2>No consequence draft is open.</h2><button class="primary-button" type="button" data-view-jump="sessions">Back to sessions</button></div>`;
   const desk = campaign.sessionWorkflow?.desks?.[draft.deskId];
@@ -2863,6 +2875,7 @@ function reconciliationView(campaign) {
   const aiReady = Boolean(copilot.endpoint && copilot.model && copilotToken);
   return `${header(session?.title || "Session consequences", "CONSEQUENCE INBOX", "Evidence first. Nothing changes campaign canon until you approve and apply it.", `<div class="header-actions"><button class="secondary-button" type="button" data-open-session-desk="${esc(desk?.id || "")}">Session log</button><button class="primary-button" type="button" data-apply-reconciliation ${selectedCount ? "" : "disabled"}>Apply approved (${selectedCount})</button></div>`)}
     ${draft.error ? `<div class="reconcile-error" role="alert"><strong>The draft is still safe.</strong><span>${esc(draft.error)}</span></div>` : ""}
+    ${followingSessionPrepMarkup(campaign, desk)}
     <div class="reconciliation-layout">
       <main>
         <section class="card recap-editor"><div class="section-title"><div><p class="eyebrow">RECAP DRAFT</p><h2>What happened</h2></div><span class="save-hint" data-save-status>Saved</span></div><textarea data-recap-draft rows="9" maxlength="12000">${esc(draft.recap)}</textarea></section>
@@ -2923,6 +2936,14 @@ root.addEventListener("click", async event => {
     if (playerPreviewActive()) return;
     const session = sessionFromAction(campaign, prepButton.dataset.openSessionPrep);
     if (session) openSessionPrep(campaign, session);
+    return;
+  }
+  const continuityButton = event.target.closest("[data-open-prep-continuity]");
+  if (continuityButton) {
+    event.stopImmediatePropagation();
+    if (playerPreviewActive()) return;
+    const session = sessionFromAction(campaign, continuityButton.dataset.openPrepContinuity);
+    if (session) openContinuityReview(campaign, session);
     return;
   }
   const start = event.target.closest("[data-start-session-desk]");
@@ -3199,9 +3220,40 @@ root.addEventListener("input", event => {
   root.querySelectorAll(".record").forEach(record => record.style.display = record.innerText.toLowerCase().includes(term) ? "grid" : "none");
   root.querySelectorAll("[data-character-group]").forEach(group => group.style.display = [...group.querySelectorAll(".record")].some(record => record.style.display !== "none") ? "grid" : "none");
 });
+root.addEventListener("change", event => {
+  if (!event.target.matches("[data-following-session-choice]")) return;
+  const form = event.target.form;
+  const creating = event.target.value === "new";
+  form.querySelector("[data-following-session-title]").hidden = !creating;
+  form.elements.title.disabled = !creating;
+  form.elements.title.required = creating;
+  form.querySelector('[type="submit"]').textContent = creating ? "Create session & review →" : "Review material →";
+});
 root.addEventListener("submit", async event => {
   const campaign = activeCampaign();
   const desk = activeDesk(campaign);
+  if (event.target.matches("[data-following-session-prep]")) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const form = event.target;
+    if (playerPreviewActive() || form.dataset.campaignId !== campaign.id) return;
+    const source = campaign.sessionWorkflow?.desks?.[form.dataset.followingSessionPrep];
+    if (source?.status !== "ended") return;
+    let target;
+    if (form.elements.session.value === "new") {
+      const title = form.elements.title.value.trim().slice(0, 200);
+      if (!title) { form.elements.title.focus(); return; }
+      const number = Math.max(0, ...(campaign.sessions || []).map(session => Number(session.number) || 0)) + 1;
+      target = { localId: SESSION_PREP.createId("local-session"), title, number, date: "TBD", recap: "", directions: [], tags: [], knowledge: "gm", upcoming: true, source: "manual" };
+      campaign.sessions.unshift(target);
+      campaign.nextSession = { number, date: "TBD", title, prep: "Preparing the next session" };
+    } else {
+      target = sessionFromAction(campaign, form.elements.session.value);
+      if (!followingSessionOptions(campaign, source).includes(target)) return;
+    }
+    openContinuityReview(campaign, target, { sourceDeskId: source.id });
+    return;
+  }
   if (event.target.matches("[data-foundry-live-form]")) {
     event.preventDefault();
     event.stopImmediatePropagation();
