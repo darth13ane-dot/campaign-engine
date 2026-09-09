@@ -2,7 +2,7 @@
 
 Campaign Engine should help a GM turn an ongoing campaign into a playable next session, run that session with the right information close at hand, and carry its consequences into future preparation. Its first audience is GMs running continuing campaigns across multiple tabletop systems.
 
-The priority is a complete preparation and session-planning workflow. A paid product is a later possibility, conditional on demonstrated usefulness, reliability, and demand. This roadmap sets the product order; existing Foundry work remains a supporting integration track. Dates in the older [release schedule](RELEASE_SCHEDULE.md) do not override these acceptance gates.
+The priority is a complete preparation and session-planning workflow that complements Archivist AI. A paid product is a later possibility, conditional on demonstrated usefulness, reliability, demand, and a clear complementary role. This roadmap sets the product order; existing Foundry work remains a supporting integration track. Dates in the older [release schedule](RELEASE_SCHEDULE.md) do not override these acceptance gates.
 
 ## Product principles
 
@@ -16,6 +16,22 @@ The priority is a complete preparation and session-planning workflow. A paid pro
 ### Positioning hypothesis
 
 Established tools already cover substantial campaign work: [LegendKeeper's official feature list](https://www.legendkeeper.com/features/) includes offline support, permissions, search, templates, maps, timelines, and boards; [World Anvil's GM workflow](https://www.worldanvil.com/learn/workflows/gm-workflow) describes planning, running, and reporting on sessions. These sources were checked on September 9, 2026. Our inference is that feature count or AI availability alone does not demonstrate a compelling reason to switch. The proposition to test is **turn established campaign knowledge into runnable preparation quickly, preserve player choices and consequences, and keep campaign ownership dependable**.
+
+## Complementary role alongside Archivist AI
+
+The user explicitly wants to avoid excessive competition with Archivist AI. Its current offering already includes automatic campaign records, summaries, campaign questions and prep assistance, private journals, relationship views, and player handouts. [Official feature description, checked September 9, 2026](https://www.rpgarchivist.io/features). Its [official MCP connector](https://www.rpgarchivist.io/mcp) supports campaign-data access from external assistants, including session-preparation workflows. This is an integration opportunity; these sources do not establish a partnership or endorsement.
+
+Campaign Engine's development focus is **a practical GM preparation and session-running workspace**: flexible scene plans, time budgets, preparation checks, adaptable structures, live table controls, and deliberate carry-forward of what still needs attention. Imported Archivist records supply campaign context, keep their source identities, and remain distinct from unapproved planning drafts.
+
+Apply these product boundaries to upcoming work:
+
+- Prioritize features that help a GM assemble, adapt, run, or evaluate a playable session using selected campaign knowledge.
+- Let Archivist supply recording ingestion, transcription, automatic campaign extraction, and broad historical recall for connected users. Extend supported integration paths and source attribution when useful to preparation.
+- Keep existing records, journals, search, and handout exports as supporting workflow capabilities. Evaluate expansion against the preparation task; a parallel automated campaign archive, general lore chatbot, public campaign gallery, and cast-analysis service are outside the current roadmap.
+- Keep manual/offline preparation and data recovery complete for GMs who use another source or bring their own notes. Connecting Archivist should increase the value of the combined workflow.
+- Before a commercial offering, validate demand for the preparation workflow, review applicable integration and content terms, and investigate cooperation where useful. Describe integrations accurately and keep provider accounts, costs, and ownership clear.
+
+The product hypothesis is that GMs will value a reliable planning workspace around their campaign memory. Existing overlap is acknowledged; claims of unique features or market demand require evidence.
 
 ## Established foundation
 
@@ -65,7 +81,7 @@ Acceptance gates:
 6. Saved reviews and source metadata survive normalization, restart, export, and restore. Browser checks cover explicit selection, editing, refresh, duplicate handling, narrow layouts, and offline use.
 7. Desktop recovery rejects future workspace schemas without changing originals and retains the newest supported backup copies across reason prefixes.
 
-## Active milestone: v1.7.0 — Reviewed player packets
+## Delivered milestone: v1.7.0 — Reviewed player packets
 
 **Status: implemented in v1.7.0.** Each session can own several saved documents with custom sections and opt-in editable copies from player-known records. An isolated preview and explicit approval bind the selected public text to Markdown and printable HTML downloads. Relevant source or reference changes require another review; unavailable or revoked sources block export. [PLAYER_PACKETS.md](PLAYER_PACKETS.md) describes the workflow and its limits.
 
@@ -80,15 +96,23 @@ Acceptance gates:
 
 The GM remains responsible for secrets written as ordinary prose in a shared field or custom section. Current local Player preview is a presentation feature; hosted player access would need authorization at the server boundary. Older imported records with previously misclassified explicit sharing flags require review.
 
-## Ordered next milestones
+## Active milestone: v1.8.0 — Reusable preparation templates
 
-### 1. Reusable and adaptable planning templates
+**Status: implemented in v1.8.0.** Six system-neutral starters cover investigation, social events, exploration, dungeon expeditions, heists, and downtime. Each supplies scene structure, timing, optional material, and prompts for the opening, clues, clocks, spotlights, and preparation tasks. A workspace-wide library lets GMs create, duplicate, edit, and reuse their own structures across campaigns. [PREP_TEMPLATES.md](PREP_TEMPLATES.md) explains the workflow.
 
-Let GMs save and adapt useful session structures: investigation, social event, exploration, dungeon expedition, heist, and downtime. Templates contain optional prompts, scene structures, task defaults, and timing suggestions. They can be edited for the campaign and system without creating forced plot outcomes.
+Saving a structure from an existing prep captures its numeric shape and generates fresh generic prompts. Campaign prose, identities, references, and play progress stay with the original session. Using a template opens a saved review: the GM selects material, writes campaign-specific content, and explicitly adds it to the prep. Timing replacement is a separate opt-in. Planning guidance remains visible beside authored fields, with its own completion count; blank prompts do not satisfy preparation checks.
 
-**Exit gate:** applying a template is previewable, adds a distinct editable plan, preserves existing work, and retains no source campaign's private records or identity links. GMs running at least three different systems can complete the same core planning workflow; system-specific features clearly state their coverage.
+Acceptance gates:
 
-### 2. Trust, onboarding, performance, and beta readiness
+1. A GM can use every built-in starter offline and adapt the same core workflow in at least three system configurations. Real GM pilot results remain a separate beta gate.
+2. Custom structures work across campaigns and survive restart and full workspace backup/restore. Capturing structure retains no source campaign prose, private records, or identity links.
+3. Selected review rows append as distinct editable prep items with reset progress. Existing preparation, campaign canon, source templates, and live desks remain intact; changing the session duration requires an explicit choice.
+4. Saved review edits and selections survive restart. Changed source or target material requires refresh; applying the same consumed review twice is rejected.
+5. Guidance survives normalization and appears in the GM packet as unfinished planning work when the corresponding authored field is blank. It does not become prepared content or live progress.
+6. Player preview excludes template authoring. Unsupported library formats retain their saved data and provide a recovery path. Workspace replacement prevents competing template edits.
+7. Domain, filesystem, browser, and packaged-runtime checks cover these behaviors, including narrow layouts and public snapshot exclusion.
+
+## Next milestone: Trust, onboarding, performance, and beta readiness
 
 Reliability work proceeds alongside the earlier milestones. This is the gate for inviting a broader pilot and making a commercial commitment.
 
@@ -99,7 +123,7 @@ Reliability work proceeds alongside the earlier milestones. This is the gate for
 | Recovery | v1.6.0 retains the twelve newest supported copies by backup creation time, with legacy timestamp fallback and unique same-time filenames. Unreadable and future-schema copies are preserved. Continue failed-write, interrupted-save, restore, and upgrade exercises with representative workspaces, and make recovery reachable through the UI. |
 | Large campaigns | Measure startup, search, editing, save latency, and restore with documented campaign sizes and PDF libraries. Browser storage currently writes the full workspace to `localStorage`; establish supported limits and move larger libraries to a storage tier suited to them before promising scale. |
 | Desktop security | Add and verify a Content Security Policy, navigation restrictions, and sender validation for privileged IPC. Preserve the existing sandbox, context isolation, disabled Node integration, encrypted credentials, and restricted external-link handling. Review imported content and custom MCP command boundaries. |
-| Release assurance | Run appropriate checks on pull requests as well as releases; verify installation, upgrade, rollback, portable updates, and packaged assets. Establish a signed distribution process. The downloaded v1.6.0 portable release reported `NotSigned`; signing hooks exist in CI. |
+| Release assurance | Run appropriate checks on pull requests as well as releases; verify installation, upgrade, rollback, portable updates, and packaged assets. Establish a signed distribution process. The downloaded v1.7.0 portable release reported `NotSigned`; signing hooks exist in CI. |
 | Supportability | Provide actionable errors and an explicit diagnostic export that excludes credentials and campaign content by default. Document supported operating systems, integration versions, recovery steps, and known failures. Check keyboard operation, readable layouts, and save/error announcements. |
 
 Architecture changes should follow these needs. The existing pure data modules are useful seams for extracting preparation, import validation, and export logic from the large renderer scripts. A framework rewrite has no acceptance value by itself.
@@ -121,7 +145,7 @@ Small-cohort results guide the next iteration; they do not establish broad marke
 
 ## Eventual paid product
 
-**Business hypotheses to test:** GMs may pay for preparation time saved, dependable campaign continuity, and useful table materials; a paid local app may fit the current architecture and ownership model; optional hosted collaboration may later create recurring value. Pricing, packaging, and demand remain undecided.
+**Business hypotheses to test:** GMs may pay for preparation time saved, dependable carry-forward between sessions, and practical table controls; a paid local app may fit the current architecture and ownership model; optional shared preparation may later create recurring value. Test these benefits with GMs who use Archivist as well as those who bring other campaign notes. Pricing, packaging, and demand remain undecided.
 
 After the beta gates, define a paid local offering with a supported release policy, license and update entitlement behavior, offline access rules, support and refund processes, and a reviewed inventory of redistributed software and included game material. Document data handling and external AI/service costs in terms customers can understand. A hosted backend is optional for this path; distribution and entitlement design should match the validated offer.
 

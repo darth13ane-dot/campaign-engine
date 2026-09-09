@@ -19,7 +19,7 @@
     if (Array.isArray(value)) return value.map(item => material(item));
     if (!object(value)) return value;
     const identityRef = ["sessionRef", "sourceSessionRef"].includes(key) && hasIdentity(value);
-    return Object.fromEntries(Object.keys(value).sort().filter(field => !["continuityReview", "updatedAt"].includes(field) && !(identityRef && ["name", "number"].includes(field))).map(field => [field, material(value[field], field)]));
+    return Object.fromEntries(Object.keys(value).sort().filter(field => !["continuityReview", "templateReview", "updatedAt"].includes(field) && !(identityRef && ["name", "number"].includes(field))).map(field => [field, material(value[field], field)]));
   }
   const fingerprint = value => JSON.stringify(material(value));
   function shortKey(value) {

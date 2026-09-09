@@ -109,6 +109,7 @@ let desktopUpdateState = { status: DESKTOP_API ? "loading" : "browser", message:
 let archivistBridgeBusy = false;
 let archivistBridgeState = { status: DESKTOP_API ? "loading" : "browser", message: DESKTOP_API ? "Loading Archivist bridge settings…" : "The internal bridge is available in the Windows desktop app." };
 let desktopWorkspaceInfo = { mode: DESKTOP_API ? "loading" : "browser", savedAt: null, workspacePath: "" };
+let workspaceImportInProgress = false;
 let nextHistoryLabel = "Campaign edit";
 let workspaceSaveStatus = "saved";
 let builderTab = "character";
@@ -170,7 +171,7 @@ function ensureCampaignPlanning(campaign) {
   return CAMPAIGN_KNOWLEDGE?.normalizeCampaign(normalized) || normalized;
 }
 function hydrateCampaignState() {
-  if (!Array.isArray(state?.campaigns) || !state.campaigns.length) state = createInitialState();
+  if (!Array.isArray(state?.campaigns) || !state.campaigns.length) state = window.CampaignPersistence.initialState(state, ARCHIVIST_SNAPSHOT, createInitialState());
   state.campaigns.forEach(ensureCampaignPlanning);
   historyTracker.reset(state.campaigns);
 }
@@ -674,7 +675,7 @@ function sessionsView(campaign) {
     : upcoming
       ? `<button class="primary-button" type="button" data-start-session-desk="${esc(sessionActionRef(upcoming))}">Run ${esc(upcoming.title)} <span>→</span></button>`
       : `<button class="primary-button" type="button" data-open-record="session">Plan the next session <span>＋</span></button>`;
-  return `${header("Sessions", "CHRONICLE", "A chronological memory of what happened and what still needs to happen.", playerPreviewActive() ? "" : `<button class="primary-button" data-open-record="session">Plan session <span>＋</span></button>`)}
+  return `${header("Sessions", "CHRONICLE", "A chronological memory of what happened and what still needs to happen.", playerPreviewActive() ? "" : `<div class="header-actions"><button class="secondary-button" type="button" data-open-prep-template-library>Prep templates</button><button class="primary-button" data-open-record="session">Plan session <span>＋</span></button></div>`)}
     ${playerPreviewActive() ? "" : `<section class="card session-workflow-intro"><div><p class="eyebrow">LIVE SESSION WORKFLOW</p><h2>${activeDesk ? "A session is in progress." : upcoming ? "Prepare your next session." : "Plan a session to open the Live Session Desk."}</h2><p>Assemble scenes, clues, and references in Session Prep. Carry them into the live desk, then review the consequences after play.</p></div>${sessionAction}</section>`}
     <div class="timeline">${sessions.length ? sessions.map(session => {
       const directions = Array.isArray(session.directions) ? session.directions.filter(Boolean) : [];
@@ -1014,6 +1015,8 @@ async function exportWorkspaceBackup() {
   }
 }
 async function importDesktopWorkspace() {
+  if (workspaceReplacementPending()) return;
+  workspaceImportInProgress = true;
   try {
     await flushDesktopSaves();
     const result = await DESKTOP_API.importWorkspace();
@@ -1024,9 +1027,11 @@ async function importDesktopWorkspace() {
     showToast("Workspace restored. The previous data was backed up automatically.");
   } catch (error) {
     showToast(error.message || "That workspace backup could not be restored.");
-  }
+  } finally { workspaceImportInProgress = false; render(); }
 }
 async function importBrowserWorkspace(file) {
+  if (workspaceReplacementPending()) return;
+  workspaceImportInProgress = true;
   try {
     const parsed = JSON.parse(await file.text());
     applyWorkspace(parsed?.state ? parsed : { state: parsed, archivist: {} });
@@ -1035,7 +1040,10 @@ async function importBrowserWorkspace(file) {
     showToast("Workspace restored from backup.");
   } catch (error) {
     showToast(error.message || "That workspace backup could not be restored.");
-  }
+  } finally { workspaceImportInProgress = false; render(); }
+}
+function workspaceReplacementPending() {
+  return workspaceImportInProgress || (typeof syncReviewApplying !== "undefined" && syncReviewApplying);
 }
 async function createDesktopSafetyBackup() {
   try {
@@ -1492,7 +1500,7 @@ function render() {
   nav.querySelectorAll(".nav-link").forEach(button => button.classList.toggle("active", button.dataset.view === currentView));
   settingsButton.classList.toggle("active", ["settings", "systems", "foundry", "archivist", "updates"].includes(currentView));
   const featureView = (name, fallback) => typeof globalThis[name] === "function" ? globalThis[name] : fallback;
-  const views = { dashboard: dashboardView, sessions: sessionsView, "session-prep": sessionPrepView, "prep-continuity": continuityView, "player-packet": playerPacketView, "session-desk": sessionDeskView, reconciliation: reconciliationView, characters: c => recordView("characters", c), sheets: sheetsView, builder: c => featureView("builderStudioView", () => header("Builder studio", "RULES-AWARE CREATION", "Loading builder tools…"))(c), sources: c => featureView("sourcesFeatureView", () => header("Rulebooks & PDFs", "LOCAL REFERENCE LIBRARY", "Loading source tools…"))(c), quests: c => recordView("quests", c), arcs: arcsView, connections: connectionsView, locations: c => recordView("locations", c), journal: journalView, settings: settingsView, systems: c => featureView("systemsFeatureView", () => header("Game systems", "RULES LIBRARY", "Loading system tools…"))(c), copilot: copilotView, foundry: foundryView, archivist: archivistView, updates: desktopUpdateView, detail: entityDetailView, history: historyView, "sync-review": archivistReviewView, "source-detail": referenceDetailView };
+  const views = { dashboard: dashboardView, sessions: sessionsView, "session-prep": sessionPrepView, "prep-templates": prepTemplatesView, "prep-template-editor": prepTemplateEditorView, "prep-template-review": prepTemplateReviewView, "prep-continuity": continuityView, "player-packet": playerPacketView, "session-desk": sessionDeskView, reconciliation: reconciliationView, characters: c => recordView("characters", c), sheets: sheetsView, builder: c => featureView("builderStudioView", () => header("Builder studio", "RULES-AWARE CREATION", "Loading builder tools…"))(c), sources: c => featureView("sourcesFeatureView", () => header("Rulebooks & PDFs", "LOCAL REFERENCE LIBRARY", "Loading source tools…"))(c), quests: c => recordView("quests", c), arcs: arcsView, connections: connectionsView, locations: c => recordView("locations", c), journal: journalView, settings: settingsView, systems: c => featureView("systemsFeatureView", () => header("Game systems", "RULES LIBRARY", "Loading system tools…"))(c), copilot: copilotView, foundry: foundryView, archivist: archivistView, updates: desktopUpdateView, detail: entityDetailView, history: historyView, "sync-review": archivistReviewView, "source-detail": referenceDetailView };
   systemViews.forEach(view => {
     views[view.id] = campaignValue => featureView(
       view.renderer,
@@ -2939,6 +2947,17 @@ root.addEventListener("click", async event => {
     saveState();
     render();
     showToast("Foundry actor filters cleared.");
+    return;
+  }
+  const templateButton = event.target.closest("[data-open-prep-templates], [data-capture-prep-template], [data-open-prep-template-library]");
+  if (templateButton) {
+    event.stopImmediatePropagation();
+    if (playerPreviewActive() || workspaceReplacementPending()) return;
+    const reference = templateButton.dataset.openPrepTemplates || templateButton.dataset.capturePrepTemplate;
+    const session = reference ? sessionFromAction(campaign, reference) : null;
+    if (reference && !session) { showToast("This session is unavailable. Choose another session to prepare."); return; }
+    if (templateButton.hasAttribute("data-capture-prep-template")) openPrepTemplateCapture(campaign, session);
+    else openPrepTemplates(campaign, session);
     return;
   }
   const prepButton = event.target.closest("[data-open-session-prep]");

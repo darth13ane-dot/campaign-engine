@@ -1,5 +1,15 @@
 # Sharing and desktop updates
 
+## Version 1.8.0 — Reusable prep templates
+
+**Prep templates** adds six original planning starters: investigation, social event, exploration, dungeon expedition, heist, and downtime. Each supplies adaptable guidance, suggested timing, and optional scenes. A global custom library lets GMs create, edit, duplicate, and reuse their own structures across campaigns and game systems. **Save this structure** captures a plan's arrangement and numeric settings into fresh generic prompts while its session material stays with the source.
+
+Template application uses a saved, editable review. Choose entries, write session details, and explicitly add the selected copies to prep. Opening text appends, duration replacement is optional, and existing preparation and live progress retain their saved state. Source or target changes require a fresh review; consumed reviews cannot be replayed.
+
+Planning guidance stays separate from authored fields and readiness. Blank template entries remain unfinished and stay out of live play and continuity suggestions. Full workspace backups preserve the custom library, pending reviews, and applied preparation; approved Archivist refreshes preserve them too. Unsupported future template formats retain their saved data and show a recovery message. The template workflow runs locally and remains outside Player preview and player search.
+
+See [PREP_TEMPLATES.md](PREP_TEMPLATES.md) for the complete GM workflow.
+
 ## Version 1.7.0 — Reviewed player packets
 
 **Player packets** gives each session several named recaps, briefings, or handouts. Write custom sections, choose editable copies from explicitly player-known records, and arrange the document. An isolated preview shows the exact title and text for players. Approve that version before downloading Markdown or printable HTML.

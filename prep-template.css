@@ -1,0 +1,100 @@
+/* Reusable planning structures share the Session Prep form language. */
+.template-page .page-heading { align-items: start; }
+.template-header-actions, .template-actions { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
+.template-target-bar { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(220px, 1fr); gap: 20px; align-items: center; padding: 19px 21px; margin-bottom: 22px; }
+.template-target-bar h2 { margin: 0 0 7px; font: 600 22px var(--font-display); }
+.template-target-bar p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.template-library-tools { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin: 0 0 22px; }
+.template-library-tools > label { width: min(100%, 430px); }
+.template-library-section { margin-bottom: 28px; }
+.template-library-heading { display: flex; align-items: baseline; gap: 12px; margin: 0 0 13px; }
+.template-library-heading h2 { margin: 0; font: 600 25px var(--font-display); }
+.template-library-heading span { color: var(--muted); font-size: 12px; }
+.template-library-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.template-card { display: flex; flex-direction: column; padding: 21px; min-width: 0; }
+.template-card .eyebrow { margin: 0 0 9px; font-size: 10px; }
+.template-card h3 { margin: 0 0 9px; font: 600 24px var(--font-display); overflow-wrap: anywhere; }
+.template-card-summary { margin: 0 0 15px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.template-card-meta { display: flex; flex-wrap: wrap; gap: 7px 13px; color: var(--gold-pale); font-size: 11px; line-height: 1.7; }
+.template-card ol { margin: 13px 0 20px; padding-left: 19px; color: var(--muted); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.template-card .template-actions { margin-top: auto; }
+.template-card .template-actions button { font-size: 11px; padding: 8px 10px; }
+.template-card .template-actions > .primary-button { flex-basis: 100%; justify-content: center; }
+.template-empty { padding: 26px; border: 1px dashed var(--line); border-radius: 11px; }
+.template-empty h2 { margin: 0 0 9px; font: 600 24px var(--font-display); }
+.template-empty p { margin: 0 0 15px; color: var(--muted); font-size: 13px; line-height: 1.8; }
+.template-notice, .template-alert { margin: 0 0 20px; padding: 15px 18px; border: 1px solid rgba(119,199,196,.35); border-radius: 10px; background: rgba(119,199,196,.05); }
+.template-notice strong, .template-alert strong { display: block; font-size: 13px; color: var(--teal); line-height: 1.7; }
+.template-notice p, .template-alert p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.template-alert { border-color: rgba(228,134,121,.4); background: rgba(228,134,121,.06); }
+.template-alert strong { color: var(--red); }
+.template-edit-grid { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(250px, 1fr); gap: 21px; align-items: start; }
+.template-edit-main, .template-edit-support { display: grid; gap: 18px; min-width: 0; }
+.template-panel { padding: 21px; display: grid; gap: 15px; min-width: 0; }
+.template-panel > h2, .template-group-heading h2 { margin: 0; font: 600 23px var(--font-display); }
+.template-panel .eyebrow { margin: 0; }
+.template-fields { display: grid; gap: 13px; }
+.template-field-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.template-row-list { display: grid; gap: 13px; }
+.template-edit-row { display: grid; gap: 13px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.template-row-heading { display: flex; align-items: start; gap: 12px; justify-content: space-between; }
+.template-row-heading > div:first-child { flex: 1; min-width: 0; }
+.template-row-heading h3 { margin: 0; color: var(--paper); font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.template-row-heading .eyebrow { margin: 0 0 5px; font-size: 10px; }
+.template-row-buttons { display: flex; gap: 5px; flex-shrink: 0; }
+.template-row-buttons button { display: grid; place-items: center; width: 34px; min-width: 34px; min-height: 36px; border: 1px solid var(--line); border-radius: 7px; padding: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.template-row-buttons button:hover { color: var(--gold); border-color: var(--gold); }
+.template-row-buttons button:disabled { opacity: .35; cursor: default; }
+.template-page label.template-checkbox { display: flex; flex-direction: row; align-items: start; gap: 9px; color: var(--paper); font-size: 12px; line-height: 1.7; }
+.template-checkbox input[type="checkbox"] { width: 18px; height: 18px; margin: 1px 0 0; flex: 0 0 18px; accent-color: var(--teal); }
+.template-guidance { margin: 0; padding: 12px 14px; border-left: 3px solid var(--gold); border-radius: 0 8px 8px 0; background: rgba(224,183,95,.06); }
+.template-guidance strong { color: var(--gold-pale); font-size: 10px; letter-spacing: .055em; text-transform: uppercase; }
+.template-guidance p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+.template-candidate { padding: 19px; min-width: 0; }
+.template-candidate.is-selected { border-color: rgba(119,199,196,.45); }
+.template-candidate .template-row-heading { margin-bottom: 12px; }
+.template-candidate .template-guidance { margin-bottom: 13px; }
+.template-candidate details { margin-top: 13px; }
+.template-page summary { cursor: pointer; color: var(--gold-pale); font-size: 12px; font-weight: 600; line-height: 1.8; }
+.template-page summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
+.template-candidate fieldset { display: grid; gap: 13px; border: 0; margin: 13px 0 0; padding: 0; min-width: 0; }
+.template-candidate fieldset:disabled { opacity: .7; }
+.template-review-list { display: grid; gap: 14px; }
+.template-review-toolbar { position: sticky; top: 8px; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; padding: 15px 19px; background: var(--ink-raised); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.15); }
+.template-review-toolbar strong { display: block; color: var(--gold-pale); font-size: 14px; }
+.template-review-toolbar p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.template-review-toolbar .template-actions { flex-shrink: 0; }
+.template-review-context { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(250px, 1fr); gap: 18px; margin-bottom: 18px; }
+.template-review-context h2 { margin: 0 0 7px; font: 600 24px var(--font-display); overflow-wrap: anywhere; }
+.template-counts { display: flex; flex-wrap: wrap; gap: 9px 18px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.template-add-row-form { display: flex; gap: 10px; align-items: end; }
+.template-add-row-form label { flex: 1; }
+.template-add-row-form button { flex-shrink: 0; }
+.template-save-copy { color: var(--muted); font-size: 11px; line-height: 1.8; margin: 0; }
+.template-page [hidden] { display: none !important; }
+@media (max-width: 1250px) {
+  .template-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .template-edit-grid { grid-template-columns: minmax(0, 1.5fr) minmax(240px, 1fr); gap: 17px; }
+  .template-panel { padding: 18px; }
+}
+@media (max-width: 960px) {
+  .template-edit-grid, .template-review-context { grid-template-columns: minmax(0, 1fr); }
+  .template-edit-support { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .template-target-bar { grid-template-columns: minmax(0, 1fr); gap: 15px; }
+  .template-review-toolbar { flex-wrap: wrap; }
+}
+@media (max-width: 620px) {
+  .template-library-grid, .template-edit-support { grid-template-columns: minmax(0, 1fr); }
+  .template-library-tools { align-items: stretch; flex-direction: column; }
+  .template-library-tools > label { width: 100%; }
+  .template-header-actions { width: 100%; }
+  .template-header-actions > button { flex: 1; justify-content: center; }
+  .template-card, .template-panel, .template-candidate, .template-target-bar { padding: 16px; }
+  .template-field-pair { grid-template-columns: minmax(0, 1fr); }
+  .template-review-toolbar { top: 4px; padding: 13px 15px; }
+  .template-review-toolbar .template-actions { width: 100%; }
+  .template-review-toolbar .primary-button { flex: 1; justify-content: center; }
+  .template-row-heading { flex-wrap: wrap; }
+  .template-add-row-form { flex-direction: column; align-items: stretch; }
+  .template-add-row-form button { align-self: start; }
+}

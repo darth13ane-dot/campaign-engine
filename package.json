@@ -1,8 +1,8 @@
 {
   "name": "campaign-engine",
   "productName": "Campaign Engine",
-  "version": "1.7.0",
-  "description": "A local-first command center for tabletop RPG campaigns.",
+  "version": "1.8.0",
+  "description": "A local-first GM preparation and session-running workspace with campaign integrations.",
   "packageManager": "pnpm@11.7.0",
   "engines": {
     "node": ">=22"
@@ -79,7 +79,11 @@
       "player-packet.js",
       "player-packet-views.js",
       "player-packet.css",
-      "player-preview.js"
+      "player-preview.js",
+      "prep-template-starters.js",
+      "prep-templates.js",
+      "prep-template-views.js",
+      "prep-template.css"
     ],
     "win": {
       "target": [

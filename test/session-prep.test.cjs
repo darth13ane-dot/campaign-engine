@@ -344,3 +344,35 @@ test("source disclosures show recorded-session notes and exact source-record det
   desk.status = "active";
   assert.doesNotMatch(view.prepProvenanceMarkup(value, plan.scenes[0]), /data-open-session-desk=/);
 });
+
+test("saved template guidance stays distinct from prepared text and exports only unfinished prompts safely", () => {
+  const value = campaign(), plan = filledPrep(value);
+  plan.prompts = { opening: "AnsweredOpeningPrompt", secret: "UnsupportedPrompt" };
+  plan.scenes[0].prompts = { title: "AnsweredTitlePrompt", detail: '<img src=x onerror="unsafe()"> [Map](https://example.test)', question: "AnsweredChoicePrompt", secret: "UnsupportedPrompt" };
+  plan.scenes[0].detail = "";
+  plan.tasks.push({ id: "unfinished-guidance", text: "", done: false, prompts: { text: "UnfinishedTaskPrompt" } });
+  plan.templateReview = { id: "review", rows: [{ after: { title: "UnappliedTemplateDraft" } }] };
+  const restored = prep.normalizePrep(JSON.parse(JSON.stringify(plan)));
+  assert.equal(restored.scenes[0].detail, "");
+  assert.equal(restored.scenes[0].prompts.detail, plan.scenes[0].prompts.detail);
+  assert.equal(restored.prompts.secret, undefined);
+  assert.equal(restored.scenes[0].prompts.secret, undefined);
+  assert.deepEqual(restored.templateReview, plan.templateReview);
+  assert.notEqual(restored.templateReview, plan.templateReview);
+  assert.equal(prep.readiness(restored, value).checks.find(check => check.id === "tasks").done, false);
+
+  const before = JSON.stringify(value);
+  const packet = prep.exportMarkdown(value, value.sessions[0], restored);
+  const [prepared, unfinished] = packet.split("## Planning prompts still to develop");
+  assert.match(prepared, /At the gate/);
+  assert.doesNotMatch(prepared, /UnfinishedTaskPrompt|&lt;img/);
+  assert.match(unfinished, /&lt;img src=x/);
+  assert(unfinished.includes("\\[Map\\]\\(https://example\\.test\\)"));
+  assert.match(unfinished, /UnfinishedTaskPrompt/);
+  assert.doesNotMatch(packet, /Answered\w+Prompt|UnsupportedPrompt|UnappliedTemplateDraft|<img/);
+  const markup = prepViewHarness(value).sessionPrepView(value);
+  assert.match(markup, /Planning prompts/);
+  assert.match(markup, /&lt;img src=x/);
+  assert.doesNotMatch(markup, /<img|UnsupportedPrompt|UnappliedTemplateDraft/);
+  assert.equal(JSON.stringify(value), before);
+});
