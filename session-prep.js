@@ -59,6 +59,8 @@
 
   function ensureSessionReferences(campaign, session) {
     const linked = ["preps", "desks"].map(collection => findLinkedSessionItem(campaign, session, Object.values(campaign?.sessionWorkflow?.[collection] || {}))).filter(Boolean);
+    // A session can own several separately reviewed player packets.
+    linked.push(...Object.values(campaign?.sessionWorkflow?.playerPackets || {}).filter(packet => object(packet) && findLinkedSessionItem(campaign, session, [packet]) === packet));
     const reference = ensureSessionReference(session);
     for (const item of linked) item.sessionRef = { ...reference };
     return reference;

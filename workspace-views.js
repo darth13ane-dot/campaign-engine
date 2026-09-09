@@ -7,7 +7,7 @@ function updateCampaignSearch() {
   const campaign = activeCampaign();
   const playerPreview = playerPreviewActive();
   if (!searchIndex || searchIndexCampaign !== campaign.id || searchIndexPreview !== playerPreview) {
-    searchIndex = window.CampaignSearch.buildIndex(campaign, { playerPreview, visible: (record, collection) => playerCanSee(record, collection) });
+    searchIndex = window.CampaignSearch.buildIndex(campaign, { playerPreview, visible: (record, collection) => playerCanSee(record, collection), projectRecord: (record, collection) => window.CampaignPlayerPacket.projectRecord(campaign, prepRecordRef(({ characters: "character", quests: "quest", locations: "location", sessions: "session", journal: "journal" })[collection], record)) });
     searchIndexCampaign = campaign.id;
     searchIndexPreview = playerPreview;
   }
@@ -20,7 +20,7 @@ function updateCampaignSearch() {
 document.querySelector("#searchButton").addEventListener("click", () => {
   searchIndex = null; searchLimit = 30;
   const filter = document.querySelector("#searchFilter");
-  filter.innerHTML = `<option value="all">All records</option>` + Object.entries(window.CampaignSearch.labels).filter(([type]) => !playerPreviewActive() || !["arc", "note", "reference", "prep"].includes(type)).map(([type, label]) => `<option value="${type}">${esc(label)}</option>`).join("");
+  filter.innerHTML = `<option value="all">All records</option>` + Object.entries(window.CampaignSearch.labels).filter(([type]) => !playerPreviewActive() || !["arc", "note", "reference", "prep", "packet"].includes(type)).map(([type, label]) => `<option value="${type}">${esc(label)}</option>`).join("");
   updateCampaignSearch(); searchModal.showModal(); document.querySelector("#searchInput").focus();
 });
 document.querySelector("#searchInput").addEventListener("input", () => { searchLimit = 30; updateCampaignSearch(); });
@@ -31,6 +31,15 @@ document.querySelector("#searchResults").addEventListener("click", event => {
   const hit = button && searchMatches[Number(button.dataset.searchHit)];
   if (!hit) return;
   searchModal.close();
+  if (hit.type === "packet") {
+    if (playerPreviewActive()) { showToast("Player packet drafts are available in GM view."); return; }
+    const campaign = activeCampaign();
+    const packet = campaign.sessionWorkflow?.playerPackets?.[hit.packetId];
+    const session = packet && window.CampaignSessionPrep.findSession(campaign, packet.sessionRef);
+    if (!session) { showToast("This packet or its session is no longer available in the campaign."); return; }
+    openPlayerPacket(campaign, session, packet.id);
+    return;
+  }
   if (hit.type === "prep") {
     if (playerPreviewActive()) { showToast("Session prep is available in GM view."); return; }
     const campaign = activeCampaign();
@@ -44,7 +53,7 @@ document.querySelector("#searchResults").addEventListener("click", event => {
   if (hit.type === "reference") { referenceTarget = { id: hit.documentId, page: hit.page }; referenceQuery = document.querySelector("#searchInput").value; currentView = "source-detail"; }
   else if (hit.type === "note") { activeSessionDeskId = hit.deskId; currentView = "session-desk"; }
   else if (hit.type === "arc") { currentView = "arcs"; }
-  else { detailTarget = { type: hit.type, name: hit.title }; currentView = "detail"; }
+  else { detailTarget = { type: hit.type, name: hit.title, id: hit.id || "" }; currentView = "detail"; }
   render();
   if (hit.type === "arc") {
     const arc = activeCampaign().arcs.find(item => item.title === hit.title);

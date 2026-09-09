@@ -4,10 +4,115 @@ const assert = require("node:assert/strict");
 const {
   createReview,
   applyReview,
+  annotateCampaign,
   findDetail,
   mergeCampaigns,
   mergeDetailsRoots
 } = require("../archivist-merge.js");
+const knowledge = require("../campaign-knowledge.js");
+
+test("Archivist visibility accepts exact legacy sharing labels and rejects misleading substrings", () => {
+  const permissions = [
+    ["not public", "gm"], ["read forbidden", "gm"], ["player secrets", "gm"],
+    ["unread", "gm"], ["", "gm"], [undefined, "gm"], ["GM only", "gm"],
+    ["Player safe", "players"], ["players", "players"], ["player", "players"],
+    ["player known", "players"], ["public", "players"], ["shared", "players"],
+    ["read", "players"], ["  PUBLIC  ", "players"], [true, "players"]
+  ];
+  for (const [permission, expected] of permissions) {
+    const input = campaign({ journal: [{ title: "The notice", permission }] });
+    const before = structuredClone(input);
+    const annotated = annotateCampaign(input, {}, true).journal[0];
+    const added = mergeCampaigns([], [input]).campaigns[0].journal[0];
+    for (const record of [annotated, added]) {
+      assert.equal(record.knowledge, expected, `permission ${String(permission)}`);
+      assert.equal(record.permission, expected === "players" ? "Player safe" : "GM only");
+    }
+    assert.deepEqual(input, before);
+  }
+});
+
+test("Archivist normalization honors explicit knowledge before legacy visibility flags", () => {
+  const cases = [
+    { knowledge: false, public: true, permission: "Player safe" },
+    { knowledge: "", playerKnown: true, permission: "Player safe" },
+    { knowledge: "not public", permission: "Player safe" },
+    { knowledge: "gm", playerKnown: true, public: true },
+    { playerKnown: false, public: true, permission: "Player safe" },
+    { public: false, permission: "Player safe" },
+    { playerKnown: true }, { public: true }, { knowledge: true },
+    { knowledge: " PUBLIC ", permission: "GM only" }
+  ];
+  for (const fields of cases) {
+    for (const collection of ["sessions", "characters", "quests", "locations", "journal"]) {
+      const input = { title: "Notice", name: "Courier", ...fields };
+      const actual = annotateCampaign(campaign({ [collection]: [input] }), {}, true)[collection][0];
+      assert.equal(actual.knowledge, knowledge.recordKnowledge(input, collection), `${collection}: ${JSON.stringify(fields)}`);
+      if (collection === "journal") assert.equal(actual.permission, knowledge.permissionFor(actual.knowledge));
+    }
+  }
+});
+
+test("refresh review keeps local knowledge authoritative and synchronizes journal permissions", () => {
+  for (const local of ["gm", "players"]) {
+    const remote = local === "gm" ? "players" : "gm";
+    const original = campaign({ journal: [{ archivistId: "notice", title: "The notice", body: "Local words", knowledge: local, localOverrides: { knowledge: local } }] });
+    const incoming = campaign({ journal: [{ archivistId: "notice", title: "Renamed notice", body: "Fresh words", knowledge: remote }] });
+    const before = structuredClone(original);
+    const merged = mergeCampaigns([original], [incoming]).campaigns[0].journal[0];
+    assert.equal(merged.knowledge, local);
+    assert.equal(merged.permission, knowledge.permissionFor(local));
+    assert.equal(merged.localOverrides.knowledge, local);
+    const review = createReview([original], [incoming], {}, {});
+    const row = review.rows.find(item => item.field === "knowledge");
+    assert.equal(row.conflict, true);
+    assert.equal(row.choice, "local");
+    const kept = applyReview(review, [original]).campaigns[0].journal[0];
+    assert.equal(kept.knowledge, local);
+    assert.equal(kept.permission, knowledge.permissionFor(local));
+    assert.equal(kept.body, "Fresh words");
+    assert.equal(kept.localOverrides.knowledge, local);
+    const accepted = applyReview(review, [original], { [row.id]: "incoming" }).campaigns[0].journal[0];
+    assert.equal(accepted.knowledge, remote);
+    assert.equal(accepted.permission, knowledge.permissionFor(remote));
+    assert.equal(accepted.localOverrides.knowledge, undefined);
+    assert.deepEqual(original, before);
+  }
+});
+
+test("approved refresh keeps misleading imported permissions private", () => {
+  for (const permission of ["not public", "read forbidden"]) {
+    const original = campaign({ journal: [{ archivistId: "notice", title: "The notice", knowledge: "gm" }] });
+    const incoming = campaign({ journal: [{ archivistId: "notice", title: "The notice", body: "Updated secret", permission }] });
+    const review = createReview([original], [incoming], {}, {});
+    const record = applyReview(review, [original]).campaigns[0].journal[0];
+    assert.equal(record.body, "Updated secret");
+    assert.equal(record.knowledge, "gm");
+    assert.equal(record.permission, "GM only");
+  }
+});
+
+test("approved Archivist refresh preserves nested pending and approved player packets", () => {
+  const workflow = {
+    schemaVersion: 2,
+    desks: { ended: { id: "ended", status: "ended" } },
+    playerPackets: {
+      pending: { id: "pending", status: "draft", sourceRefs: [{ type: "session", localId: "session-1" }], customText: "GM draft awaiting review" },
+      approved: { id: "approved", status: "approved", preview: { title: "Road report", text: "The party returned." }, approval: { fingerprint: "approved-output" } }
+    }
+  };
+  const original = campaign({ sessionWorkflow: structuredClone(workflow), journal: [{ archivistId: "notice", title: "Notice", body: "Old" }] });
+  const incoming = campaign({ sessionWorkflow: { schemaVersion: 2, playerPackets: {} }, journal: [{ archivistId: "notice", title: "Notice", body: "Fresh" }] });
+  const before = structuredClone(original);
+  const review = createReview([original], [incoming], {}, {});
+  const applied = applyReview(review, [original]).campaigns[0];
+  assert.equal(applied.journal[0].body, "Fresh");
+  assert.deepEqual(applied.sessionWorkflow, workflow);
+  assert.deepEqual(original, before);
+  applied.sessionWorkflow.playerPackets.pending.customText = "Changed independently";
+  assert.deepEqual(original, before);
+  assert.deepEqual(review.campaigns[0].sessionWorkflow, workflow);
+});
 
 test("preserves Foundry actor links across an Archivist rename", () => {
   const original = campaign({ characters: [{ archivistId: "npc", name: "Vale", foundryActorId: "actor-7" }] });

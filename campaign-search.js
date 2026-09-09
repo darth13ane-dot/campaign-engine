@@ -4,7 +4,7 @@
   if (root) root.CampaignSearch = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const definitions = { characters: "character", quests: "quest", locations: "location", journal: "journal", sessions: "session", arcs: "arc" };
-  const labels = { character: "Character", quest: "Quest", location: "World", journal: "Journal", session: "Session", prep: "Session prep", arc: "Story arc", note: "Live note", reference: "Reference" };
+  const labels = { character: "Character", quest: "Quest", location: "World", journal: "Journal", session: "Session", prep: "Session prep", packet: "Player packet draft", arc: "Story arc", note: "Live note", reference: "Reference" };
   const terms = query => [...new Set(String(query || "").toLocaleLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu) || [])];
   const plain = value => String(value || "").replace(/\[\[([^\]]+)\]\]/g, "$1").replace(/\s+/g, " ").trim();
   function excerpt(text, query, length = 280) {
@@ -16,12 +16,21 @@
   function documentPages(document) {
     return Array.isArray(document.pageTexts) && document.pageTexts.length ? document.pageTexts : [{ page: null, text: document.text || "" }];
   }
-  function buildIndex(campaign, { playerPreview = false, visible = () => !playerPreview } = {}) {
+  function buildIndex(campaign, { playerPreview = false, visible = () => !playerPreview, projectRecord = null } = {}) {
     const entries = [];
     for (const [collection, type] of Object.entries(definitions)) {
       if (playerPreview && type === "arc") continue;
       for (const record of campaign[collection] || []) {
         if (playerPreview && !visible(record, collection)) continue;
+        if (playerPreview) {
+          const content = { characters: record.description, quests: record.detail, locations: record.detail, journal: record.body || record.detail, sessions: record.recap }[collection];
+          // Without a campaign-aware projector, withhold the remainder from the
+          // first reference opener, including malformed or nested references.
+          const fallbackText = value => String(value || "").replace(/\[\[[\s\S]*/, "[Unshared reference]");
+          const projected = projectRecord ? projectRecord(record, collection) : { heading: fallbackText(record.name || record.title), body: fallbackText(content) };
+          if (projected) entries.push({ type, title: projected.heading, id: record.archivistId || record.localId || record.id, text: projected.body });
+          continue;
+        }
         const fields = [record.description, record.detail, record.body, record.recap, record.tension, record.change, record.nextStep, ...(record.tags || []), ...(record.directions || []), ...(record.milestones || [])];
         if (!playerPreview) fields.push(record.voice, record.quirks, record.relationships, record.statBlock);
         entries.push({ type, title: record.name || record.title, id: record.archivistId || record.localId || record.id, text: fields.filter(Boolean).join(" ") });
@@ -29,6 +38,10 @@
     }
     if (!playerPreview) {
       const rows = value => Array.isArray(value) ? value.filter(item => item && typeof item === "object") : [];
+      for (const [key, packet] of Object.entries(campaign.sessionWorkflow?.playerPackets || {})) {
+        if (!packet || typeof packet !== "object") continue;
+        entries.push({ type: "packet", title: packet.title || "Player packet draft", packetId: packet.id || key, text: rows(packet.sections).flatMap(section => [section.heading, section.body]).filter(Boolean).join(" ") });
+      }
       for (const [key, prep] of Object.entries(campaign.sessionWorkflow?.preps || {})) {
         if (!prep || typeof prep !== "object") continue;
         const fields = [prep.opening,

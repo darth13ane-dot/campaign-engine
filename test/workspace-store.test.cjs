@@ -124,6 +124,40 @@ test("imports legacy state files and creates a pre-import safety backup", async 
   assert.match(backups[0], /before-import/);
 });
 
+test("separate player packet drafts and approvals survive desktop restore with live source checks", async t => {
+  const { directory, store } = await temporaryStore(t);
+  const packets = require("../player-packet.js"), workflow = require("../session-workflow.js"), prep = require("../session-prep.js");
+  const campaign = { id: "packet-campaign", title: "GM campaign", sessions: [{ localId: "session-1", title: "The private plan", number: 8 }], journal: [{ localId: "letter-1", title: "A letter", body: "Meet at the gate.", knowledge: "players" }] };
+  workflow.ensureWorkflow(campaign);
+  const draft = packets.createPacket(campaign, campaign.sessions[0], { title: "Working briefing" });
+  draft.sections.push(packets.createManualSection({ heading: "Draft", body: "GM edits still pending." }));
+  const ready = packets.createPacket(campaign, campaign.sessions[0], { title: "A message for the party" });
+  ready.sections.push(packets.createSourceSection(campaign, { type: "journal", localId: "letter-1" }));
+  ready.sections[0].body = "Come to the western gate at dusk.";
+  campaign.sessionWorkflow.playerPackets[ready.id] = packets.approvePacket(campaign, ready, packets.previewPacket(campaign, ready).fingerprint);
+  const expected = structuredClone(campaign), html = packets.exportHTML(campaign, campaign.sessionWorkflow.playerPackets[ready.id]);
+  await store.initializeWorkspace({ state: { campaigns: [campaign], activeCampaignId: campaign.id }, archivist: {} });
+  await store.saveState({ campaigns: [campaign], activeCampaignId: campaign.id });
+  const exported = path.join(directory, "packet-backup.json");
+  await store.exportWorkspace(exported);
+  const destinationDirectory = path.join(directory, "restored-packets");
+  const destination = createWorkspaceStore({ directory: destinationDirectory, appVersion: "1.7.0" });
+  await destination.importWorkspace(exported);
+  const reopened = createWorkspaceStore({ directory: destinationDirectory, appVersion: "1.7.0" });
+  const restored = (await reopened.loadWorkspace()).state.campaigns[0];
+  workflow.ensureWorkflow(restored);
+  assert.deepEqual(restored, expected);
+  assert.equal(packets.exportHTML(restored, packets.findPacket(restored, restored.sessions[0], ready.id)), html);
+  assert.equal(packets.validatePacket(restored, packets.findPacket(restored, restored.sessions[0], draft.id)).approved, false);
+  restored.sessions[0].title = "Renamed plan";
+  prep.ensureSessionReferences(restored, restored.sessions[0]);
+  assert.equal(packets.packetsForSession(restored, restored.sessions[0]).length, 2);
+  assert.equal(packets.exportHTML(restored, packets.findPacket(restored, restored.sessions[0], ready.id)), html);
+  restored.journal[0].knowledge = "gm";
+  assert.throws(() => packets.exportHTML(restored, packets.findPacket(restored, restored.sessions[0], ready.id)), /no longer shared/);
+  assert.equal(packets.findPacket(restored, restored.sessions[0], draft.id).sections[0].body, "GM edits still pending.");
+});
+
 test("a saved continuity review survives desktop export and restore and still applies the selected edit", async t => {
   const { directory, store } = await temporaryStore(t);
   const prep = require("../session-prep.js"), workflow = require("../session-workflow.js"), continuity = require("../prep-continuity.js");

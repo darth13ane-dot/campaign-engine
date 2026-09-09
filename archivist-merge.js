@@ -1,8 +1,8 @@
 (function initializeArchivistMerge(root, factory) {
-  const tools = factory();
+  const tools = factory(typeof module === "object" && module.exports ? require("./campaign-knowledge.js") : root.CampaignKnowledge);
   if (typeof module === "object" && module.exports) module.exports = tools;
   if (root) root.CampaignArchivistMerge = tools;
-})(typeof globalThis === "object" ? globalThis : this, function createArchivistMerge() {
+})(typeof globalThis === "object" ? globalThis : this, function createArchivistMerge(KNOWLEDGE) {
   const COLLECTIONS = {
     sessions: { title: item => item?.title, detail: ["sessions"], editable: ["title", "number", "date", "recap", "tags", "knowledge", "directions", "archetype", "tropes", "threadGaps", "upcoming"] },
     characters: { title: item => item?.name, detail: ["characters"], editable: ["name", "role", "description", "tags", "knowledge", "factions", "voice", "quirks", "relationships", "statBlock"] },
@@ -62,10 +62,8 @@
     const item = clone(value || {});
     if (collection === "journal") {
       if (!item.body && item.detail) item.body = item.detail;
-      if (!item.permission) item.permission = "GM only";
     }
-    if (!item.knowledge) item.knowledge = collection === "journal" && /player|public|read/i.test(item.permission || "") ? "players" : "gm";
-    if (collection === "journal") item.permission = item.knowledge === "players" ? "Player safe" : "GM only";
+    KNOWLEDGE.normalizeRecord(item, collection);
     if (!Array.isArray(item.tags)) item.tags = [];
     const detail = findDetail(campaignDetails, collection, item);
     const archivistId = item.archivistId || item.sourceId || detail?.id;
@@ -122,7 +120,7 @@
     merged.archivistId = incoming.archivistId || existing.archivistId;
     merged.source = incoming.source || existing.source || "archivist";
     stats.updated += 1;
-    return merged;
+    return KNOWLEDGE.normalizeRecord(merged, collection);
   }
 
   function dedupeIncoming(collection, incoming, stats) {
@@ -368,6 +366,7 @@
       if (choice === "local") record.localOverrides = { ...(record.localOverrides || {}), [row.field]: clone(value) };
       else if (record.localOverrides) delete record.localOverrides[row.field];
     }
+    campaigns.forEach(campaign => KNOWLEDGE.normalizeCampaign(campaign));
     return { campaigns, details: clone(review.details), stats: clone(review.stats) };
   }
 
