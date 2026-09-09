@@ -90,6 +90,11 @@
     return provenance ? { provenance } : {};
   }
 
+  function promptFields(value, allowed) {
+    const prompts = Object.fromEntries(allowed.filter(key => typeof value?.prompts?.[key] === "string" && text(value.prompts[key], 6000)).map(key => [key, text(value.prompts[key], 6000)]));
+    return Object.keys(prompts).length ? { prompts } : {};
+  }
+
   function normalizePrep(value, key) {
     if (!object(value)) return null;
     const prepId = text(value.id || key, 160) || createId();
@@ -98,17 +103,19 @@
       id: prepId,
       sessionRef: sessionReference(value.sessionRef || { name: value.sessionTitle }),
       opening: text(value.opening),
+      ...promptFields(value, ["opening"]),
       ...(object(value.continuityReview) ? { continuityReview: JSON.parse(JSON.stringify(value.continuityReview)) } : {}),
+      ...(object(value.templateReview) ? { templateReview: JSON.parse(JSON.stringify(value.templateReview)) } : {}),
       durationMinutes: integer(value.durationMinutes, 180, 15, 1440),
-      scenes: rows(value.scenes).map((scene, index) => ({ id: rowId(scene, "scene", index), title: text(scene.title, 240), kind: ["scene", "social", "exploration", "combat", "pressure"].includes(scene.kind) ? scene.kind : "scene", minutes: integer(scene.minutes, 30, 0, 1440), detail: text(scene.detail), question: text(scene.question, 4000), ...provenanceFields(scene) })),
+      scenes: rows(value.scenes).map((scene, index) => ({ id: rowId(scene, "scene", index), title: text(scene.title, 240), kind: ["scene", "social", "exploration", "combat", "pressure"].includes(scene.kind) ? scene.kind : "scene", minutes: integer(scene.minutes, 30, 0, 1440), detail: text(scene.detail), question: text(scene.question, 4000), ...promptFields(scene, ["title", "detail", "question"]), ...provenanceFields(scene) })),
       pinned: rows(value.pinned).map(recordReference).filter(entry => entry.type && entry.name),
-      revelations: rows(value.revelations).map((item, index) => ({ id: rowId(item, "revelation", index), text: text(item.text, 4000), checked: Boolean(item.checked), ...provenanceFields(item) })),
+      revelations: rows(value.revelations).map((item, index) => ({ id: rowId(item, "revelation", index), text: text(item.text, 4000), checked: Boolean(item.checked), ...promptFields(item, ["text"]), ...provenanceFields(item) })),
       clocks: rows(value.clocks).map((clock, index) => {
         const max = integer(clock.max, 4, 1, 20);
-        return { id: rowId(clock, "clock", index), label: text(clock.label, 160), max, value: integer(clock.value, 0, 0, max), ...provenanceFields(clock) };
+        return { id: rowId(clock, "clock", index), label: text(clock.label, 160), max, value: integer(clock.value, 0, 0, max), ...promptFields(clock, ["label"]), ...provenanceFields(clock) };
       }),
-      spotlights: rows(value.spotlights).map((item, index) => ({ id: rowId(item, "spotlight", index), character: text(item.character, 200), opportunity: text(item.opportunity, 4000), ...provenanceFields(item) })),
-      tasks: rows(value.tasks).map((item, index) => ({ id: rowId(item, "task", index), text: text(item.text, 1000), done: Boolean(item.done), ...provenanceFields(item) }))
+      spotlights: rows(value.spotlights).map((item, index) => ({ id: rowId(item, "spotlight", index), character: text(item.character, 200), opportunity: text(item.opportunity, 4000), ...promptFields(item, ["character", "opportunity"]), ...provenanceFields(item) })),
+      tasks: rows(value.tasks).map((item, index) => ({ id: rowId(item, "task", index), text: text(item.text, 1000), done: Boolean(item.done), ...promptFields(item, ["text"]), ...provenanceFields(item) }))
     };
   }
 
@@ -220,6 +227,14 @@
     list("Clues & revelations", prep.revelations.filter(item => item.text).map(item => attributedItem(`- ${md(item.text)}`, item)));
     list("Clocks & counters", prep.clocks.filter(clock => clock.label).map(clock => attributedItem(`- ${line(clock.label)}: ${clock.value}/${clock.max}`, clock)));
     list("Prep tasks", prep.tasks.filter(item => item.text).map(item => attributedItem(`- [${item.done ? "x" : " "}] ${md(item.text)}`, item)));
+    const guidance = [];
+    if (!prep.opening && prep.prompts?.opening) guidance.push(`- **Opening:** ${md(prep.prompts.opening)}`);
+    for (const [collection, label] of [["scenes", "Scene"], ["spotlights", "Spotlight"], ["revelations", "Revelation"], ["clocks", "Counter"], ["tasks", "Task"]]) {
+      prep[collection].forEach((item, index) => {
+        for (const [field, prompt] of Object.entries(item.prompts || {})) if (!text(item[field]) && text(prompt)) guidance.push(`- **${label} ${index + 1} · ${line(field)}:** ${md(prompt)}`);
+      });
+    }
+    list("Planning prompts still to develop", guidance);
     if (prep.pinned.length) {
       out.push("", "## Pinned campaign records", "");
       for (const reference of prep.pinned) {

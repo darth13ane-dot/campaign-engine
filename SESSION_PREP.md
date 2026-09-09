@@ -15,6 +15,12 @@ The preparation checks reflect what you have entered. They help you spot gaps an
 
 Your existing session notes and possible story directions remain available alongside the structured plan. Preparing a session leaves its campaign record and play status intact.
 
+## Start from a reusable structure
+
+Choose **Use a template** to review one of six starters or a custom template from your global library. Select the prompts you want, write any session details already known, and choose **Add selected to prep**. Entries append to the current plan; changing its time budget requires selecting the suggested duration explicitly.
+
+Applied **Planning prompts** remain separate from your authored fields. Empty template entries stay unfinished in the prep checks and are omitted from the first live handoff. **Save this structure** captures the arrangement, timing, and clock sizes of your prep into fresh generic instructions for another session or campaign. See [PREP_TEMPLATES.md](PREP_TEMPLATES.md) for editing, saved reviews, and library recovery.
+
 ## Take the plan to the table
 
 Choose **GM Markdown packet** to download the prepared material as a readable `.md` file. The packet is labeled **GM only** and includes private preparation. Store or print it using your preferred Markdown application.

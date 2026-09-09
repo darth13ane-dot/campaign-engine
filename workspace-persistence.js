@@ -5,8 +5,12 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   function initialState(saved, snapshot, seed) {
     if (saved && Array.isArray(saved.campaigns) && saved.campaigns.length && saved.campaigns.every(c => c && typeof c === "object" && c.id)) return saved;
-    if (Array.isArray(snapshot) && snapshot.length) return { source: "archivist", activeCampaignId: snapshot[0].id, campaigns: structuredClone(snapshot) };
-    return structuredClone(seed);
+    const fallback = Array.isArray(snapshot) && snapshot.length
+      ? { source: "archivist", activeCampaignId: snapshot[0].id, campaigns: structuredClone(snapshot) }
+      : structuredClone(seed);
+    // A workspace-level library can exist before it has a usable campaign.
+    if (saved && Object.hasOwn(saved, "prepTemplates")) fallback.prepTemplates = structuredClone(saved.prepTemplates);
+    return fallback;
   }
 
   // Keep just the newest pending state. A write already in progress always finishes first.

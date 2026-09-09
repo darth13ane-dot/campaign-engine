@@ -8,6 +8,19 @@ test("restores manual browser campaigns with an empty or populated bundled snaps
   for (const snapshot of [[], [{ id: "import" }], null]) assert.equal(initialState(saved, snapshot, seed), saved);
   assert.equal(initialState({ campaigns: [] }, [], seed).campaigns[0].id, "sample");
 });
+test("campaign fallback preserves a workspace template library including an unsupported future version", () => {
+  for (const schemaVersion of [1, 99]) {
+    const saved = { campaigns: [], prepTemplates: { schemaVersion, templates: { custom: { id: "custom", name: "My session shape" } } } };
+    const before = structuredClone(saved);
+    for (const snapshot of [[], [{ id: "imported-campaign" }]]) {
+      const restored = initialState(saved, snapshot, { campaigns: [{ id: "example" }] });
+      assert.deepEqual(restored.prepTemplates, before.prepTemplates);
+      restored.prepTemplates.templates.custom.name = "A separate edit";
+      assert.deepEqual(saved, before);
+    }
+  }
+});
+
 test("coalesces typing before cloning and writes the latest state", async () => {
   let text = "", clones = 0; const writes = [];
   const saver = createSaveController({ snapshot: () => { clones++; return { text }; }, write: value => writes.push(value), delay: 10000 });
