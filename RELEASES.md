@@ -1,5 +1,13 @@
 # Sharing and desktop updates
 
+## Version 1.5.0 — Session Prep workspace
+
+**Prepare session** opens a dedicated workspace from Overview, Sessions, and session records. GMs can assemble an opening, time budget, ordered scenes with details and decisions, pinned campaign records, clues, clocks, character spotlight opportunities, and preparation tasks. Saved preparation can be searched in GM view and downloaded as a GM Markdown packet.
+
+Preparation checks derive from the saved material, with timing totals and unresolved-reference feedback. On the first start, the prepared material carries into the Live Session Desk. Reopening the desk preserves live progress. Stable session references keep prep and desks attached through renames and distinguish sessions with the same title; uniquely identifiable legacy references are upgraded.
+
+The workspace persists preparation in its existing backup and Archivist-review paths. Player preview excludes prep and its search results. Core preparation works across game systems without requiring AI or an integration. See [SESSION_PREP.md](SESSION_PREP.md) for the workflow and [PRODUCT_ROADMAP.md](PRODUCT_ROADMAP.md) for the preparation-first product direction and future commercial gates.
+
 ## Version 1.4.2 — Navigation and Archivist connection diagnostics
 
 The bundled proxy uses the operating system's trusted certificate authorities, allowing trusted Windows HTTPS inspection while keeping certificate verification enabled. This supersedes the 1.4.1 release attempt.

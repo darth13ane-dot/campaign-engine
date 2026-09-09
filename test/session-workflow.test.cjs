@@ -20,7 +20,8 @@ test("normalizes legacy workflow state without adding state to unused campaigns"
   const migrated = campaign();
   migrated.sessionDeskState = { sessions: [{ id: "desk-old", sessionTitle: "The Crossing", beats: [{ text: "Open the door" }] }] };
   workflow.normalizeCampaign(migrated);
-  assert.equal(migrated.sessionWorkflow.schemaVersion, 1);
+  assert.equal(migrated.sessionWorkflow.schemaVersion, 2);
+  assert.deepEqual(migrated.sessionWorkflow.preps, {});
   assert.equal(migrated.sessionWorkflow.desks["desk-old"].beats[0].title, "Open the door");
   assert.equal(migrated.sessionDeskState, undefined);
 });
@@ -77,4 +78,35 @@ test("stale proposals fail safely and remain recoverable", () => {
   assert.equal(draft.status, "draft");
   assert.match(draft.error, /changed after this proposal/);
   assert.equal(value.quests[0].detail, "GM edited this later");
+});
+
+test("session desks retain local identity through renames and distinguish duplicate titles", () => {
+  const value = campaign();
+  value.sessions[0].localId = "session-first";
+  value.sessions.push({ ...value.sessions[0], localId: "session-second" });
+  const first = workflow.startDesk(value, value.sessions[0]);
+  const second = workflow.startDesk(value, value.sessions[1]);
+  assert.notEqual(first.id, second.id);
+  value.sessions[0].title = "Beyond the Crossing";
+  assert.equal(workflow.findDeskForSession(value, value.sessions[0]).id, first.id);
+  assert.equal(workflow.findDeskForSession(value, value.sessions[1]).id, second.id);
+  assert.equal(workflow.startDesk(value, value.sessions[0]).id, first.id);
+});
+
+test("resuming a unique legacy desk upgrades its reference without resetting play", () => {
+  const value = campaign();
+  value.sessions[0].localId = "session-first";
+  value.sessionWorkflow = { schemaVersion: 1, desks: { old: { id: "old", sessionRef: { name: "The Crossing", number: 4 }, status: "ended", startedAt: "2026-07-01T10:00:00.000Z", endedAt: "2026-07-01T12:00:00.000Z", scratch: "Keep this", beats: [{ id: "b", title: "Gate", done: true }], revelations: [{ id: "r", text: "The guard lied", checked: true }], log: [{ id: "l", at: "2026-07-01T11:00:00.000Z", text: "Gate opened" }] } }, reconciliations: {} };
+  const resumed = workflow.startDesk(value, value.sessions[0]);
+  assert.equal(resumed.id, "old");
+  assert.equal(resumed.sessionRef.localId, "session-first");
+  assert.equal(resumed.status, "ended");
+  assert.equal(resumed.scratch, "Keep this");
+  assert.equal(resumed.beats[0].done, true);
+  assert.equal(resumed.revelations[0].checked, true);
+  assert.equal(resumed.log[0].text, "Gate opened");
+  assert.equal(resumed.startedAt, "2026-07-01T10:00:00.000Z");
+  assert.equal(resumed.endedAt, "2026-07-01T12:00:00.000Z");
+  value.sessions[0].title = "Renamed";
+  assert.equal(workflow.findDeskForSession(value, value.sessions[0]).id, "old");
 });

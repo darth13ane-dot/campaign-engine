@@ -8,6 +8,7 @@ let ARCHIVIST_DETAILS = ARCHIVIST_DETAILS_ROOT.campaigns || {};
 const ARCHIVIST_MERGE = window.CampaignArchivistMerge || null;
 const CAMPAIGN_CLEANUP = window.CampaignCleanup || null;
 const SESSION_WORKFLOW = window.CampaignSessionWorkflow || null;
+const SESSION_PREP = window.CampaignSessionPrep || null;
 const FOUNDRY_API_BRIDGE = window.CampaignFoundryApiBridge || null;
 const FOUNDRY_ACTOR_NORMALIZER = window.CampaignFoundryActorNormalizer || null;
 const FOUNDRY_LIVE_ACTIONS = window.CampaignFoundryLiveActions || null;
@@ -517,15 +518,31 @@ function stats(campaign) {
   const labels = playerPreviewActive() ? ["Shared sessions", "Known threads", "Known PCs"] : ["Sessions played", "Open threads", "Players at table"];
   return `<div class="stat-grid"><div class="card stat"><span class="stat-number">${sessions.length}</span><span class="stat-label">${labels[0]}</span></div><div class="card stat"><span class="stat-number">${quests.filter(q => !["Blocked", "Done", "Failed"].includes(q.status)).length}</span><span class="stat-label">${labels[1]}</span></div><div class="card stat"><span class="stat-number">${characters.filter(c => c.role.startsWith("PC")).length}</span><span class="stat-label">${labels[2]}</span></div></div>`;
 }
+function sessionActionRef(session) {
+  return encodeURIComponent(JSON.stringify(SESSION_PREP.sessionReference(session)));
+}
+function sessionFromAction(campaign, value) {
+  try { return SESSION_PREP.findSession(campaign, JSON.parse(decodeURIComponent(value))); }
+  catch { const matches = campaign.sessions.filter(session => session.title === value); return matches.length === 1 ? matches[0] : null; }
+}
+function sessionPrepAction(session) {
+  return playerPreviewActive() ? "" : `<button class="secondary-button" type="button" data-open-session-prep="${esc(sessionActionRef(session))}">Prepare session</button>`;
+}
+function sessionPrepSummary(campaign, session) {
+  const prep = SESSION_PREP.findPrepForSession(campaign, session);
+  if (!prep) return "Open preparation to assemble the session";
+  const status = SESSION_PREP.readiness(prep, campaign);
+  return `${status.complete}/${status.total} prep checks · ${status.plannedMinutes}/${status.durationMinutes} minutes planned`;
+}
 function dashboardView(campaign) {
   const visibleSessions = campaign.sessions.filter(item => playerCanSee(item, "session"));
   const visibleQuests = campaign.quests.filter(item => playerCanSee(item, "quests"));
   const recentSessions = visibleSessions.filter(s => !s.upcoming).slice(0, 3);
   const upcoming = visibleSessions.find(session => session.upcoming) || visibleSessions[0];
   const upcomingDesk = upcoming && SESSION_WORKFLOW?.findDeskForSession(campaign, upcoming);
-  const deskAction = !playerPreviewActive() && upcoming && (upcoming.upcoming || upcomingDesk) ? `<button class="secondary-button" type="button" data-start-session-desk="${esc(upcoming.title)}">${upcomingDesk?.status === "active" ? "Resume live desk" : upcomingDesk?.status === "ended" ? "Review consequences" : "Run live session"}</button>` : "";
+  const deskAction = !playerPreviewActive() && upcoming && (upcoming.upcoming || upcomingDesk) ? `<button class="secondary-button" type="button" data-start-session-desk="${esc(sessionActionRef(upcoming))}">${upcomingDesk?.status === "active" ? "Resume live desk" : upcomingDesk?.status === "ended" ? "Review consequences" : "Run live session"}</button>` : "";
   const sessionCard = upcoming
-    ? `<section class="card next-session"><div class="next-session-content"><span class="session-label">${upcoming.upcoming ? "Next at the table" : playerPreviewActive() ? "Latest shared session" : "Latest session"} · ${esc(upcoming.date)}</span><h2>${esc(upcoming.title)}</h2><p>Session ${upcoming.number}${playerPreviewActive() ? "" : ` · ${esc(campaign.nextSession?.prep || "")}`}</p><div class="session-actions"><button class="primary-button" data-open-entity data-entity-type="session" data-entity-name="${esc(upcoming.title)}">Open session</button>${deskAction}${playerPreviewActive() ? "" : `<button class="text-link" data-open-record="session">Plan the next one</button>`}</div></div></section>`
+    ? `<section class="card next-session"><div class="next-session-content"><span class="session-label">${upcoming.upcoming ? "Next at the table" : playerPreviewActive() ? "Latest shared session" : "Latest session"} · ${esc(upcoming.date)}</span><h2>${esc(upcoming.title)}</h2><p>Session ${upcoming.number}${playerPreviewActive() ? "" : ` · ${esc(sessionPrepSummary(campaign, upcoming))}`}</p><div class="session-actions"><button class="primary-button" data-open-entity data-entity-type="session" data-entity-name="${esc(upcoming.title)}">Open session</button>${sessionPrepAction(upcoming)}${deskAction}${playerPreviewActive() ? "" : `<button class="text-link" data-open-record="session">Plan the next one</button>`}</div></div></section>`
     : `<section class="card next-session"><div class="next-session-content"><span class="session-label">PLAYER KNOWLEDGE</span><h2>No shared session record yet</h2><p>Mark a session “Players know” in GM view when its recap is ready.</p></div></section>`;
   return `
     <div class="hero"><div class="hero-title"><div class="campaign-meta"><span>${esc(campaign.system)}</span><span class="meta-dot">✦</span><span>${esc(campaign.genre)}</span>${campaign.source && !playerPreviewActive() ? `<span class="meta-dot">✦</span><span>ARCHIVIST RECORD</span>` : ""}</div><h1>${esc(campaign.title)}</h1><p>${playerPreviewActive() ? "A player-facing view of the campaign knowledge shared so far." : esc(campaign.summary)}</p></div>${playerPreviewActive() ? "" : `<button class="primary-button" data-open-record="session">Plan a session <span>→</span></button>`}</div>
@@ -650,20 +667,20 @@ function sessionsView(campaign) {
   const sessionAction = activeDesk
     ? `<button class="primary-button" type="button" data-open-session-desk="${esc(activeDesk.id)}">Resume live desk <span>→</span></button>`
     : upcoming
-      ? `<button class="primary-button" type="button" data-start-session-desk="${esc(upcoming.title)}">Run ${esc(upcoming.title)} <span>→</span></button>`
+      ? `<button class="primary-button" type="button" data-start-session-desk="${esc(sessionActionRef(upcoming))}">Run ${esc(upcoming.title)} <span>→</span></button>`
       : `<button class="primary-button" type="button" data-open-record="session">Plan the next session <span>＋</span></button>`;
   return `${header("Sessions", "CHRONICLE", "A chronological memory of what happened and what still needs to happen.", playerPreviewActive() ? "" : `<button class="primary-button" data-open-record="session">Plan session <span>＋</span></button>`)}
-    ${playerPreviewActive() ? "" : `<section class="card session-workflow-intro"><div><p class="eyebrow">LIVE SESSION WORKFLOW</p><h2>${activeDesk ? "A session is in progress." : upcoming ? "Your next session is ready to run." : "Plan a session to open the Live Session Desk."}</h2><p>Capture the table in one focused workspace, then end the session to review an approval-only Consequence Inbox. Existing campaign canon never changes until you approve it.</p></div>${sessionAction}</section>`}
+    ${playerPreviewActive() ? "" : `<section class="card session-workflow-intro"><div><p class="eyebrow">LIVE SESSION WORKFLOW</p><h2>${activeDesk ? "A session is in progress." : upcoming ? "Prepare your next session." : "Plan a session to open the Live Session Desk."}</h2><p>Assemble scenes, clues, and references in Session Prep. Carry them into the live desk, then review the consequences after play.</p></div>${sessionAction}</section>`}
     <div class="timeline">${sessions.length ? sessions.map(session => {
       const directions = Array.isArray(session.directions) ? session.directions.filter(Boolean) : [];
       const patterns = [session.archetype, ...(Array.isArray(session.tropes) ? session.tropes : [])].filter(Boolean);
       const desk = SESSION_WORKFLOW?.findDeskForSession(campaign, session);
       const deskLabel = desk?.status === "active" ? "Resume live desk" : desk?.status === "ended" ? "Review consequences" : "Run live session";
-      const deskButton = !playerPreviewActive() && (session.upcoming || desk) ? `<button class="primary-button" type="button" data-start-session-desk="${esc(session.title)}">${deskLabel}</button>` : "";
+      const deskButton = !playerPreviewActive() && (session.upcoming || desk) ? `<button class="primary-button" type="button" data-start-session-desk="${esc(sessionActionRef(session))}">${deskLabel}</button>` : "";
       const entry = { type: "session", name: session.title };
       const tagControls = playerPreviewActive() ? normalizedTags(session.tags).map(tag => `<span class="tag">${esc(tag)}</span>`).join("") : quickTagControls(entry, session);
       const editActions = playerPreviewActive() ? "" : `<button class="secondary-button" type="button" data-edit-record="${esc(encodeEntryRef(entry))}">Edit</button><button class="secondary-button" type="button" data-revise-record="${esc(encodeEntryRef(entry))}">AI revise</button>`;
-      return `<article class="card timeline-item ${session.upcoming ? "upcoming" : ""}"><div class="timeline-meta">SESSION ${session.number} · ${esc(session.date)} ${session.upcoming ? "· UPCOMING" : ""}${session.localOverrides ? " · LOCALLY EDITED" : ""}</div><h2>${esc(session.title)}</h2><p>${esc(session.recap)}</p>${directions.length || patterns.length ? `<div class="story-compass compact">${directions.length ? `<section><small>POSSIBLE DIRECTIONS</small><ul>${directions.slice(0, 3).map(direction => `<li>${esc(direction)}</li>`).join("")}</ul></section>` : ""}${patterns.length ? `<section><small>STORY PATTERNS</small><div class="pattern-tags">${patterns.slice(0, 5).map(pattern => `<span>${esc(pattern)}</span>`).join("")}</div></section>` : ""}</div>` : ""}<div class="timeline-footer">${tagControls}${knowledgeBadge(entry, session)}${deskButton}<button class="text-link" data-open-entity data-entity-type="session" data-entity-name="${esc(session.title)}">Open notes</button>${editActions}</div></article>`;
+      return `<article class="card timeline-item ${session.upcoming ? "upcoming" : ""}"><div class="timeline-meta">SESSION ${session.number} · ${esc(session.date)} ${session.upcoming ? "· UPCOMING" : ""}${session.localOverrides ? " · LOCALLY EDITED" : ""}</div><h2>${esc(session.title)}</h2><p>${esc(session.recap)}</p>${directions.length || patterns.length ? `<div class="story-compass compact">${directions.length ? `<section><small>POSSIBLE DIRECTIONS</small><ul>${directions.slice(0, 3).map(direction => `<li>${esc(direction)}</li>`).join("")}</ul></section>` : ""}${patterns.length ? `<section><small>STORY PATTERNS</small><div class="pattern-tags">${patterns.slice(0, 5).map(pattern => `<span>${esc(pattern)}</span>`).join("")}</div></section>` : ""}</div>` : ""}<div class="timeline-footer">${tagControls}${knowledgeBadge(entry, session)}${sessionPrepAction(session)}${deskButton}<button class="text-link" data-open-entity data-entity-type="session" data-entity-name="${esc(session.title)}">Open notes</button>${editActions}</div></article>`;
     }).join("") : playerPreviewActive() ? `<div class="empty-state"><h2>No player-known sessions yet.</h2><p>Return to GM view and share a session when its recap is ready.</p></div>` : `<div class="empty-state"><h2>No sessions yet.</h2><p>Plan a session to begin the chronicle.</p></div>`}</div>`;
 }
 function journalView(campaign) {
@@ -865,7 +882,7 @@ function entityDetailView(campaign) {
       <div class="entity-detail-top"><div class="record-emblem entity-emblem">${esc(initials(definition.title(item)))}</div><div><p class="eyebrow">${definition.label}</p><h2>${esc(definition.title(item))}</h2><p>${renderJournalContent(campaign, overview)}</p></div></div>
       <div class="detail-facts">${fields}</div>
        <div class="detail-sections">${knowledgeDetailSection({ type: detailTarget.type, name: definition.title(item) }, item)}${quickTagSection({ type: detailTarget.type, name: definition.title(item) }, item)}${detailTarget.type === "character" ? characterTableNotes(item) : ""}${connectionDetailSection(campaign, { type: detailTarget.type, name: definition.title(item) })}${structuredSections(detailTarget.type, source)}</div>
-      <div class="detail-actions">${characterAction}<button class="secondary-button" data-view-jump="${definition.back}">Return to directory</button></div>
+      <div class="detail-actions">${characterAction}${detailTarget.type === "session" ? sessionPrepAction(item) : ""}<button class="secondary-button" data-view-jump="${definition.back}">Return to directory</button></div>
     </article>`;
 }
 function getFoundryState() {
@@ -1467,7 +1484,7 @@ function render() {
   nav.querySelectorAll(".nav-link").forEach(button => button.classList.toggle("active", button.dataset.view === currentView));
   settingsButton.classList.toggle("active", ["settings", "systems", "foundry", "archivist", "updates"].includes(currentView));
   const featureView = (name, fallback) => typeof globalThis[name] === "function" ? globalThis[name] : fallback;
-  const views = { dashboard: dashboardView, sessions: sessionsView, "session-desk": sessionDeskView, reconciliation: reconciliationView, characters: c => recordView("characters", c), sheets: sheetsView, builder: c => featureView("builderStudioView", () => header("Builder studio", "RULES-AWARE CREATION", "Loading builder tools…"))(c), sources: c => featureView("sourcesFeatureView", () => header("Rulebooks & PDFs", "LOCAL REFERENCE LIBRARY", "Loading source tools…"))(c), quests: c => recordView("quests", c), arcs: arcsView, connections: connectionsView, locations: c => recordView("locations", c), journal: journalView, settings: settingsView, systems: c => featureView("systemsFeatureView", () => header("Game systems", "RULES LIBRARY", "Loading system tools…"))(c), copilot: copilotView, foundry: foundryView, archivist: archivistView, updates: desktopUpdateView, detail: entityDetailView, history: historyView, "sync-review": archivistReviewView, "source-detail": referenceDetailView };
+  const views = { dashboard: dashboardView, sessions: sessionsView, "session-prep": sessionPrepView, "session-desk": sessionDeskView, reconciliation: reconciliationView, characters: c => recordView("characters", c), sheets: sheetsView, builder: c => featureView("builderStudioView", () => header("Builder studio", "RULES-AWARE CREATION", "Loading builder tools…"))(c), sources: c => featureView("sourcesFeatureView", () => header("Rulebooks & PDFs", "LOCAL REFERENCE LIBRARY", "Loading source tools…"))(c), quests: c => recordView("quests", c), arcs: arcsView, connections: connectionsView, locations: c => recordView("locations", c), journal: journalView, settings: settingsView, systems: c => featureView("systemsFeatureView", () => header("Game systems", "RULES LIBRARY", "Loading system tools…"))(c), copilot: copilotView, foundry: foundryView, archivist: archivistView, updates: desktopUpdateView, detail: entityDetailView, history: historyView, "sync-review": archivistReviewView, "source-detail": referenceDetailView };
   systemViews.forEach(view => {
     views[view.id] = campaignValue => featureView(
       view.renderer,
@@ -1973,6 +1990,7 @@ function updateTextReferences(campaign, oldEntry, newEntry) {
   });
 }
 function applyRecordValues(campaign, type, item, values, source = "manual") {
+  if (type === "session") SESSION_PREP.ensureSessionReferences(campaign, item);
   if (!item.archivistId && campaign.source === "archivist" && ARCHIVIST_MERGE?.findDetail) {
     const collection = type === "session" ? "sessions" : type;
     const detail = ARCHIVIST_MERGE.findDetail(ARCHIVIST_DETAILS[campaign.id] || {}, collection, item);
@@ -2768,7 +2786,7 @@ function activeDesk(campaign = activeCampaign()) {
   return campaign.sessionWorkflow?.desks?.[activeSessionDeskId] || null;
 }
 function sessionForDesk(campaign, desk) {
-  return campaign.sessions.find(session => desk?.sessionRef?.archivistId ? session.archivistId === desk.sessionRef.archivistId : session.title === desk?.sessionRef?.name) || null;
+  return SESSION_PREP.findSession(campaign, desk?.sessionRef);
 }
 function deskTime(value) {
   const date = new Date(value);
@@ -2777,20 +2795,34 @@ function deskTime(value) {
 function deskEntryAction(entry) {
   return entry.type === "arc" ? `data-open-arc-entry="${esc(entry.name)}"` : `data-open-entity data-entity-type="${esc(entry.type)}" data-entity-name="${esc(entry.name)}"`;
 }
+function deskPinMarkup(campaign, entry) {
+  const remove = `<button class="quiet-button" type="button" data-desk-unpin-ref="${esc(encodeURIComponent(JSON.stringify(entry.pinRef)))}" aria-label="Unpin ${esc(entry.name)}">Unpin</button>`;
+  if (!prepNameIsUnique(campaign, entry)) {
+    const record = SESSION_PREP.resolvePinnedRecord(campaign, entry.pinRef);
+    return `<article class="desk-pin-reference"><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small><strong>${esc(entry.name)}</strong>${prepPinnedRecordDetails(record || {})}${remove}</article>`;
+  }
+  return `<div class="desk-pin-reference"><button type="button" ${deskEntryAction(entry)}><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small><strong>${esc(entry.name)}</strong></button>${remove}</div>`;
+}
 function sessionDeskView(campaign) {
+  if (playerPreviewActive()) return header("Session desk is GM only", "PLAYER PREVIEW", "Return to GM view to run this session.");
   const desk = activeDesk(campaign);
   if (!desk) return `<div class="empty-state"><h2>This live desk is unavailable.</h2><p>Return to Sessions and open a planned session.</p><button class="primary-button" type="button" data-view-jump="sessions">Back to sessions</button></div>`;
   const session = sessionForDesk(campaign, desk);
-  const entries = campaignEntries(campaign).filter(entry => entry.type !== "session" || entry.name !== session?.title);
-  const pinnedKeys = new Set(desk.pinned.map(entryKey));
-  const pinned = desk.pinned.map(entry => findCampaignEntry(campaign, entry)).filter(Boolean);
+  const entries = Object.entries({ ...prepRecordLists(campaign), session: campaign.sessions }).flatMap(([type, records]) => (records || []).filter(record => record !== session).map(record => prepRecordRef(type, record)));
+  const pinned = desk.pinned.flatMap(reference => {
+    const record = SESSION_PREP.resolvePinnedRecord(campaign, reference);
+    return record ? [{ ...reference, name: record.name || record.title, pinRef: reference }] : [];
+  });
+  const pinnedKeys = new Set(desk.pinned.map(prepRecordKey));
   const ending = deskEndConfirmation ? `<section class="desk-end-confirm card" role="alert"><div><strong>End this session?</strong><p>The desk will become read-only for play and a recoverable consequence draft will open. Canon still will not change without approval.</p></div><button class="secondary-button" type="button" data-cancel-end-session>Keep playing</button><button class="danger-button" type="button" data-confirm-end-session>End session</button></section>` : "";
   return `<div class="session-desk-page">
     ${header(session?.title || desk.sessionRef.name, desk.status === "active" ? "LIVE SESSION DESK" : "SESSION COMPLETE", desk.status === "active" ? "Run the table from one focused workspace. Everything here saves locally." : "This session is complete. Review its proposed consequences before changing canon.", `<div class="header-actions"><button class="secondary-button" type="button" data-view-jump="sessions">Sessions</button>${desk.status === "active" ? `<button class="danger-button" type="button" data-end-session>End session</button>` : `<button class="primary-button" type="button" data-open-reconciliation="${esc(desk.id)}">Review consequences <span>→</span></button>`}</div>`)}
     ${ending}
+    ${desk.opening ? `<section class="card desk-panel desk-prep-opening"><p class="eyebrow">OPENING SITUATION</p><p class="desk-prep-copy">${esc(desk.opening)}</p></section>` : ""}
+    ${desk.spotlights?.length ? `<section class="card desk-panel desk-prep-opening"><p class="eyebrow">CHARACTER SPOTLIGHTS</p>${desk.spotlights.map(item => `<p class="desk-prep-copy"><b>${esc(item.character)}:</b> ${esc(item.opportunity)}</p>`).join("")}</section>` : ""}
     <div class="desk-layout">
       <section class="card desk-panel desk-runlist"><div class="section-title"><div><p class="eyebrow">RUN OF PLAY</p><h2>Scenes & pressures</h2></div><span class="tag">${desk.beats.filter(beat => beat.done).length}/${desk.beats.length}</span></div>
-        <div class="desk-beats">${desk.beats.length ? desk.beats.map((beat, index) => `<div class="desk-beat ${beat.done ? "done" : ""}"><button class="check-dot" type="button" data-desk-beat-toggle="${esc(beat.id)}" aria-label="Mark ${esc(beat.title)} ${beat.done ? "not done" : "done"}">${beat.done ? "✓" : ""}</button><div><small>${esc(beat.kind)}</small><strong>${esc(beat.title)}</strong></div><div class="desk-order"><button type="button" data-desk-beat-move="${esc(beat.id)}" data-direction="up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-desk-beat-move="${esc(beat.id)}" data-direction="down" aria-label="Move down" ${index === desk.beats.length - 1 ? "disabled" : ""}>↓</button><button type="button" data-desk-beat-remove="${esc(beat.id)}" aria-label="Remove">×</button></div></div>`).join("") : `<p class="empty-copy">Add the first scene, beat, or pressure. The order stays flexible.</p>`}</div>
+        <div class="desk-beats">${desk.beats.length ? desk.beats.map((beat, index) => `<div class="desk-beat ${beat.done ? "done" : ""}"><button class="check-dot" type="button" data-desk-beat-toggle="${esc(beat.id)}" aria-label="Mark ${esc(beat.title)} ${beat.done ? "not done" : "done"}">${beat.done ? "✓" : ""}</button><div><small>${esc(beat.kind)}${beat.minutes ? ` · ${beat.minutes} min` : ""}</small><strong>${esc(beat.title)}</strong>${beat.detail ? `<p class="desk-prep-copy">${esc(beat.detail)}</p>` : ""}${beat.question ? `<p class="desk-prep-copy"><b>Decision:</b> ${esc(beat.question)}</p>` : ""}</div><div class="desk-order"><button type="button" data-desk-beat-move="${esc(beat.id)}" data-direction="up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-desk-beat-move="${esc(beat.id)}" data-direction="down" aria-label="Move down" ${index === desk.beats.length - 1 ? "disabled" : ""}>↓</button><button type="button" data-desk-beat-remove="${esc(beat.id)}" aria-label="Remove">×</button></div></div>`).join("") : `<p class="empty-copy">Add the first scene, beat, or pressure. The order stays flexible.</p>`}</div>
         <form class="desk-inline-form" data-desk-beat-form><select name="kind" aria-label="Beat type"><option>scene</option><option>beat</option><option>pressure</option></select><input required name="title" maxlength="240" placeholder="Add a flexible beat…" /><button class="secondary-button" type="submit">Add</button></form>
       </section>
       <section class="card desk-panel desk-notes"><div class="section-title"><div><p class="eyebrow">CONTINUOUS NOTES</p><h2>Scratchpad & log</h2></div><span class="save-hint" data-save-status>Saved</span></div>
@@ -2799,7 +2831,7 @@ function sessionDeskView(campaign) {
         <div class="desk-log">${desk.log.length ? [...desk.log].reverse().map(entry => `<article><time datetime="${esc(entry.at)}">${esc(deskTime(entry.at))}</time><p>${esc(entry.text)}</p></article>`).join("") : `<p class="empty-copy">Timestamped events will collect here.</p>`}</div>
       </section>
       <aside class="desk-side">
-        <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">AT HAND</p><h2>Pinned records</h2></div></div><div class="desk-pins">${pinned.length ? pinned.map(entry => `<button type="button" ${deskEntryAction(entry)}><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small><strong>${esc(entry.name)}</strong><span data-desk-unpin="${esc(encodeEntryRef(entry))}" role="button" aria-label="Unpin">×</span></button>`).join("") : `<p class="empty-copy">Pin the people, places, quests, arcs, notes, and stats you expect to need.</p>`}</div><form class="desk-inline-form" data-desk-pin-form><select required name="entry"><option value="">Choose a record…</option>${entries.filter(entry => !pinnedKeys.has(entryKey(entry))).map(entry => `<option value="${esc(encodeEntryRef(entry))}">${esc(ENTRY_TYPES[entry.type] || entry.type)} · ${esc(entry.name)}</option>`).join("")}</select><button class="secondary-button" type="submit">Pin</button></form></section>
+        <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">AT HAND</p><h2>Pinned records</h2></div></div><div class="desk-pins">${pinned.length ? pinned.map(entry => deskPinMarkup(campaign, entry)).join("") : `<p class="empty-copy">Pin the people, places, quests, arcs, notes, and stats you expect to need.</p>`}</div><form class="desk-inline-form" data-desk-pin-form><select required name="entry"><option value="">Choose a record…</option>${entries.filter(entry => !pinnedKeys.has(prepRecordKey(entry))).map(entry => `<option value="${esc(encodeURIComponent(JSON.stringify(entry)))}">${esc(ENTRY_TYPES[entry.type] || entry.type)} · ${esc(entry.name)}</option>`).join("")}</select><button class="secondary-button" type="submit">Pin</button></form></section>
         <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">FAST CAPTURE</p><h2>Create without leaving</h2></div></div><div class="desk-capture"><button type="button" data-desk-capture="characters">NPC</button><button type="button" data-desk-capture="locations">World entry</button><button type="button" data-desk-capture="quests">Quest</button><button type="button" data-desk-capture="journal">Journal note</button></div></section>
         <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">PRESSURE</p><h2>Clocks & counters</h2></div></div><div class="desk-clocks">${desk.clocks.map(clock => `<div><strong>${esc(clock.label)}</strong><span>${clock.value}/${clock.max}</span><button type="button" data-desk-clock="${esc(clock.id)}" data-delta="-1" aria-label="Decrease">−</button><button type="button" data-desk-clock="${esc(clock.id)}" data-delta="1" aria-label="Increase">＋</button></div>`).join("")}</div><form class="desk-inline-form" data-desk-clock-form><input required name="label" maxlength="160" placeholder="Clock or counter" /><input required name="max" type="number" min="1" max="20" value="4" aria-label="Maximum" /><button class="secondary-button" type="submit">Add</button></form></section>
         <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">DISCOVERIES</p><h2>Clues & revelations</h2></div></div><div class="desk-revelations">${desk.revelations.map(item => `<button class="${item.checked ? "checked" : ""}" type="button" data-desk-revelation="${esc(item.id)}"><span>${item.checked ? "✓" : ""}</span>${esc(item.text)}</button>`).join("")}</div><form class="desk-inline-form" data-desk-revelation-form><input required name="text" maxlength="500" placeholder="Clue or revelation" /><button class="secondary-button" type="submit">Add</button></form></section>
@@ -2885,10 +2917,19 @@ root.addEventListener("click", async event => {
     showToast("Foundry actor filters cleared.");
     return;
   }
+  const prepButton = event.target.closest("[data-open-session-prep]");
+  if (prepButton) {
+    event.stopImmediatePropagation();
+    if (playerPreviewActive()) return;
+    const session = sessionFromAction(campaign, prepButton.dataset.openSessionPrep);
+    if (session) openSessionPrep(campaign, session);
+    return;
+  }
   const start = event.target.closest("[data-start-session-desk]");
   if (start) {
     event.stopImmediatePropagation();
-    const session = campaign.sessions.find(item => item.title === start.dataset.startSessionDesk);
+    if (playerPreviewActive()) return;
+    const session = sessionFromAction(campaign, start.dataset.startSessionDesk);
     if (!session || !SESSION_WORKFLOW) return;
     const desk = SESSION_WORKFLOW.startDesk(campaign, session);
     activeSessionDeskId = desk.id;
@@ -2929,8 +2970,15 @@ root.addEventListener("click", async event => {
   if (beatMove) { event.stopImmediatePropagation(); const beats = activeDesk(campaign)?.beats || []; const index = beats.findIndex(item => item.id === beatMove.dataset.deskBeatMove); const next = index + (beatMove.dataset.direction === "up" ? -1 : 1); if (index >= 0 && next >= 0 && next < beats.length) [beats[index], beats[next]] = [beats[next], beats[index]]; saveState(); render(); return; }
   const beatRemove = event.target.closest("[data-desk-beat-remove]");
   if (beatRemove) { event.stopImmediatePropagation(); const desk = activeDesk(campaign); if (desk) desk.beats = desk.beats.filter(item => item.id !== beatRemove.dataset.deskBeatRemove); saveState(); render(); return; }
-  const unpin = event.target.closest("[data-desk-unpin]");
-  if (unpin) { event.stopImmediatePropagation(); const desk = activeDesk(campaign); const entry = decodeEntryRef(unpin.dataset.deskUnpin); if (desk) desk.pinned = desk.pinned.filter(item => entryKey(item) !== entryKey(entry)); saveState(); render(); return; }
+  const unpin = event.target.closest("[data-desk-unpin-ref]");
+  if (unpin) {
+    event.stopImmediatePropagation();
+    const desk = activeDesk(campaign);
+    let entry;
+    try { entry = JSON.parse(decodeURIComponent(unpin.dataset.deskUnpinRef)); } catch { return; }
+    if (desk) desk.pinned = desk.pinned.filter(item => prepRecordKey(item) !== prepRecordKey(entry));
+    saveState(); render(); return;
+  }
   const capture = event.target.closest("[data-desk-capture]");
   if (capture) { event.stopImmediatePropagation(); deskQuickCapture = capture.dataset.deskCapture; openRecordModal(deskQuickCapture); return; }
   const clock = event.target.closest("[data-desk-clock]");
@@ -3167,7 +3215,11 @@ root.addEventListener("submit", async event => {
     event.preventDefault(); const value = String(new FormData(event.target).get("text") || "").trim(); if (value && desk) desk.log.push({ id: `log-${Date.now()}`, at: new Date().toISOString(), text: value }); saveState(); render(); return;
   }
   if (event.target.matches("[data-desk-pin-form]")) {
-    event.preventDefault(); const entry = decodeEntryRef(String(new FormData(event.target).get("entry") || "")); if (desk && entry.type && findCampaignEntry(campaign, entry) && !desk.pinned.some(item => entryKey(item) === entryKey(entry))) desk.pinned.push(entry); saveState(); render(); return;
+    event.preventDefault();
+    let entry;
+    try { entry = JSON.parse(decodeURIComponent(String(new FormData(event.target).get("entry") || ""))); } catch { return; }
+    if (desk && SESSION_PREP.resolvePinnedRecord(campaign, entry) && !desk.pinned.some(item => prepRecordKey(item) === prepRecordKey(entry))) desk.pinned.push(SESSION_PREP.recordReference(entry));
+    saveState(); render(); return;
   }
   if (event.target.matches("[data-desk-clock-form]")) {
     event.preventDefault(); const form = new FormData(event.target); const label = String(form.get("label") || "").trim(); if (label && desk) desk.clocks.push({ id: `clock-${Date.now()}`, label, value: 0, max: Math.max(1, Math.min(20, Number(form.get("max")) || 4)) }); saveState(); render(); return;

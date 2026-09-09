@@ -1,13 +1,15 @@
 /* Search, sync review, and history share the campaign data modules. */
-let searchIndex = null, searchIndexCampaign = null, searchLimit = 30, searchMatches = [];
+let searchIndex = null, searchIndexCampaign = null, searchIndexPreview = null, searchLimit = 30, searchMatches = [];
 let pendingArchivistReview = null;
 let syncReviewApplying = false;
 function invalidateCampaignSearch() { searchIndex = null; }
 function updateCampaignSearch() {
   const campaign = activeCampaign();
-  if (!searchIndex || searchIndexCampaign !== campaign.id) {
-    searchIndex = window.CampaignSearch.buildIndex(campaign, { playerPreview: playerPreviewActive(), visible: (record, collection) => playerCanSee(record, collection) });
+  const playerPreview = playerPreviewActive();
+  if (!searchIndex || searchIndexCampaign !== campaign.id || searchIndexPreview !== playerPreview) {
+    searchIndex = window.CampaignSearch.buildIndex(campaign, { playerPreview, visible: (record, collection) => playerCanSee(record, collection) });
     searchIndexCampaign = campaign.id;
+    searchIndexPreview = playerPreview;
   }
   const query = document.querySelector("#searchInput").value;
   const found = window.CampaignSearch.search(searchIndex, query, { type: document.querySelector("#searchFilter").value, limit: searchLimit });
@@ -18,7 +20,7 @@ function updateCampaignSearch() {
 document.querySelector("#searchButton").addEventListener("click", () => {
   searchIndex = null; searchLimit = 30;
   const filter = document.querySelector("#searchFilter");
-  filter.innerHTML = `<option value="all">All records</option>` + Object.entries(window.CampaignSearch.labels).filter(([type]) => !playerPreviewActive() || !["arc", "note", "reference"].includes(type)).map(([type, label]) => `<option value="${type}">${esc(label)}</option>`).join("");
+  filter.innerHTML = `<option value="all">All records</option>` + Object.entries(window.CampaignSearch.labels).filter(([type]) => !playerPreviewActive() || !["arc", "note", "reference", "prep"].includes(type)).map(([type, label]) => `<option value="${type}">${esc(label)}</option>`).join("");
   updateCampaignSearch(); searchModal.showModal(); document.querySelector("#searchInput").focus();
 });
 document.querySelector("#searchInput").addEventListener("input", () => { searchLimit = 30; updateCampaignSearch(); });
@@ -29,6 +31,16 @@ document.querySelector("#searchResults").addEventListener("click", event => {
   const hit = button && searchMatches[Number(button.dataset.searchHit)];
   if (!hit) return;
   searchModal.close();
+  if (hit.type === "prep") {
+    if (playerPreviewActive()) { showToast("Session prep is available in GM view."); return; }
+    const campaign = activeCampaign();
+    const preps = campaign.sessionWorkflow?.preps || {};
+    const prep = preps[hit.prepId] || Object.values(preps).find(value => value?.id === hit.prepId);
+    const session = prep && window.CampaignSessionPrep.findSession(campaign, prep.sessionRef);
+    if (!session) { showToast("This prepared session is no longer available in the campaign."); return; }
+    openSessionPrep(campaign, session);
+    return;
+  }
   if (hit.type === "reference") { referenceTarget = { id: hit.documentId, page: hit.page }; referenceQuery = document.querySelector("#searchInput").value; currentView = "source-detail"; }
   else if (hit.type === "note") { activeSessionDeskId = hit.deskId; currentView = "session-desk"; }
   else if (hit.type === "arc") { currentView = "arcs"; }

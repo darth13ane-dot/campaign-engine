@@ -1,7 +1,7 @@
 {
   "name": "campaign-engine",
   "productName": "Campaign Engine",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "description": "A local-first command center for tabletop RPG campaigns.",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -69,7 +69,10 @@
           "archivist-data.js",
           "archivist-details.js"
         ]
-      }
+      },
+      "session-prep.js",
+      "session-prep-views.js",
+      "session-prep.css"
     ],
     "win": {
       "target": [
