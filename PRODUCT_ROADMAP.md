@@ -49,7 +49,7 @@ Acceptance gates:
 6. Markdown output follows scene order, contains the relevant preparation, and remains readable outside Campaign Engine.
 7. Browser interaction checks cover editing, reordering, reload, export, and prep-to-play handoff. Domain tests cover identity, normalization, persistence, and repeat-start behavior. Release verification covers the packaged runtime and public data exclusion.
 
-## Active milestone: v1.6.0 — Continuity-aware preparation
+## Delivered milestone: v1.6.0 — Continuity-aware preparation
 
 **Status: implemented in v1.6.0.** A saved Bring forward review assembles proposed material from earlier completed play or recorded session notes, plus current active quests and story arcs. The GM selects and edits individual copies before appending them to the target prep. Completed live scenes and revealed clues stay completed; earlier plans without a live desk state that play progress is unknown. Applied consequences use the exact executed proposal IDs, with explicit limitations for older batches.
 
@@ -65,21 +65,30 @@ Acceptance gates:
 6. Saved reviews and source metadata survive normalization, restart, export, and restore. Browser checks cover explicit selection, editing, refresh, duplicate handling, narrow layouts, and offline use.
 7. Desktop recovery rejects future workspace schemas without changing originals and retains the newest supported backup copies across reason prefixes.
 
+## Active milestone: v1.7.0 — Reviewed player packets
+
+**Status: implemented in v1.7.0.** Each session can own several saved documents with custom sections and opt-in editable copies from player-known records. An isolated preview and explicit approval bind the selected public text to Markdown and printable HTML downloads. Relevant source or reference changes require another review; unavailable or revoked sources block export. [PLAYER_PACKETS.md](PLAYER_PACKETS.md) describes the workflow and its limits.
+
+Acceptance gates:
+
+1. GMs can compose, reorder, preview, approve, and export multiple distinct packets for one session, with stable session and packet identities.
+2. Every copied section comes from an explicitly shared source; output includes only the selected public heading and text. Private fields and source metadata remain outside the document.
+3. Hidden, malformed, ambiguous, or missing internal references are replaced with a neutral notice. Export markup cannot execute scripts or load remote resources.
+4. Approval covers the previewed content and current source and reference dependencies. Source edits, deletion, or permission revocation are rechecked immediately before export.
+5. Draft edits, approvals, and source identity survive normalization, restart, full workspace restore, and approved Archivist refresh. Source records remain unchanged by packet editing.
+6. Desktop and narrow browser checks cover the complete workflow, persisted approvals, stale sources, and local player projection. Exported files receive direct inspection.
+
+The GM remains responsible for secrets written as ordinary prose in a shared field or custom section. Current local Player preview is a presentation feature; hosted player access would need authorization at the server boundary. Older imported records with previously misclassified explicit sharing flags require review.
+
 ## Ordered next milestones
 
-### 1. Explicit player-safe outputs
-
-Create selected recaps, handouts, and player briefings from material approved for players. Provide a preview and an explicit export or publish action. Keep the full GM packet available separately.
-
-**Exit gate:** tests and manual inspection confirm that GM-only records, private scene notes, unrevealed clues, hidden relationships, and linked secret text stay out of each player output. The output shows exactly what will be shared. Current local player preview is a presentation feature; hosted player access would need authorization at the server boundary.
-
-### 2. Reusable and adaptable planning templates
+### 1. Reusable and adaptable planning templates
 
 Let GMs save and adapt useful session structures: investigation, social event, exploration, dungeon expedition, heist, and downtime. Templates contain optional prompts, scene structures, task defaults, and timing suggestions. They can be edited for the campaign and system without creating forced plot outcomes.
 
 **Exit gate:** applying a template is previewable, adds a distinct editable plan, preserves existing work, and retains no source campaign's private records or identity links. GMs running at least three different systems can complete the same core planning workflow; system-specific features clearly state their coverage.
 
-### 3. Trust, onboarding, performance, and beta readiness
+### 2. Trust, onboarding, performance, and beta readiness
 
 Reliability work proceeds alongside the earlier milestones. This is the gate for inviting a broader pilot and making a commercial commitment.
 
@@ -90,7 +99,7 @@ Reliability work proceeds alongside the earlier milestones. This is the gate for
 | Recovery | v1.6.0 retains the twelve newest supported copies by backup creation time, with legacy timestamp fallback and unique same-time filenames. Unreadable and future-schema copies are preserved. Continue failed-write, interrupted-save, restore, and upgrade exercises with representative workspaces, and make recovery reachable through the UI. |
 | Large campaigns | Measure startup, search, editing, save latency, and restore with documented campaign sizes and PDF libraries. Browser storage currently writes the full workspace to `localStorage`; establish supported limits and move larger libraries to a storage tier suited to them before promising scale. |
 | Desktop security | Add and verify a Content Security Policy, navigation restrictions, and sender validation for privileged IPC. Preserve the existing sandbox, context isolation, disabled Node integration, encrypted credentials, and restricted external-link handling. Review imported content and custom MCP command boundaries. |
-| Release assurance | Run appropriate checks on pull requests as well as releases; verify installation, upgrade, rollback, portable updates, and packaged assets. Establish a signed distribution process. The downloaded v1.5.0 portable release reported `NotSigned`; signing hooks exist in CI. |
+| Release assurance | Run appropriate checks on pull requests as well as releases; verify installation, upgrade, rollback, portable updates, and packaged assets. Establish a signed distribution process. The downloaded v1.6.0 portable release reported `NotSigned`; signing hooks exist in CI. |
 | Supportability | Provide actionable errors and an explicit diagnostic export that excludes credentials and campaign content by default. Document supported operating systems, integration versions, recovery steps, and known failures. Check keyboard operation, readable layouts, and save/error announcements. |
 
 Architecture changes should follow these needs. The existing pure data modules are useful seams for extracting preparation, import validation, and export logic from the large renderer scripts. A framework rewrite has no acceptance value by itself.

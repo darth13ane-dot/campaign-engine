@@ -39,6 +39,10 @@ Your review selections and edits save with the target prep. Return through **Bri
 
 Source disclosures in prep show where carried material came from, following stable identities when sessions are renamed. The GM Markdown packet includes those attributions. Missing source records are identified explicitly. Carried material retains its original identity through later sessions so reviewing the same source again can recognize an existing copy.
 
+## Prepare something for your players
+
+Choose **Player packets** to assemble session recaps, briefings, or handouts. Each session can keep several named documents. Add custom sections or editable copies of explicitly shared records, inspect the isolated player document, and approve that exact version before downloading Markdown or printable HTML. Changed or revoked sources require another review. See [PLAYER_PACKETS.md](PLAYER_PACKETS.md) for source checks and the complete workflow.
+
 ## Keep preparation recoverable
 
 Preparation travels with the full campaign workspace, including its backups and an approved Archivist refresh. Stable session references keep the plan and desk attached when the session is renamed. Legacy references are recovered when the corresponding session can be identified uniquely.

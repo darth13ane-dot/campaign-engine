@@ -1,5 +1,17 @@
 # Sharing and desktop updates
 
+## Version 1.7.0 — Reviewed player packets
+
+**Player packets** gives each session several named recaps, briefings, or handouts. Write custom sections, choose editable copies from explicitly player-known records, and arrange the document. An isolated preview shows the exact title and text for players. Approve that version before downloading Markdown or printable HTML.
+
+Saved drafts, approvals, and source checks travel with workspace backups and approved Archivist refreshes. Stable session identity preserves packets through renames; GM search opens the chosen packet directly. Editing content or changing a referenced source requires another review. Missing, ambiguous, or revoked sources block export; refreshing a copy explicitly replaces its edited text.
+
+Internal links reveal only uniquely resolved player-known labels. Hidden or unresolved references become a neutral notice. Exported HTML and Markdown keep authored markup and external addresses inert, and the HTML document loads no external resources. Custom prose still needs the GM's spoiler review. [PLAYER_PACKETS.md](PLAYER_PACKETS.md) explains the complete workflow.
+
+Local Player preview and search now project public record text through the same reference checks, excluding private planning fields, factions, tags, and relationship metadata. Record cards and search open the selected record by stable identity, including records with identical names. Imported packet drafts recover missing section lists and retain distinct copies when IDs collide, requiring fresh approval for ambiguous copies. The dashboard also tolerates imported characters without a role.
+
+Archivist permission interpretation uses exact shared-label rules, correcting cases such as `not public`. Existing explicitly shared flags remain subject to GM review because a previously misclassified stored flag cannot reliably be distinguished from a deliberate sharing choice.
+
 ## Version 1.6.0 — Session continuity
 
 **Bring forward** opens a saved review from Session Prep. Choose an earlier completed session, recorded session notes, or current campaign quests and story arcs. Review unused live scenes, unchecked revelations, incomplete clocks and prep tasks, spotlight opportunities, and pinned records. Edit the proposed copies and explicitly select what to add. Every new review begins with nothing selected.

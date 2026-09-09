@@ -292,6 +292,7 @@ function prepViewHarness(value) {
     esc: value => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character])),
     ENTRY_TYPES: { character: "Character", quest: "Quest", arc: "Story arc" },
     sessionActionRef: session => encodeURIComponent(JSON.stringify(prep.sessionReference(session))),
+    playerPacketAction: () => '<button data-open-player-packet="test-session">Player packets</button>',
     deskEntryAction: () => "data-open-entity", saveState() {}, render() {},
     header: (title, label, description, actions) => `<header>${actions}</header>`
   };

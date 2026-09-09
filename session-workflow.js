@@ -1,8 +1,9 @@
 (function (root, factory) {
-  const api = factory(typeof module === "object" && module.exports ? require("./session-prep.js") : root.CampaignSessionPrep);
+  const common = typeof module === "object" && module.exports;
+  const api = factory(common ? require("./session-prep.js") : root.CampaignSessionPrep, common ? require("./player-packet.js") : root.CampaignPlayerPacket);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.CampaignSessionWorkflow = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function (PREP) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (PREP, PACKETS) {
   "use strict";
 
   const SCHEMA_VERSION = 2;
@@ -21,9 +22,31 @@
   const id = prefix => `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const recordTitle = (collection, record) => collection === "characters" ? record?.name : record?.title;
   const recordKey = (collection, record) => String(record?.archivistId || record?.id || `${collection}:${recordTitle(collection, record) || ""}`);
+  const normalizedPacketWorkflows = new WeakSet();
+
+  function normalizePacketMap(value) {
+    const packets = Object.entries(object(value) ? value : {}).map(([key, packet]) => PACKETS.normalizePacket(packet, key)).filter(Boolean);
+    const reservedIds = new Set(packets.map(packet => packet.id)), result = {};
+    const counts = new Map();
+    for (const packet of packets) counts.set(packet.id, (counts.get(packet.id) || 0) + 1);
+    let recovered = 0;
+    for (const packet of packets) {
+      // Every document in an ambiguous identity group needs a fresh review.
+      if (counts.get(packet.id) > 1) delete packet.approval;
+      if (Object.hasOwn(result, packet.id)) {
+        const prefix = packet.id.slice(0, 130);
+        do { packet.id = `${prefix}-recovered-${++recovered}`; } while (reservedIds.has(packet.id));
+        reservedIds.add(packet.id);
+      }
+      Object.defineProperty(result, packet.id, { value: packet, enumerable: true, writable: true, configurable: true });
+    }
+    return result;
+  }
 
   function emptyWorkflow() {
-    return { schemaVersion: SCHEMA_VERSION, preps: {}, desks: {}, reconciliations: {} };
+    const workflow = { schemaVersion: SCHEMA_VERSION, preps: {}, desks: {}, reconciliations: {}, playerPackets: {} };
+    normalizedPacketWorkflows.add(workflow);
+    return workflow;
   }
 
   function normalizeDesk(value, key) {
@@ -52,6 +75,7 @@
     if (!object(value)) return emptyWorkflow();
     const preps = {};
     Object.entries(object(value.preps) ? value.preps : {}).forEach(([key, prep]) => { const next = PREP.normalizePrep(prep, key); if (next) Object.defineProperty(preps, next.id, { value: next, enumerable: true, writable: true, configurable: true }); });
+    const playerPackets = normalizePacketMap(value.playerPackets);
     const desks = {};
     const sourceDesks = object(value.desks) ? value.desks : Array.isArray(value.sessions) ? Object.fromEntries(value.sessions.map((desk, index) => [desk.id || `legacy-${index}`, desk])) : {};
     Object.entries(sourceDesks).forEach(([key, desk]) => { const next = normalizeDesk(desk, key); if (next) desks[next.id] = next; });
@@ -62,12 +86,20 @@
       const draftId = text(draft.id || key, 160) || id("reconcile");
       reconciliations[draftId] = { id: draftId, deskId: text(draft.deskId, 160), status: ["draft", "applying", "applied", "discarded"].includes(draft.status) ? draft.status : "draft", recap: text(draft.recap, 12000), proposals: sanitizeProposals(draft.proposals || []), createdAt: text(draft.createdAt, 80) || new Date().toISOString(), appliedAt: text(draft.appliedAt, 80) || null, error: text(draft.error, 1000) || "", ...(Array.isArray(draft.appliedProposalIds) ? { appliedProposalIds: [...new Set(draft.appliedProposalIds.map(value => text(value, 160)).filter(Boolean))].slice(0, 100) } : {}) };
     });
-    return { schemaVersion: SCHEMA_VERSION, preps, desks, reconciliations };
+    const workflow = { schemaVersion: SCHEMA_VERSION, preps, desks, reconciliations, playerPackets };
+    normalizedPacketWorkflows.add(workflow);
+    return workflow;
   }
 
   function normalizeCampaign(campaign) {
     if (!object(campaign)) return campaign;
-    if (campaign.sessionWorkflow?.schemaVersion === SCHEMA_VERSION) return campaign;
+    if (campaign.sessionWorkflow?.schemaVersion === SCHEMA_VERSION) {
+      if (!normalizedPacketWorkflows.has(campaign.sessionWorkflow)) {
+        campaign.sessionWorkflow.playerPackets = normalizePacketMap(campaign.sessionWorkflow.playerPackets);
+        normalizedPacketWorkflows.add(campaign.sessionWorkflow);
+      }
+      return campaign;
+    }
     const legacy = campaign.sessionWorkflow || campaign.sessionDeskState || campaign.reconciliationState;
     if (legacy) campaign.sessionWorkflow = normalizeWorkflow(legacy);
     delete campaign.sessionDeskState;
@@ -78,7 +110,7 @@
   function ensureWorkflow(campaign) {
     normalizeCampaign(campaign);
     if (!campaign.sessionWorkflow) campaign.sessionWorkflow = emptyWorkflow();
-    for (const collection of ["preps", "desks", "reconciliations"]) if (!object(campaign.sessionWorkflow[collection])) campaign.sessionWorkflow[collection] = {};
+    for (const collection of ["preps", "desks", "reconciliations", "playerPackets"]) if (!object(campaign.sessionWorkflow[collection])) campaign.sessionWorkflow[collection] = {};
     return campaign.sessionWorkflow;
   }
 
