@@ -150,7 +150,7 @@ test("player-preview campaign chrome uses each campaign's current link visibilit
     activeCampaign: () => value, state: { campaigns: [value, other] }, playerPreviewActive: () => true,
     window: { CampaignPlayerPacket: packets, CampaignPlayerPreview: preview },
     document: { documentElement: { dataset: {} }, querySelector: element },
-    campaignMenu: menu, knowledgeModeToggle: null, knowledgeModeLabel: null,
+    campaignMenu: menu, campaignSwitcher: {}, nav: { querySelectorAll: () => [] }, workspaceLoadError: null, knowledgeModeToggle: null, knowledgeModeLabel: null,
     esc: value => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]))
   };
   vm.runInNewContext(`${app.slice(start, end)}\nupdateCampaignChrome();`, context);

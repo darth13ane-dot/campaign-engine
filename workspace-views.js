@@ -5,6 +5,7 @@ let syncReviewApplying = false;
 function invalidateCampaignSearch() { searchIndex = null; }
 function updateCampaignSearch() {
   const campaign = activeCampaign();
+  if (!campaign || workspaceLoadError) return;
   const playerPreview = playerPreviewActive();
   if (!searchIndex || searchIndexCampaign !== campaign.id || searchIndexPreview !== playerPreview) {
     searchIndex = window.CampaignSearch.buildIndex(campaign, { playerPreview, visible: (record, collection) => playerCanSee(record, collection), projectRecord: (record, collection) => window.CampaignPlayerPacket.projectRecord(campaign, prepRecordRef(({ characters: "character", quests: "quest", locations: "location", sessions: "session", journal: "journal" })[collection], record)) });
@@ -18,6 +19,7 @@ function updateCampaignSearch() {
   results.innerHTML = !query.trim() ? `<p class="empty-copy">Search names, tags, scenes, notes, or rulebook text.</p>` : `<p class="search-count">${found.total} results · showing ${found.results.length}</p>${found.results.map((entry, index) => `<button class="search-result" type="button" data-search-hit="${index}"><span>${esc(window.CampaignSearch.labels[entry.type])}${entry.page ? ` · page ${entry.page}` : ""}</span><strong>${esc(entry.title)}</strong><p>${esc(entry.excerpt)}</p></button>`).join("")}${found.total > found.results.length ? `<button class="secondary-button" type="button" data-more-search>Show more</button>` : ""}`;
 }
 document.querySelector("#searchButton").addEventListener("click", () => {
+  if (!activeCampaign() || workspaceLoadError) return;
   searchIndex = null; searchLimit = 30;
   const filter = document.querySelector("#searchFilter");
   filter.innerHTML = `<option value="all">All records</option>` + Object.entries(window.CampaignSearch.labels).filter(([type]) => !playerPreviewActive() || !["arc", "note", "reference", "prep", "packet"].includes(type)).map(([type, label]) => `<option value="${type}">${esc(label)}</option>`).join("");
@@ -96,7 +98,7 @@ function archivistReviewView() {
     <div class="sync-review-list">${review.plan.rows.map(row => `<section class="card sync-review-row"><div class="section-title"><div><p class="eyebrow">${esc(row.kind === "record" || row.kind === "campaign" ? "New " + row.kind : row.field)}</p><h2>${esc(row.title)}</h2>${row.conflict ? `<span class="tag">Local edit differs</span>` : ""}</div><label>Use<select data-sync-choice="${esc(row.id)}" ${syncReviewApplying ? "disabled" : ""}><option value="local" ${(review.choices[row.id] || row.choice) === "local" ? "selected" : ""}>${row.before == null && ["record", "campaign"].includes(row.kind) ? "Skip addition" : "Keep local"}</option><option value="incoming" ${(review.choices[row.id] || row.choice) === "incoming" ? "selected" : ""}>Archivist</option></select></label></div><details><summary>Compare values</summary><div class="change-comparison"><section><h3>Local</h3><pre>${esc(syncValue(row.before))}</pre></section><section><h3>Archivist</h3><pre>${esc(syncValue(row.incoming))}</pre></section></div></details></section>`).join("")}</div>`;
 }
 async function applyArchivistReview() {
-  if (!pendingArchivistReview || syncReviewApplying) return;
+  if (!pendingArchivistReview || syncReviewApplying || workspaceReplacementPending() || workspaceLoadError) return;
   syncReviewApplying = true; render();
   try {
     await flushDesktopSaves();

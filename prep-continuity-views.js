@@ -5,7 +5,7 @@ let continuityReviewError = "";
 
 function continuityCore() { return window.CampaignPrepContinuity; }
 function activeContinuityPrep(campaign = activeCampaign()) {
-  return campaign.sessionWorkflow?.preps?.[activeContinuityPrepId] || null;
+  return campaign?.sessionWorkflow?.preps?.[activeContinuityPrepId] || null;
 }
 function continuitySourceKey(source) {
   if (!source) return "current";

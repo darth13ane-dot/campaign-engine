@@ -5,7 +5,7 @@ const path = require("node:path");
 const { createCredentialStore, FOUNDRY_CREDENTIAL_FILE } = require("./credential-store.cjs");
 const { createPortableUpdater } = require("./portable-updater.cjs");
 const { normalizeUpdateUrl, resolveUpdateSettings } = require("./update-settings.cjs");
-const { createWorkspaceStore } = require("./workspace-store.cjs");
+const { createWorkspaceStore, normalizeWorkspace } = require("./workspace-store.cjs");
 const { createWorkspaceCloseGuard } = require("./workspace-close.cjs");
 const { bridgeError, normalizeBridgeSettings, syncArchivistBridge, testArchivistBridge } = require("./archivist-mcp-bridge.cjs");
 
@@ -245,8 +245,16 @@ ipcMain.handle("desktop:workspace-import", async () => {
     filters: [{ name: "Campaign Engine backup", extensions: ["json"] }]
   });
   if (result.canceled || !result.filePaths[0]) return { canceled: true };
-  const workspace = await workspaceStore.importWorkspace(result.filePaths[0]);
-  return { canceled: false, workspace, info: await workspaceStore.getInfo() };
+  const workspace = normalizeWorkspace(JSON.parse(await fs.promises.readFile(result.filePaths[0], "utf8")), app.getVersion());
+  return { canceled: false, workspace, fileName: path.basename(result.filePaths[0]) };
+});
+ipcMain.handle("desktop:workspace-list-backups", async event => {
+  if (event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error("Workspace recovery is available from the main application window.");
+  return workspaceStore.listWorkspaceBackups();
+});
+ipcMain.handle("desktop:workspace-read-backup", async (event, id) => {
+  if (event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error("Workspace recovery is available from the main application window.");
+  return workspaceStore.readWorkspaceBackup(id);
 });
 ipcMain.handle("desktop:workspace-create-safety-backup", async (_, reason) => {
   const filePath = await workspaceStore.createSafetyBackup(reason || "manual");

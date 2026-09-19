@@ -94,7 +94,7 @@ function searchViewHarness(campaign) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../workspace-views.js"), "utf8"), {
     window: { CampaignSearch: search, CampaignSessionPrep: prep, CampaignPlayerPacket: packets },
     document: { querySelector: element }, root: { addEventListener() {} },
-    activeCampaign: () => campaign, playerPreviewActive: () => preview,
+    activeCampaign: () => campaign, playerPreviewActive: () => preview, workspaceLoadError: null,
     playerCanSee: (record, collection) => knowledge.isVisible(record, "players", collection),
     esc: value => String(value), searchModal: { close() {}, showModal() {} },
     openSessionPrep: (campaign, session) => opened.push({ campaign, session }),

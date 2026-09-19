@@ -85,6 +85,9 @@ const seed = {
 };
 
 const SYSTEM_REGISTRY = window.CampaignSystemRegistry;
+let workspaceLoadError = null;
+let workspaceLoadErrorCode = null;
+let workspaceOriginalBrowserData = null;
 let state = loadState();
 hydrateCampaignState();
 let currentView = "dashboard";
@@ -146,20 +149,19 @@ let activeReconciliationId = null;
 let deskEndConfirmation = false;
 let deskQuickCapture = null;
 
-function createInitialState() {
-  if (Array.isArray(ARCHIVIST_SNAPSHOT) && ARCHIVIST_SNAPSHOT.length) {
-    return { source: "archivist", activeCampaignId: ARCHIVIST_SNAPSHOT[0].id, campaigns: structuredClone(ARCHIVIST_SNAPSHOT) };
-  }
-  return structuredClone(seed);
-}
 function loadState() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (saved?.state && saved.archivist) { ARCHIVIST_DETAILS_ROOT = saved.archivist; ARCHIVIST_DETAILS = saved.archivist.campaigns || {}; }
-    return window.CampaignPersistence.initialState(saved?.state || saved, ARCHIVIST_SNAPSHOT, seed);
-  } catch { return createInitialState(); }
+    workspaceLoadError = null; workspaceLoadErrorCode = null;
+    workspaceOriginalBrowserData = localStorage.getItem(STORAGE_KEY);
+    const saved = workspaceOriginalBrowserData == null ? null : window.CampaignWorkspaceSchema.normalizeWorkspace(JSON.parse(workspaceOriginalBrowserData));
+    if (saved) { ARCHIVIST_DETAILS_ROOT = saved.archivist; ARCHIVIST_DETAILS = saved.archivist.campaigns || {}; }
+    return window.CampaignPersistence.initialState(saved?.state || null, ARCHIVIST_SNAPSHOT, { activeCampaignId: null, campaigns: [] });
+  } catch (error) { workspaceLoadError = error.message; workspaceLoadErrorCode = error.code; return { activeCampaignId: null, campaigns: [] }; }
 }
 function ensureCampaignPlanning(campaign) {
+  for (const collection of ["sessions", "characters", "quests", "locations", "journal", "checklist"]) if (!Array.isArray(campaign[collection])) campaign[collection] = [];
+  campaign.title ||= "Untitled campaign";
+  campaign.system ||= "Custom";
   SESSION_WORKFLOW?.normalizeCampaign(campaign);
   if (!Array.isArray(campaign.connections)) campaign.connections = [];
   if (!campaign.connectionBoard || typeof campaign.connectionBoard !== "object") campaign.connectionBoard = { positions: {} };
@@ -171,8 +173,10 @@ function ensureCampaignPlanning(campaign) {
   return CAMPAIGN_KNOWLEDGE?.normalizeCampaign(normalized) || normalized;
 }
 function hydrateCampaignState() {
-  if (!Array.isArray(state?.campaigns) || !state.campaigns.length) state = window.CampaignPersistence.initialState(state, ARCHIVIST_SNAPSHOT, createInitialState());
+  window.CampaignWorkspaceSchema.assertState(state);
   state.campaigns.forEach(ensureCampaignPlanning);
+  if (!state.campaigns.some(campaign => campaign.id === state.activeCampaignId)) state.activeCampaignId = state.campaigns[0]?.id || null;
+  if (!state.campaigns.length) state.knowledgeMode = "gm";
   historyTracker.reset(state.campaigns);
 }
 const workspaceSaver = window.CampaignPersistence.createSaveController({
@@ -182,6 +186,7 @@ const workspaceSaver = window.CampaignPersistence.createSaveController({
     return structuredClone(state);
   },
   write(snapshot) {
+    if (workspaceLoadError) throw new Error("Resolve the workspace recovery notice before saving.");
     if (!DESKTOP_API?.saveWorkspaceState) return localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: 1, state: snapshot, archivist: ARCHIVIST_DETAILS_ROOT }));
     return DESKTOP_API.saveWorkspaceState(snapshot).then(info => { desktopWorkspaceInfo = info || desktopWorkspaceInfo; });
   },
@@ -197,6 +202,7 @@ function updateSaveStatus() {
   document.querySelectorAll("[data-save-status]").forEach(node => { node.textContent = copy; node.dataset.status = workspaceSaveStatus; });
 }
 function saveState(label = "Campaign edit") {
+  if (workspaceLoadError) return;
   nextHistoryLabel = typeof label === "string" ? label : "Campaign edit";
   if (typeof invalidateCampaignSearch === "function") invalidateCampaignSearch();
   workspaceSaver.request();
@@ -208,13 +214,19 @@ function workspacePayload() {
     archivist: structuredClone(ARCHIVIST_DETAILS_ROOT || {})
   };
 }
+function prepareWorkspace(workspace) {
+  const prepared = structuredClone(window.CampaignWorkspaceSchema.normalizeWorkspace(workspace));
+  prepared.state.campaigns.forEach(campaign => { ensureCampaignPlanning(campaign); window.CampaignHistory.ensureIds(campaign); });
+  if (!prepared.state.campaigns.some(campaign => campaign.id === prepared.state.activeCampaignId)) prepared.state.activeCampaignId = prepared.state.campaigns[0]?.id || null;
+  return prepared;
+}
 function applyWorkspace(workspace) {
-  if (!workspace?.state || !Array.isArray(workspace.state.campaigns)) {
-    throw new Error("This file does not contain a valid Campaign Engine workspace.");
-  }
-  state = structuredClone(workspace.state);
-  if (workspace.archivist && typeof workspace.archivist === "object") {
-    ARCHIVIST_DETAILS_ROOT = structuredClone(workspace.archivist);
+  const prepared = prepareWorkspace(workspace);
+  state = prepared.state;
+  workspaceLoadError = null;
+  workspaceLoadErrorCode = null;
+  if (prepared.archivist) {
+    ARCHIVIST_DETAILS_ROOT = prepared.archivist;
     ARCHIVIST_DETAILS = ARCHIVIST_DETAILS_ROOT.campaigns || {};
   }
   hydrateCampaignState();
@@ -222,12 +234,6 @@ function applyWorkspace(workspace) {
     state.activeCampaignId = state.campaigns[0]?.id || null;
   }
   applyAppearance();
-}
-function isDemoWorkspace(workspace) {
-  if (!Array.isArray(ARCHIVIST_SNAPSHOT) || !ARCHIVIST_SNAPSHOT.length) return false;
-  if (!workspace?.state || workspace.state.source === "archivist") return false;
-  const campaignIds = workspace.state.campaigns?.map(campaign => campaign.id).sort() || [];
-  return campaignIds.length === 2 && campaignIds.join(",") === "gut,vey";
 }
 async function flushDesktopSaves() {
   await workspaceSaver.flush();
@@ -237,11 +243,9 @@ async function initializeDesktopWorkspace() {
   try {
     let result = await DESKTOP_API.loadWorkspace();
     if (!result?.workspace) {
+      if (workspaceLoadError) throw new Error(workspaceLoadError);
       result = await DESKTOP_API.initializeWorkspace(workspacePayload());
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* Migration cleanup is optional. */ }
-    } else if (isDemoWorkspace(result.workspace) && DESKTOP_API.replaceWorkspace) {
-      result = await DESKTOP_API.replaceWorkspace(workspacePayload(), "before-archivist");
-      showToast("The sample campaigns were backed up and replaced with your Archivist campaigns.");
     }
     applyWorkspace(result.workspace);
     desktopWorkspaceInfo = result.info || desktopWorkspaceInfo;
@@ -250,7 +254,9 @@ async function initializeDesktopWorkspace() {
     }
   } catch (error) {
     desktopWorkspaceInfo = { mode: "error", message: error.message || "Desktop workspace unavailable." };
-    showToast("Desktop data could not be loaded. The bundled campaign remains available.");
+    workspaceLoadError = desktopWorkspaceInfo.message;
+    workspaceLoadErrorCode = error.code;
+    showToast("Workspace recovery needs attention. Your saved files remain protected.");
   }
   render();
 }
@@ -498,9 +504,14 @@ function updateCampaignChrome() {
   const campaign = activeCampaign();
   const preview = playerPreviewActive();
   const label = (source, value) => preview ? window.CampaignPlayerPacket.redactText(source, value).text : String(value || "");
-  document.querySelector("#activeCampaignName").textContent = label(campaign, campaign.title);
-  document.querySelector("#campaignRune").textContent = label(campaign, campaign.title)[0] || "✦";
-  document.querySelector("#campaignRune").style.background = campaign.system.includes("Blades") ? "#334c55" : "#57402c";
+  document.querySelector("#activeCampaignName").textContent = campaign ? label(campaign, campaign.title) : "Your workspace";
+  document.querySelector("#campaignRune").textContent = campaign ? label(campaign, campaign.title)[0] || "✦" : "✦";
+  document.querySelector("#campaignRune").style.background = campaign?.system?.includes("Blades") ? "#334c55" : "#57402c";
+  campaignSwitcher.disabled = !campaign || Boolean(workspaceLoadError);
+  document.querySelector("#searchButton").disabled = !campaign || Boolean(workspaceLoadError);
+  if (knowledgeModeToggle) knowledgeModeToggle.disabled = !campaign || Boolean(workspaceLoadError);
+  document.querySelector("#newCampaignButton").disabled = Boolean(workspaceLoadError);
+  nav.querySelectorAll("[data-view]").forEach(button => { button.disabled = Boolean(workspaceLoadError) || (!campaign && button.dataset.view !== "dashboard"); button.hidden = !campaign && button.dataset.view !== "dashboard"; });
   document.documentElement.dataset.knowledgeMode = preview ? "players" : "gm";
   if (knowledgeModeToggle) {
     knowledgeModeToggle.setAttribute("aria-pressed", String(preview));
@@ -1021,10 +1032,7 @@ async function importDesktopWorkspace() {
     await flushDesktopSaves();
     const result = await DESKTOP_API.importWorkspace();
     if (result?.canceled) return;
-    applyWorkspace(result.workspace);
-    desktopWorkspaceInfo = result.info || desktopWorkspaceInfo;
-    render();
-    showToast("Workspace restored. The previous data was backed up automatically.");
+    stageWorkspaceRestore(result.workspace, result.fileName || "Desktop backup");
   } catch (error) {
     showToast(error.message || "That workspace backup could not be restored.");
   } finally { workspaceImportInProgress = false; render(); }
@@ -1034,10 +1042,9 @@ async function importBrowserWorkspace(file) {
   workspaceImportInProgress = true;
   try {
     const parsed = JSON.parse(await file.text());
-    applyWorkspace(parsed?.state ? parsed : { state: parsed, archivist: {} });
-    saveState();
-    render();
-    showToast("Workspace restored from backup.");
+    const candidate = prepareWorkspace(parsed);
+    await flushDesktopSaves();
+    stageWorkspaceRestore(candidate, file.name || "Workspace backup");
   } catch (error) {
     showToast(error.message || "That workspace backup could not be restored.");
   } finally { workspaceImportInProgress = false; render(); }
@@ -1058,27 +1065,19 @@ async function createDesktopSafetyBackup() {
 }
 async function deleteActiveCampaign() {
   const campaign = activeCampaign();
-  if (!campaign || state.campaigns.length <= 1) { showToast("Create or import another campaign before deleting this one."); return; }
-  if (!confirm(`Delete "${campaign.title}" and all of its local campaign records? This cannot be undone from inside the app.`)) return;
+  if (!campaign || workspaceReplacementPending() || workspaceLoadError) return;
+  if (!confirm(`Delete "${campaign.title}" and all of its local campaign records? A workspace recovery copy will be saved first.`)) return;
   try {
-    if (DESKTOP_API?.createSafetyBackup) {
-      await flushDesktopSaves();
-      const result = await DESKTOP_API.createSafetyBackup();
-      desktopWorkspaceInfo = result.info || desktopWorkspaceInfo;
-    }
+    await flushDesktopSaves();
+    const next = workspacePayload();
+    next.state.campaigns = next.state.campaigns.filter(item => item.id !== campaign.id);
+    if (next.state.copilot?.conversations) delete next.state.copilot.conversations[campaign.id];
+    next.state.activeCampaignId = next.state.campaigns[0]?.id || null;
+    await replaceWorkspaceSafely(next, "before-delete-campaign");
+    showToast(`${campaign.title} has been deleted. A recovery copy is available.`);
   } catch (error) {
     showToast(error.message || "A safety backup could not be created, so the campaign was not deleted.");
-    return;
   }
-  state.campaigns = state.campaigns.filter(item => item.id !== campaign.id);
-  if (state.copilot?.conversations) delete state.copilot.conversations[campaign.id];
-  state.activeCampaignId = state.campaigns[0]?.id || null;
-  currentView = "dashboard";
-  detailTarget = null;
-  activeFilter = "All";
-  saveState();
-  render();
-  showToast(`${campaign.title} has been deleted.`);
 }
 function settingsView() {
   const copilot = getCopilotState();
@@ -1088,7 +1087,7 @@ function settingsView() {
     { view: "foundry", icon: "◉", title: "Foundry VTT", detail: "Actor import and bridge configuration." },
     { view: "archivist", icon: "↻", title: "Archivist sync", detail: "Imported campaign records and refresh status." },
     { view: "updates", icon: "⇧", title: "App updates", detail: "Install and release-feed controls." }
-  ];
+  ].filter(item => activeCampaign() || ["archivist", "updates"].includes(item.view));
   return `${header("Settings", "CONFIGURATION", "AI credentials and utility integrations live here, so the campaign workspace stays focused on the table.")}
     <div class="settings-grid">
       <section class="card settings-card settings-ai-card"><div class="section-title"><h2>AI connection</h2><span class="tag">${keyReady ? "Key ready" : "Setup needed"}</span></div><p>Configure GPT once here. Every AI panel reuses the same connection.</p><form id="aiSettingsForm" class="compact-form"><label>Chat-completions endpoint<input required name="endpoint" type="url" value="${esc(copilot.endpoint)}" /></label><label>Model ID<input required name="model" value="${esc(copilot.model)}" placeholder="Enter the model available to your account" /></label><label>${keyReady ? "Replace API key (optional)" : "API key"}<input name="apiKey" type="password" autocomplete="off" placeholder="${keyReady ? "A key is already ready" : "Paste your API key"}" /></label>${apiKeyVaultFields()}<button class="primary-button" type="submit">Save AI settings <span>→</span></button></form><p class="quiet-copy">${usesDesktopCredentialStore() ? "Windows encrypts the API key in your private AppData folder so installed and portable launches can restore it automatically." : "The API key stays in memory for the current session unless you save it in the optional passphrase vault."}</p></section>
@@ -1098,7 +1097,7 @@ function settingsView() {
         <p>${DESKTOP_API ? "Campaign changes are stored in a private AppData workspace, outside the installed application. Every import creates a safety copy first." : "Campaign changes remain in this browser. Download a backup before clearing browser data or moving to another device."}</p>
         <div class="workspace-actions">
           <button class="primary-button" type="button" data-workspace-export>Back up workspace <span>↓</span></button>
-          <button class="secondary-button" type="button" data-workspace-import>Restore backup</button>
+          <button class="secondary-button" type="button" data-workspace-import>Restore backup</button><button class="secondary-button" type="button" data-workspace-recovery>Browse recovery copies</button>
           ${DESKTOP_API ? `<button class="secondary-button" type="button" data-workspace-safety-backup>Create local safety copy</button><button class="quiet-button" type="button" data-workspace-open-folder>Open data folder</button>` : `<input class="workspace-file-input" type="file" accept=".json,application/json" data-workspace-file />`}
         </div>
         ${DESKTOP_API && desktopWorkspaceInfo.workspacePath ? `<p class="workspace-path"><small>Workspace file</small><code>${esc(desktopWorkspaceInfo.workspacePath)}</code></p>` : ""}
@@ -1107,7 +1106,7 @@ function settingsView() {
       <section class="card settings-card settings-danger-card">
         <div class="section-title"><h2>Campaign management</h2><span class="tag">${state.campaigns.length} campaigns</span></div>
         <p>Delete the active campaign from this workspace. Desktop mode creates a safety backup first.</p>
-        <div class="workspace-actions"><button class="secondary-button danger-button" type="button" data-delete-active-campaign ${state.campaigns.length <= 1 ? "disabled" : ""}>Delete ${esc(activeCampaign().title)}</button></div>
+        <div class="workspace-actions">${activeCampaign() ? `<button class="secondary-button danger-button" type="button" data-delete-active-campaign>Delete ${esc(activeCampaign().title)}</button>` : `<button class="secondary-button" type="button" data-workspace-create>Create a campaign</button>`}</div>
       </section>
     </div>`;
 }
@@ -1367,7 +1366,7 @@ function archivistView(campaign) {
     <div class="sync-grid">
       <section class="card sync-lead"><p class="eyebrow">LAST SNAPSHOT</p><h2>${esc(importedAt)}</h2><p>${state.campaigns.length} campaigns are available in the engine, with ${totals} structured records ready for detail pages and planning context.</p><div><button class="primary-button" type="button" data-refresh-snapshot>Reload workspace <span>↻</span></button><button class="secondary-button" type="button" data-view-jump="copilot">Open GM inquiry</button></div></section>
       <section class="card sync-card"><div class="section-title"><h2>Private snapshot</h2><span class="status">Local</span></div><p>Archivist detail data now travels with your private workspace backup instead of the public Windows installer. Restore a newer workspace backup whenever you want to replace the snapshot.</p><ul><li>Campaigns, sessions, characters, quests, world records, and journals</li><li>Quest objectives, progress history, aliases, and full journal text</li><li>Your local additions remain in the same private workspace</li></ul></section>
-      <section class="card sync-card"><div class="section-title"><h2>Current campaign</h2><span class="tag">${esc(campaign.system)}</span></div><p><strong>${esc(campaign.title)}</strong> currently has ${campaign.sessions.length} session records, ${campaign.characters.length} characters, ${campaign.quests.length} quests, and ${campaign.locations.length} world entries loaded from Archivist.</p><button class="text-link" type="button" data-view-jump="dashboard">Return to overview</button></section>
+      <section class="card sync-card"><div class="section-title"><h2>Current campaign</h2><span class="tag">${esc(campaign?.system || "Ready to connect")}</span></div>${campaign ? `<p><strong>${esc(campaign.title)}</strong> currently has ${campaign.sessions.length} session records, ${campaign.characters.length} characters, ${campaign.quests.length} quests, and ${campaign.locations.length} world entries.</p>` : `<p>Connect Archivist and review the campaigns you want to bring into preparation.</p>`}<button class="text-link" type="button" data-view-jump="dashboard">Return to overview</button></section>
       <section class="card sync-card archivist-bridge-card"><div class="section-title"><h2>Archivist Nexus MCP bridge</h2><span class="tag">${DESKTOP_API ? esc(archivistBridgeState.status || "Ready") : "Desktop only"}</span></div>${DESKTOP_API ? `<p>The Windows app connects directly to Archivist and assembles complete campaigns from its campaign, character, session, quest, world, and journal tools. Records merge by Archivist ID, and local edits remain intact.</p><form id="archivistBridgeForm" class="compact-form"><fieldset class="bridge-fields" ${archivistBridgeBusy ? "disabled" : ""}><button class="secondary-button" type="submit" name="bridgeAction" value="builtin" formnovalidate>Use built-in connection</button><p class="field-help">The built-in connection opens Archivist sign-in and requires no Node.js installation. Custom MCP commands remain available below.</p><label>MCP command<input required name="command" value="${esc(bridge.command || "")}" placeholder="archivist, node, npx, uvx, or full path" /></label><label>Arguments<input name="args" value="${esc(Array.isArray(bridge.args) ? JSON.stringify(bridge.args) : bridge.args || "")}" placeholder="path/to/archivist-server.js --flag" /></label><div class="form-row"><label>Custom export tool (optional)<input name="toolName" value="${esc(bridge.toolName || "")}" placeholder="Used only for non-Archivist MCP servers" /></label><label>Timeout ms<input name="timeoutMs" type="number" min="2000" max="120000" value="${esc(bridge.timeoutMs || 120000)}" /></label></div><label>Import options<textarea name="toolArguments" rows="4" placeholder="{&quot;campaignId&quot;:&quot;optional campaign ID&quot;,&quot;includeLinks&quot;:false}">${esc(typeof bridge.toolArguments === "string" ? bridge.toolArguments : JSON.stringify(bridge.toolArguments || {}, null, 2))}</textarea><span class="field-help">Leave as {} to sync every campaign. Archivist links are optional because large campaigns can contain hundreds.</span></label><div><button class="secondary-button" type="submit" name="bridgeAction" value="save">Save connection</button><button class="secondary-button" type="submit" name="bridgeAction" value="test">Test connection</button><button class="primary-button" type="submit" name="bridgeAction" value="sync">Sync campaigns <span>↓</span></button></div></fieldset></form>${archivistBridgeBusy ? `<p role="status">Connecting to Archivist… Complete sign-in in your browser if prompted.</p>` : ""}${toolOptions}<p class="quiet-copy" role="${archivistBridgeState.status === "error" ? "alert" : "status"}">${esc(archivistBridgeState.message || bridge.lastStatus || "No bridge run yet.")}${bridge.lastSync ? ` Last import: ${esc(new Date(bridge.lastSync).toLocaleString())}` : ""}${mergeSummary ? ` Last merge: ${esc(mergeSummary)}.` : ""}</p>` : `<p>The internal MCP bridge runs from Electron so Campaign Engine can own the Archivist Nexus connection. Open the Windows desktop build to configure it.</p>`}</section>
     </div>`;
 }
@@ -1490,12 +1489,21 @@ async function runDesktopUpdateAction(action) {
 }
 function render() {
   const campaign = activeCampaign();
-  const systemViews = SYSTEM_REGISTRY.viewsFor(campaign);
+  const systemViews = campaign ? SYSTEM_REGISTRY.viewsFor(campaign) : [];
   systemNav.innerHTML = systemViews.map(view =>
     `<button class="nav-link" data-view="${esc(view.id)}"><span>${esc(view.icon || "✧")}</span> ${esc(view.label)}</button>`
   ).join("");
   if (currentView.startsWith("system-") && !systemViews.some(view => view.id === currentView)) currentView = "dashboard";
   updateCampaignChrome();
+  if (workspaceLoadError || ["workspace-restore", "workspace-recovery"].includes(currentView) || (!campaign && !["settings", "archivist", "updates", "sync-review"].includes(currentView))) {
+    const recovery = ["workspace-restore", "workspace-recovery"].includes(currentView);
+    document.querySelector("#breadcrumb").textContent = "WORKSPACE / " + (currentView === "workspace-restore" ? "RESTORE REVIEW" : workspaceLoadError || currentView === "workspace-recovery" ? "RECOVERY" : "GET STARTED");
+    nav.querySelectorAll(".nav-link").forEach(button => button.classList.toggle("active", !recovery && button.dataset.view === "dashboard"));
+    settingsButton.classList.toggle("active", recovery);
+    root.innerHTML = playerPreviewActive() && campaign ? playerPreviewRestrictedView() : currentView === "workspace-restore" ? workspaceRestoreView() : currentView === "workspace-recovery" ? workspaceRecoveryView() : workspaceWelcomeView();
+    updateSaveStatus();
+    return;
+  }
   document.querySelector("#breadcrumb").textContent = `CAMPAIGN / ${(currentView === "prep-continuity" ? "Session continuity" : currentView.replace(/-/g, " ")).toUpperCase()}`;
   nav.querySelectorAll(".nav-link").forEach(button => button.classList.toggle("active", button.dataset.view === currentView));
   settingsButton.classList.toggle("active", ["settings", "systems", "foundry", "archivist", "updates"].includes(currentView));
@@ -2800,7 +2808,7 @@ function applyRecordRevision(form) {
 }
 
 function activeDesk(campaign = activeCampaign()) {
-  return campaign.sessionWorkflow?.desks?.[activeSessionDeskId] || null;
+  return campaign?.sessionWorkflow?.desks?.[activeSessionDeskId] || null;
 }
 function sessionForDesk(campaign, desk) {
   return SESSION_PREP.findSession(campaign, desk?.sessionRef);
@@ -2874,7 +2882,7 @@ function proposalValue(value) {
   return typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 function activeReconciliation(campaign = activeCampaign()) {
-  return campaign.sessionWorkflow?.reconciliations?.[activeReconciliationId] || null;
+  return campaign?.sessionWorkflow?.reconciliations?.[activeReconciliationId] || null;
 }
 function manualProposalOptions(campaign) {
   return Object.entries(SESSION_WORKFLOW.MUTABLE_FIELDS).flatMap(([collection, fields]) => (campaign[collection] || []).flatMap((record, index) => fields.filter(field => field in record).map(field => {
@@ -3394,7 +3402,7 @@ document.querySelector("#sheetModalContent").addEventListener("click", event => 
   if (event.target.closest("[data-go-foundry]")) { document.querySelector("#sheetModal").close(); currentView = "foundry"; render(); }
 });
 
-document.querySelector("#newCampaignButton").addEventListener("click", () => campaignModal.showModal());
+document.querySelector("#newCampaignButton").addEventListener("click", () => { if (!workspaceLoadError && !workspaceReplacementPending()) campaignModal.showModal(); });
 knowledgeModeToggle?.addEventListener("click", () => {
   state.knowledgeMode = playerPreviewActive() ? "gm" : (CAMPAIGN_KNOWLEDGE?.PLAYERS_KNOW || "players");
   detailTarget = null;
@@ -3407,12 +3415,16 @@ document.querySelectorAll("[data-close-modal]").forEach(button => button.addEven
 connectionModal.addEventListener("close", () => { connectionEditingId = null; });
 arcModal.addEventListener("close", () => { arcEditingId = null; });
 document.querySelector("#campaignForm").addEventListener("submit", event => {
-  event.preventDefault(); const form = new FormData(event.currentTarget); const title = form.get("title").trim(); const id = `c-${Date.now()}`;
+  event.preventDefault();
+  if (workspaceLoadError || workspaceReplacementPending()) return;
+  const form = new FormData(event.currentTarget); const title = form.get("title").trim(); const id = SESSION_PREP.createId("campaign");
+  const number = Math.max(1, Math.floor(Number(form.get("sessionNumber")) || 1));
+  const sessionTitle = String(form.get("sessionTitle") || "").trim() || `Session ${number}`;
   const date = form.get("sessionDate") ? new Date(`${form.get("sessionDate")}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "TBD";
   const definition = SYSTEM_REGISTRY.get(form.get("system"));
-  state.campaigns.push({ id, title, system: definition.name, systems: [{ id: definition.id, name: definition.name, enabled: true }], systemData: {}, genre: form.get("genre") || "Unclassified", players: Number(form.get("players")), summary: form.get("summary"), nextSession: { number: 1, date, title: "The opening scene", prep: "A campaign waiting to begin" }, sessions: [{ number: 1, date: form.get("sessionDate") || "TBD", title: "The opening scene", recap: "A new story begins here.", upcoming: true }], characters: [], quests: [], locations: [], journal: [], connections: [], arcs: [], checklist: [{ text: "Sketch the first session", done: false }] });
+  state.campaigns.push({ id, source: "manual", title, system: definition.name, systems: [{ id: definition.id, name: definition.name, enabled: true }], systemData: {}, genre: form.get("genre") || "Unclassified", players: Number(form.get("players")), summary: form.get("summary") || "", nextSession: { number, date, title: sessionTitle, prep: "Ready to prepare" }, sessions: [{ localId: SESSION_PREP.createId("session"), number, date: form.get("sessionDate") || "TBD", title: sessionTitle, recap: "", upcoming: true }], characters: [], quests: [], locations: [], journal: [], connections: [], arcs: [], checklist: [] });
   ensureCampaignPlanning(state.campaigns[state.campaigns.length - 1]);
-  state.activeCampaignId = id; saveState(); event.currentTarget.reset(); campaignModal.close(); currentView = "dashboard"; render(); showToast(`${title} has entered the engine.`);
+  state.activeCampaignId = id; state.knowledgeMode = "gm"; saveState(); event.currentTarget.reset(); campaignModal.close(); openSessionPrep(activeCampaign(), activeCampaign().sessions[0]); showToast(`${title} is ready. Prepare ${sessionTitle}.`);
 });
 document.querySelector("#recordForm").addEventListener("submit", event => {
   event.preventDefault();

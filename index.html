@@ -13,6 +13,7 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
     <link rel="stylesheet" href="styles.css?v=20" />
     <link rel="stylesheet" href="workspace.css?v=3" />
+    <link rel="stylesheet" href="workspace-entry.css?v=1" />
     <link rel="stylesheet" href="session-prep.css?v=3" />
     <link rel="stylesheet" href="prep-continuity.css?v=1" />
     <link rel="stylesheet" href="player-packet.css?v=1" />
@@ -87,12 +88,13 @@
           <label>Game system<select required name="system"><option>D&D 5e</option><option>Pathfinder 2e</option><option>WFRP 4th Edition</option><option>Call of Cthulhu</option><option>Blades in the Dark</option><option>Custom</option></select></label>
           <label>Genre<input name="genre" maxlength="40" placeholder="Sword & sorcery" /></label>
         </div>
-        <label>Campaign premise<textarea required name="summary" rows="3" maxlength="240" placeholder="What is this story about?"></textarea></label>
+        <label>Campaign premise (optional)<textarea name="summary" rows="3" maxlength="240" placeholder="What is this story about?"></textarea></label>
         <div class="form-row">
           <label>Players<input required name="players" type="number" min="1" max="12" value="4" /></label>
-          <label>First session<input name="sessionDate" type="date" /></label>
+          <label>Next session date<input name="sessionDate" type="date" /></label>
         </div>
-        <button class="primary-button submit-button" type="submit">Forge campaign <span>→</span></button>
+        <div class="form-row"><label>Next session number<input name="sessionNumber" type="number" min="1" max="9999" value="1" /></label><label>Session title (optional)<input name="sessionTitle" maxlength="120" placeholder="Session 1" /></label></div>
+        <button class="primary-button submit-button" type="submit">Create & prepare <span>→</span></button>
       </form>
     </dialog>
 
@@ -150,7 +152,8 @@
     <div class="toast" id="toast" role="status"></div>
     <script src="archivist-data.js"></script>
     <script src="archivist-details.js"></script>
-    <script src="workspace-persistence.js?v=2"></script>
+    <script src="workspace-schema.js?v=1"></script>
+    <script src="workspace-persistence.js?v=3"></script>
     <script src="campaign-history.js?v=1"></script>
     <script src="campaign-search.js?v=3"></script>
     <script src="campaign-knowledge.js?v=1"></script>
@@ -175,11 +178,12 @@
     <script src="systems/call-of-cthulhu/definition.js?v=1"></script>
     <script src="systems/custom/definition.js?v=1"></script>
     <script src="systems/campaign-system-state.js?v=1"></script>
-    <script src="app.js?v=34"></script>
-    <script src="session-prep-views.js?v=4"></script>
-    <script src="prep-template-views.js?v=1"></script>
-    <script src="prep-continuity-views.js?v=1"></script>
-    <script src="player-packet-views.js?v=1"></script>
+    <script src="app.js?v=35"></script>
+    <script src="workspace-entry.js?v=1"></script>
+    <script src="session-prep-views.js?v=5"></script>
+    <script src="prep-template-views.js?v=2"></script>
+    <script src="prep-continuity-views.js?v=2"></script>
+    <script src="player-packet-views.js?v=2"></script>
     <script src="features.js?v=12"></script>
     <script src="systems/pf2e/toolkit.js?v=1"></script>
     <script>
@@ -188,7 +192,7 @@
       }
     </script>
     <script src="source-library.js?v=1"></script>
-    <script src="workspace-views.js?v=3"></script>
+    <script src="workspace-views.js?v=4"></script>
     <script src="bootstrap.js?v=1"></script>
   </body>
 </html>

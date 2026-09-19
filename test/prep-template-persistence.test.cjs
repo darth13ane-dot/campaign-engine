@@ -80,7 +80,7 @@ test("global custom prep templates survive save, export, import, reopen, and cam
   assert.deepEqual(state, expected);
 });
 
-test("browser restoration preserves a global template library when campaigns need sample fallback", () => {
+test("browser restoration preserves a template-only workspace without inserting sample campaigns", () => {
   const populated = workspaceState();
   templates.saveTemplate(templates.ensureLibrary(populated), customTemplate());
   assert.deepEqual(persistence.initialState(JSON.parse(JSON.stringify(populated)), [], workspaceState()), populated);
@@ -88,7 +88,7 @@ test("browser restoration preserves a global template library when campaigns nee
   for (const snapshot of [[], [campaign("imported", "Custom")]]) {
     const restored = persistence.initialState(saved, snapshot, workspaceState());
     assert.deepEqual(restored.prepTemplates, populated.prepTemplates);
-    assert(restored.campaigns.length > 0);
+    assert.equal(restored.campaigns.length, 0);
     assert.equal(templates.listTemplates(templates.ensureLibrary(restored)).filter(item => item.id === Object.keys(populated.prepTemplates.templates)[0]).length, 1);
     assert.deepEqual(saved, before);
   }
