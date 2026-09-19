@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld("campaignEngineDesktop", {
   },
   exportWorkspace: () => ipcRenderer.invoke("desktop:workspace-export"),
   importWorkspace: () => ipcRenderer.invoke("desktop:workspace-import"),
+  listWorkspaceBackups: () => ipcRenderer.invoke("desktop:workspace-list-backups"),
+  readWorkspaceBackup: id => ipcRenderer.invoke("desktop:workspace-read-backup", id),
   createSafetyBackup: reason => ipcRenderer.invoke("desktop:workspace-create-safety-backup", reason),
   openWorkspaceFolder: () => ipcRenderer.invoke("desktop:workspace-open-folder"),
   loadApiKey: () => ipcRenderer.invoke("desktop:api-key-load"),

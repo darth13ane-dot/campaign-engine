@@ -1,44 +1,7 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
-const WORKSPACE_SCHEMA_VERSION = 1;
-const UNSUPPORTED_SCHEMA = "UNSUPPORTED_WORKSPACE_SCHEMA";
-
-function isObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function assertState(state) {
-  if (!isObject(state) || !Array.isArray(state.campaigns)) {
-    throw new Error("This file does not contain a valid Campaign Engine workspace.");
-  }
-  if (state.campaigns.some(campaign => !isObject(campaign))) {
-    throw new Error("One or more campaign records in this workspace are invalid.");
-  }
-  return state;
-}
-
-function normalizeWorkspace(value, appVersion, savedAt = new Date().toISOString()) {
-  const version = isObject(value) ? value.schemaVersion : undefined;
-  if (version != null && (!Number.isInteger(Number(version)) || Number(version) < 0 || Number(version) > WORKSPACE_SCHEMA_VERSION)) {
-    const error = new Error(Number(version) > WORKSPACE_SCHEMA_VERSION
-      ? `This workspace uses schema version ${version}, which requires a newer Campaign Engine version. This app supports workspace schema ${WORKSPACE_SCHEMA_VERSION}.`
-      : `This workspace uses an unsupported schema version. This app supports workspace schema ${WORKSPACE_SCHEMA_VERSION}.`);
-    error.code = UNSUPPORTED_SCHEMA;
-    throw error;
-  }
-  const source = isObject(value) && isObject(value.state)
-    ? value
-    : { state: value };
-  const state = assertState(source.state);
-  return {
-    schemaVersion: WORKSPACE_SCHEMA_VERSION,
-    appVersion: String(source.appVersion || appVersion || "0.0.0"),
-    savedAt: String(source.savedAt || savedAt),
-    state,
-    archivist: isObject(source.archivist) ? source.archivist : {}
-  };
-}
+const { WORKSPACE_SCHEMA_VERSION, UNSUPPORTED_SCHEMA, assertState, normalizeWorkspace, summary } = require("../workspace-schema.js");
 
 function safeTimestamp(date = new Date()) {
   return date.toISOString().replace(/[:.]/g, "-");
@@ -79,7 +42,7 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
         throw error;
       }
       // A missing or damaged previous copy can be replaced by the valid primary.
-      if (error.code && error.code !== "ENOENT") throw error;
+      if (error.code && !["ENOENT", "INVALID_WORKSPACE_DATA"].includes(error.code)) throw error;
     }
   }
 
@@ -209,8 +172,47 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
   async function replaceWorkspace(value, reason = "before-import") {
     const incoming = normalizeWorkspace(value, appVersion);
     await assertPreviousSchemaSupported();
-    await createSafetyBackup(reason);
+    try { await createSafetyBackup(reason); }
+    catch (error) {
+      if (reason !== "reviewed-restore" || !(error instanceof SyntaxError || error.code === "INVALID_WORKSPACE_DATA")) throw error;
+      // An explicitly reviewed recovery can replace damaged data after preserving
+      // the exact original bytes. Future schemas and I/O failures stay protected.
+      for (const [label, source] of [["primary", workspacePath], ["previous", previousPath]]) {
+        if (!await pathExists(source)) continue;
+        const raw = await fs.readFile(source);
+        try { normalizeWorkspace(JSON.parse(raw.toString("utf8")), appVersion); }
+        catch (sourceError) { if (sourceError.code === UNSUPPORTED_SCHEMA) throw sourceError; }
+        const preserved = path.join(backupDirectory, `campaign-engine-preserved-${label}-${safeTimestamp(now())}-${require("node:crypto").randomUUID()}.json`);
+        await fs.writeFile(preserved, raw, { flag: "wx" });
+      }
+      return writeWorkspace(incoming, { preservePrevious: false });
+    }
     return writeWorkspace(incoming);
+  }
+
+  async function readWorkspaceBackup(id) {
+    if (typeof id !== "string" || (id !== "previous" && (path.basename(id) !== id || !/^campaign-engine-[a-z0-9.-]+\.json$/i.test(id)))) throw new Error("Choose a listed workspace recovery copy.");
+    const source = id === "previous" ? previousPath : path.join(backupDirectory, id);
+    if (!(await fs.lstat(source)).isFile()) throw new Error("This recovery copy is not a regular file.");
+    return normalizeWorkspace(await readJson(source), appVersion);
+  }
+
+  async function listWorkspaceBackups() {
+    await ensureDirectories();
+    const ids = (await fs.readdir(backupDirectory, { withFileTypes: true })).filter(entry => entry.isFile() && /^campaign-engine-[a-z0-9.-]+\.json$/i.test(entry.name)).map(entry => entry.name);
+    if (await pathExists(previousPath)) ids.push("previous");
+    const copies = await Promise.all(ids.map(async id => {
+      const source = id === "previous" ? previousPath : path.join(backupDirectory, id);
+      const reason = id.replace(/^campaign-engine-/, "").replace(/-\d{4}-\d{2}-\d{2}T.*$/, "").replace(/\.json$/, "");
+      const labels = { previous: "Previous automatic save", manual: "Manual safety copy", "reviewed-restore": "Before workspace restore", "before-import": "Before backup import", "before-delete-campaign": "Before campaign deletion", "before-archivist-bridge": "Before Archivist import", "preserved-primary": "Preserved primary file", "preserved-previous": "Preserved previous file" };
+      const label = labels[reason] || reason.replace(/-/g, " ");
+      const info = { id, label, timestamp: (await fs.stat(source)).mtimeMs };
+      try {
+        const workspace = await readWorkspaceBackup(id), raw = await readJson(source);
+        return { ...info, savedAt: raw.backupCreatedAt || workspace.savedAt, summary: summary(workspace) };
+      } catch (error) { return { ...info, error: error.message }; }
+    }));
+    return copies.sort((left, right) => right.timestamp - left.timestamp).map(({ timestamp, ...copy }) => copy);
   }
 
   async function getInfo(workspace) {
@@ -235,6 +237,8 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
     exportWorkspace,
     importWorkspace,
     replaceWorkspace,
+    listWorkspaceBackups,
+    readWorkspaceBackup,
     getInfo
   };
 }

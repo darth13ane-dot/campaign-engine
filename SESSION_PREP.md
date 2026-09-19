@@ -1,5 +1,7 @@
 # Prepare and run a session
 
+For a new workspace, choose **Create a campaign**, set its next session, and use **Create & prepare**. See [GETTING_STARTED.md](GETTING_STARTED.md) for first use and workspace recovery.
+
 From **Overview** or **Sessions**, choose **Prepare session**. Preparation saves automatically with the campaign workspace. It works locally across supported game systems, with your own material and optional connected references.
 
 ## Assemble the session

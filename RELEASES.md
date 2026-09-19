@@ -1,5 +1,15 @@
 # Sharing and desktop updates
 
+## Version 1.9.0 — First use and workspace recovery
+
+New public installations open a welcome screen with explicit choices to create a campaign, restore a backup, explore an editable example, or connect Archivist. Campaign creation accepts the next session's number and title and opens Session Prep directly. Empty workspaces retain their settings and template library across restarts. Existing campaigns, including edited samples, are preserved when bundled data changes.
+
+Backup selection opens a review of the incoming campaigns and custom library. Confirmation creates a recovery copy and saves the replacement before switching the active workspace. A changed current workspace invalidates its preview. Browser and desktop storage share validation for workspace versions, campaign identities, record lists, and planning containers. Failed writes and rejected imports preserve current data.
+
+**Browse recovery copies** exposes desktop safety copies and the previous automatic save, or the browser's previous workspace. A failed startup opens a protected recovery screen. Confirmed desktop recovery preserves damaged primary and previous files byte-for-byte before replacing them. Unsupported newer schemas require a compatible version. The last campaign can be deleted with a recovery copy, leaving a usable empty workspace.
+
+See [GETTING_STARTED.md](GETTING_STARTED.md) for setup, backup, and recovery instructions.
+
 ## Version 1.8.0 — Reusable prep templates
 
 **Prep templates** adds six original planning starters: investigation, social event, exploration, dungeon expedition, heist, and downtime. Each supplies adaptable guidance, suggested timing, and optional scenes. A global custom library lets GMs create, edit, duplicate, and reuse their own structures across campaigns and game systems. **Save this structure** captures a plan's arrangement and numeric settings into fresh generic prompts while its session material stays with the source.

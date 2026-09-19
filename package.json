@@ -1,7 +1,7 @@
 {
   "name": "campaign-engine",
   "productName": "Campaign Engine",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "A local-first GM preparation and session-running workspace with campaign integrations.",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -47,6 +47,9 @@
       "campaign-search.js",
       "campaign-history.js",
       "workspace-persistence.js",
+      "workspace-schema.js",
+      "workspace-entry.js",
+      "workspace-entry.css",
       "foundry-actor-normalizer.js",
       "archivist-merge.js",
       "campaign-cleanup.js",

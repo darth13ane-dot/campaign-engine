@@ -15,7 +15,7 @@ function packetSourceChoices(campaign) {
   return playerPacketCore().sourceChoices(campaign);
 }
 function activePlayerPacket(campaign = activeCampaign()) {
-  return campaign.sessionWorkflow?.playerPackets?.[activePlayerPacketId] || null;
+  return campaign?.sessionWorkflow?.playerPackets?.[activePlayerPacketId] || null;
 }
 function closePlayerPacketPreview() {
   if (playerPacketPreview?.dialog.open) playerPacketPreview.dialog.close();

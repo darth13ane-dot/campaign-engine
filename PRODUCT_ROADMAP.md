@@ -96,7 +96,7 @@ Acceptance gates:
 
 The GM remains responsible for secrets written as ordinary prose in a shared field or custom section. Current local Player preview is a presentation feature; hosted player access would need authorization at the server boundary. Older imported records with previously misclassified explicit sharing flags require review.
 
-## Active milestone: v1.8.0 — Reusable preparation templates
+## Delivered milestone: v1.8.0 — Reusable preparation templates
 
 **Status: implemented in v1.8.0.** Six system-neutral starters cover investigation, social events, exploration, dungeon expeditions, heists, and downtime. Each supplies scene structure, timing, optional material, and prompts for the opening, clues, clocks, spotlights, and preparation tasks. A workspace-wide library lets GMs create, duplicate, edit, and reuse their own structures across campaigns. [PREP_TEMPLATES.md](PREP_TEMPLATES.md) explains the workflow.
 
@@ -112,15 +112,29 @@ Acceptance gates:
 6. Player preview excludes template authoring. Unsupported library formats retain their saved data and provide a recovery path. Workspace replacement prevents competing template edits.
 7. Domain, filesystem, browser, and packaged-runtime checks cover these behaviors, including narrow layouts and public snapshot exclusion.
 
-## Next milestone: Trust, onboarding, performance, and beta readiness
+## Active milestone: v1.9.0 — First use and workspace recovery
+
+**Status: implemented in v1.9.0.** New public installations start with an empty workspace and explicit choices to create a campaign, restore a backup, explore an editable example, or connect Archivist. Creating a campaign opens preparation for its chosen next session. Empty workspaces retain settings and reusable templates; saved campaigns and edited samples survive startup unchanged by bundled examples.
+
+Backup selection opens a review before replacement. Browser and desktop storage share validation of workspace versions, campaign identities, record lists, and planning containers. Recovery copies are available from the UI, with original damaged bytes preserved before an explicitly confirmed recovery. [GETTING_STARTED.md](GETTING_STARTED.md) explains these workflows.
+
+Acceptance gates:
+
+1. A new GM can create a campaign for any supported system and prepare its next numbered session without entering historical records or connecting a service.
+2. Empty, populated, and example-based workspaces survive restart and backup/restore. Deleting the final campaign saves a recovery copy and retains workspace settings and templates.
+3. Selecting a backup leaves current data unchanged. Confirmation saves a recovery copy before replacement; canceled, stale, malformed, unsupported, and failed-write restores preserve current work.
+4. Browser recovery and the desktop's native import and recovery handlers, preload APIs, safety-copy list, and process restart are exercised. Automated desktop checks supply file-picker results from test fixtures. Damaged primary/previous recovery preserves original bytes; future workspace schemas remain protected.
+5. GM recovery previews remain outside Player preview. Desktop and mobile layouts, offline use, and existing preparation, continuity, template, and player-packet workflows receive interaction checks.
+
+## Remaining trust, performance, and beta readiness
 
 Reliability work proceeds alongside the earlier milestones. This is the gate for inviting a broader pilot and making a commercial commitment.
 
 | Area | Concrete work and acceptance gate |
 | --- | --- |
-| First use | Offer a clear path to create a campaign, import a backup, or explore an optional example. Support a valid empty workspace. Sample replacement must account for edits, rather than identifying untouched examples only by their campaign IDs. Current entry points are `initialState`, `hydrateCampaignState`, and `isDemoWorkspace`. |
-| Schema and import | Future workspace schemas are rejected in v1.6.0, including during corrupt-primary recovery. Filesystem tests preserve original, previous, and imported bytes. Identity and nested-data validation, explicit migrations, and empty-workspace support remain to complete; the existing validator still permits a campaign without an ID. |
-| Recovery | v1.6.0 retains the twelve newest supported copies by backup creation time, with legacy timestamp fallback and unique same-time filenames. Unreadable and future-schema copies are preserved. Continue failed-write, interrupted-save, restore, and upgrade exercises with representative workspaces, and make recovery reachable through the UI. |
+| First use | v1.9.0 provides explicit starting choices, direct next-session preparation, and valid empty workspaces. Existing campaigns and edited examples are retained. Observe new GMs completing this workflow and improve it from their results. |
+| Schema and import | v1.9.0 shares workspace validation across browser and desktop storage, rejecting ambiguous campaign identities and malformed supported containers before import. Legacy envelopes and supported records round-trip; future workspace/session-workflow schemas remain protected. Extend explicit migrations and field validation as stored models evolve. |
+| Recovery | v1.9.0 exposes recovery copies and reviewed restore through the UI, with failed-write protection and exact preservation of damaged originals. Browser storage retains one previous workspace; desktop safety copies retain the twelve newest supported backups. Continue interruption, upgrade, and recovery exercises with representative large workspaces. |
 | Large campaigns | Measure startup, search, editing, save latency, and restore with documented campaign sizes and PDF libraries. Browser storage currently writes the full workspace to `localStorage`; establish supported limits and move larger libraries to a storage tier suited to them before promising scale. |
 | Desktop security | Add and verify a Content Security Policy, navigation restrictions, and sender validation for privileged IPC. Preserve the existing sandbox, context isolation, disabled Node integration, encrypted credentials, and restricted external-link handling. Review imported content and custom MCP command boundaries. |
 | Release assurance | Run appropriate checks on pull requests as well as releases; verify installation, upgrade, rollback, portable updates, and packaged assets. Establish a signed distribution process. The downloaded v1.7.0 portable release reported `NotSigned`; signing hooks exist in CI. |

@@ -3,7 +3,7 @@ let activeSessionPrepId = null;
 
 function sessionPrepCore() { return window.CampaignSessionPrep; }
 function activeSessionPrep(campaign = activeCampaign()) {
-  return campaign.sessionWorkflow?.preps?.[activeSessionPrepId] || null;
+  return campaign?.sessionWorkflow?.preps?.[activeSessionPrepId] || null;
 }
 function openSessionPrep(campaign, session) {
   if (playerPreviewActive() || !session || !sessionPrepCore()) return;

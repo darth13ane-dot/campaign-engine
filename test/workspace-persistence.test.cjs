@@ -6,18 +6,26 @@ const { createWorkspaceCloseGuard } = require("../electron/workspace-close.cjs")
 test("restores manual browser campaigns with an empty or populated bundled snapshot", () => {
   const saved = { campaigns: [{ id: "user" }] }, seed = { campaigns: [{ id: "sample" }] };
   for (const snapshot of [[], [{ id: "import" }], null]) assert.equal(initialState(saved, snapshot, seed), saved);
-  assert.equal(initialState({ campaigns: [] }, [], seed).campaigns[0].id, "sample");
+  for (const snapshot of [[], [{ id: "import" }]]) assert.deepEqual(initialState({ campaigns: [] }, snapshot, seed).campaigns, []);
 });
-test("campaign fallback preserves a workspace template library including an unsupported future version", () => {
+test("an intentionally empty workspace keeps its template library and is never replaced by bundled campaigns", () => {
   for (const schemaVersion of [1, 99]) {
     const saved = { campaigns: [], prepTemplates: { schemaVersion, templates: { custom: { id: "custom", name: "My session shape" } } } };
     const before = structuredClone(saved);
     for (const snapshot of [[], [{ id: "imported-campaign" }]]) {
       const restored = initialState(saved, snapshot, { campaigns: [{ id: "example" }] });
       assert.deepEqual(restored.prepTemplates, before.prepTemplates);
-      restored.prepTemplates.templates.custom.name = "A separate edit";
+      assert.deepEqual(restored.campaigns, []);
       assert.deepEqual(saved, before);
     }
+  }
+});
+
+test("invalid saved campaigns require recovery instead of silently loading example data", () => {
+  for (const saved of [{ campaigns: [null] }, { campaigns: [{}] }, { campaigns: [{ id: "same" }, { id: "same" }] }, { campaigns: [{ id: "bad", sessions: "lost" }] }]) {
+    const before = JSON.stringify(saved);
+    assert.throws(() => initialState(saved, [{ id: "bundled" }], { campaigns: [{ id: "sample" }] }), /valid Campaign Engine workspace/);
+    assert.equal(JSON.stringify(saved), before);
   }
 });
 
