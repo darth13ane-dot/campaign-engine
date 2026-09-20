@@ -45,13 +45,19 @@ The live workflow audit reproduced lost pending log text when another control re
 
 Acceptance gates: exact same-name references resolve correctly; missing records stay visible; notes and quick captures survive other actions and offline/native restart; log notes retain their original scene; first play and carry-forward preserve scene references; existing live progress remains unchanged on resume; ended sessions remain browsable with mutation blocked; GM material remains private; Windows builds and the downloaded release match the tested code.
 
-## Current planning milestone: v1.15.0 — Sources beside the session
+## Delivered planning milestone: v1.15.0 — Sources beside the session
 
 The audit found that imported PDF pages were searchable in the library but absent from notes drafting and scene-reference selection. This milestone connects exact book/page references to selected excerpts, prepared situations, live lookup, GM packets, and carry-forward. It uses the existing local library and supports rules and setting material across systems. [PREP_SOURCES.md](PREP_SOURCES.md) defines the workflow and acceptance gates.
 
 Acceptance gates: selected page text is searchable; same-title books and separate pages retain exact identities; removed or ambiguous sources remain unavailable; selected-page changes require another draft review; external AI requests include only selected excerpts; approved quotes and page links survive normalization, first play, offline/native restart, exports, and continuity; source documents and player privacy remain protected; the published Windows assets match tested source.
 
 The v1.15.1 compatibility audit reproduced lost page links when an older build started play from newer preparation. Workflow format 3 now protects upgraded saves through existing older-build version checks. Format 2 content upgrades in place with a pre-upgrade recovery copy. Tests cover interrupted saves, future-version rejection, older published app code, browser and native recovery, exports, and reopening the compatible build.
+
+## Current planning milestone: v1.16.0 — Actionable preparation review
+
+The walkthrough found that the prep check could report every prompt covered while a scene lacked a player choice, and its static checklist offered no direct route to the unfinished entry. Preparation review now names each follow-up and focuses the relevant scene, reference, task, supporting field, or pending notes draft. It describes structural coverage and keeps the GM's decision to start play available.
+
+Acceptance gates: exact same-name scenes receive the intended focus; missing references remain attached until an explicit edit; edits and draft selections survive review navigation, offline reload, native restart and restore; repaired items update immediately without swallowing clicks; keyboard and narrow-layout controls work; reviewing prep preserves canon, live progress, and player privacy; existing workflow format 3 remains compatible; the published package matches the tested source. Real GM feedback must establish whether these prompts help reach a runnable plan more quickly.
 
 ## Established foundation
 
@@ -196,7 +202,7 @@ Reliability work proceeds alongside the earlier milestones. This is the gate for
 | Large campaigns | v1.11.0 measures 0.55–24.57 MB synthetic workspaces and improves projection/history costs. v1.12.0 saves the four-campaign fixture in Chrome and reopens it offline after a process restart; native saves and recovery also pass. Measure real campaign shapes and slower devices, reduce complete-save costs, and verify additional browsers before extending capacity claims. |
 | Desktop security | v1.10.0 adds an application content policy, navigation and permission restrictions, a common sender check for all privileged IPC, and native review of custom programs. v1.12.1 moves to supported Electron 44 and checks the built executable's runtime. Preserve the sandbox, context isolation, disabled Node integration, and encrypted credentials. Continue dependency maintenance and test any migration to a dedicated application protocol with origin-storage recovery. |
 | Release assurance | v1.10.0 adds pull-request and main-branch Windows tests and package verification. Exercise installation, upgrade, rollback, and portable updates with representative workspaces. Establish a signed distribution process. The downloaded v1.9.0 portable release reported `NotSigned`; signing hooks exist in CI. |
-| Supportability | Provide actionable errors and an explicit diagnostic export that excludes credentials and campaign content by default. Document supported operating systems, integration versions, recovery steps, and known failures. Check keyboard operation, readable layouts, and save/error announcements. |
+| Supportability | Provide actionable errors and an explicit diagnostic export that excludes credentials and campaign content by default. Document supported operating systems, integration versions, recovery steps, and known failures. Check keyboard operation, readable layouts, and save/error announcements. Audit legacy parchment-theme text and surfaces beyond the preparation views corrected in v1.16.0. |
 
 Architecture changes should follow these needs. The existing pure data modules are useful seams for extracting preparation, import validation, and export logic from the large renderer scripts. A framework rewrite has no acceptance value by itself.
 

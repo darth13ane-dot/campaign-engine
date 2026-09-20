@@ -1,5 +1,15 @@
 # Sharing and desktop updates
 
+## Version 1.16.0 — Actionable preparation review
+
+Session Prep now gives specific follow-up items with direct routes to the relevant fields or controls. The review identifies missing scene choices and situations, timing problems, unavailable references, unfinished supporting entries and tasks, and remaining notes-draft pieces. Scene numbers distinguish repeated titles. Four items appear first, with an explicit **Show all** control for longer plans.
+
+The previous percentage could show every prompt covered while a scene's player-choice field was empty. Scene coverage now requires a title, situation, and choice, and the review leads with concrete work instead of a percentage. The GM can start play at any point. Existing notes approvals, campaign canon, live progress, and workflow format 3 remain intact. [SESSION_PREP.md](SESSION_PREP.md) explains the review and its limits.
+
+Parchment-theme cards in the preparation workspace now use a light background, keeping its fields and review content readable with dark text.
+
+Verification includes 293 automated tests, browser keyboard and immediate-click editing, missing-record and PDF-page review, desktop and narrow layouts, offline reload, and player privacy. Native checks cover repair, restart, reviewed restore, export/import, and opening the unchanged save in published v1.15.1. These checks use synthetic campaigns; real-session usefulness remains a GM pilot question.
+
 ## Version 1.15.1 — Protect preparation across app versions
 
 Session preparation now uses workflow format 3. This marks PDF page links, source attribution, pending note reviews, and saved live capture as requiring a compatible app. Earlier published builds could accept these plans and lose page links when starting play; builds from v1.12.0 through v1.15.0 now reject the upgraded workspace through their existing version checks.

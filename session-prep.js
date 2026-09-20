@@ -175,13 +175,47 @@
     const plannedMinutes = scenes.reduce((sum, scene) => sum + integer(scene.minutes, 30, 0, 1440), 0);
     const checks = [
       { id: "opening", label: "Opening situation written", done: Boolean(text(prep?.opening)) },
-      { id: "scenes", label: "Playable scenes prepared", done: namedScenes.length > 0 && scenes.every(scene => text(scene.title) && (text(scene.detail) || text(scene.question))) },
+      { id: "scenes", label: "Scenes include a situation and choice", done: namedScenes.length > 0 && scenes.every(scene => text(scene.title) && text(scene.detail) && text(scene.question)) },
       { id: "timing", label: "Scene timings fit the session", done: namedScenes.length > 0 && scenes.every(scene => text(scene.title) && Number(scene.minutes) > 0) && plannedMinutes <= durationMinutes },
-      { id: "spotlights", label: "Player spotlight prepared", done: rows(prep?.spotlights).some(item => text(item.character) && text(item.opportunity)) },
+      { id: "spotlights", label: "Player spotlights described", done: rows(prep?.spotlights).length > 0 && rows(prep?.spotlights).every(item => text(item.character) && text(item.opportunity)) },
       { id: "records", label: "Key campaign records at hand", done: references.length > 0 && references.every(item => text(item.type) && text(item.name) && (!campaign || resolvePinnedRecord(campaign, item))) },
       { id: "tasks", label: "No outstanding prep tasks", done: tasks.every(item => text(item.text) && item.done === true) }
     ].map(check => ({ ...check, done: Boolean(check.done) }));
-    return { checks, complete: checks.filter(check => check.done).length, total: checks.length, plannedMinutes, durationMinutes };
+    const nextSteps = [];
+    const add = (id, label, action, target) => nextSteps.push({ id, label, action, target });
+    const field = (collection, index, key) => ({ type: "field", collection, index, field: key });
+    if (!text(prep?.opening)) add("opening", "Set the opening situation", "Write what puts the session in motion.", field(null, 0, "opening"));
+    if (!scenes.length) add("scenes", "Prepare the first situation", "Add a scene, its pressure, and a player choice.", { type: "add", collection: "scenes" });
+    scenes.forEach((scene, index) => {
+      const label = `Scene ${index + 1}${text(scene.title) ? ` · ${text(scene.title, 100)}` : ""}`;
+      const missing = [["title", "title"], ["detail", "situation"], ["question", "player choice"]].filter(([key]) => !text(scene[key]));
+      if (missing.length) add(`scene-${index}`, label, `Add ${missing.map(([, name]) => name).join(", ")}.`, field("scenes", index, missing[0][0]));
+      if (!(Number(scene.minutes) > 0)) add(`time-${index}`, label, "Estimate the time this situation may need.", field("scenes", index, "minutes"));
+    });
+    if (plannedMinutes > durationMinutes) add("budget", `${plannedMinutes - durationMinutes} minutes over the session budget`, "Review the session length and scene estimates.", field(null, 0, "durationMinutes"));
+    if (!references.length) add("references", "Keep useful campaign material at hand", "Find a record or PDF page to pin.", { type: "pins" });
+    const reviewReferences = (values, sceneIndex = null) => rows(values).forEach((ref, index) => {
+      if (text(ref.type) && text(ref.name) && (!campaign || resolvePinnedRecord(campaign, ref))) return;
+      add(`reference-${sceneIndex ?? "pin"}-${index}`, `Unavailable · ${text(ref.name, 100) || "Unnamed reference"}`,
+        sceneIndex == null ? "Review this pinned reference; keep it or choose a replacement." : `Review the reference in scene ${sceneIndex + 1}; keep it or link a replacement.`,
+        sceneIndex == null ? { type: "pin", index } : { type: "scene-reference", index: sceneIndex });
+    });
+    reviewReferences(prep?.pinned);
+    scenes.forEach((scene, index) => reviewReferences(scene.references, index));
+    const spotlights = rows(prep?.spotlights);
+    if (!spotlights.length) add("spotlights", "Consider a character spotlight", "Choose a character and an opportunity for this session.", { type: "add", collection: "spotlights" });
+    spotlights.forEach((item, index) => {
+      if (!text(item.character) || !text(item.opportunity)) add(`spotlight-${index}`, `Spotlight ${index + 1}${text(item.character) ? ` · ${text(item.character, 100)}` : ""}`, "Name the character and describe their opportunity.", field("spotlights", index, text(item.character) ? "opportunity" : "character"));
+    });
+    for (const [collection, key, label] of [["revelations", "text", "Revelation"], ["clocks", "label", "Clock"]]) rows(prep?.[collection]).forEach((item, index) => {
+      if (!text(item[key])) add(`${collection}-${index}`, `${label} ${index + 1} needs a description`, "Develop this entry or remove it from the plan.", field(collection, index, key));
+    });
+    tasks.forEach((task, index) => {
+      if (!text(task.text) || task.done !== true) add(`task-${index}`, text(task.text, 100) || `Prep task ${index + 1} needs a description`, text(task.text) ? "Review the task and mark it complete when ready." : "Describe the work or remove this task.", field("tasks", index, text(task.text) ? "done" : "text"));
+    });
+    const draft = prep?.notesWorkbench?.schemaVersion === 1 ? prep.notesWorkbench.draft : null;
+    if (rows(draft?.rows).length) add("notes-draft", `${draft.rows.length} ${draft.rows.length === 1 ? "piece remains" : "pieces remain"} in your notes draft`, "Review the pieces you still want to use.", { type: "notes" });
+    return { checks, complete: checks.filter(check => check.done).length, total: checks.length, plannedMinutes, durationMinutes, nextSteps };
   }
 
   function resolvePinnedRecord(campaign, reference) {
