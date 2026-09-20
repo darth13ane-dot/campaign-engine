@@ -33,6 +33,12 @@ Apply these product boundaries to upcoming work:
 
 The product hypothesis is that GMs will value a reliable planning workspace around their campaign memory. Existing overlap is acknowledged; claims of unique features or market demand require evidence.
 
+## Current planning milestone: v1.13.0 — Notes into playable preparation
+
+The GM identified turning campaign notes into a playable next session as the remaining weekly friction. **Build from notes** now provides selected excerpts, a session brief, manual or optional AI drafting, and individual review of openings, scenes, choices, clues, spotlights, clocks, and tasks. Approved pieces append to prep with exact source quotations and explicit suggested additions; first play and GM packets retain attribution. [NOTES_TO_SESSION.md](NOTES_TO_SESSION.md) records usage, limits, and verification.
+
+Acceptance gates: drafts and review edits survive reload and backup; external requests include only the described selected context; invalid or stale citations block application; unselected pieces remain saved; repeated approval cannot replay applied pieces; canon and live progress remain intact; manual preparation works offline; player preview excludes private drafts; the published package matches tested source. Real GM use should now evaluate whether this reduces the effort from notes to a runnable session and whether the prepared situations stay useful when players change direction.
+
 ## Established foundation
 
 The code audit began from version **1.4.2**. These capabilities are present in the inspected implementation; live service compatibility and future milestones have separate validation requirements.
@@ -166,7 +172,7 @@ Acceptance gates:
 
 Reliability work proceeds alongside the earlier milestones. This is the gate for inviting a broader pilot and making a commercial commitment.
 
-**Current maintenance release: v1.12.1.** The Windows application uses pinned Electron 44.4.3. Package checks verify the executable's actual runtime version, and native checks exercise preparation, PDF workers, player documents, connection approval, recovery, and an Electron 37/44 upgrade and rollback cycle with synthetic encrypted keys. [RUNTIME_MAINTENANCE.md](RUNTIME_MAINTENANCE.md) records the scope. Keep the runtime within upstream support while improving support diagnostics and collecting real GM feedback.
+**Delivered maintenance release: v1.12.1.** The Windows application uses pinned Electron 44.4.3. Package checks verify the executable's actual runtime version, and native checks exercise preparation, PDF workers, player documents, connection approval, recovery, and an Electron 37/44 upgrade and rollback cycle with synthetic encrypted keys. [RUNTIME_MAINTENANCE.md](RUNTIME_MAINTENANCE.md) records the scope. Keep the runtime within upstream support while improving support diagnostics and collecting real GM feedback.
 
 | Area | Concrete work and acceptance gate |
 | --- | --- |

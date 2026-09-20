@@ -60,6 +60,7 @@
       startedAt: text(value.startedAt, 80) || new Date().toISOString(),
       endedAt: status === "ended" ? text(value.endedAt, 80) || new Date().toISOString() : null,
       opening: text(value.opening, 12000),
+      ...(Array.isArray(value.openingProvenance) ? { openingProvenance: value.openingProvenance.map(PREP.normalizeProvenance).filter(Boolean) } : {}),
       durationMinutes: Math.max(15, Math.min(1440, Number(value.durationMinutes) || 180)),
       spotlights: Array.isArray(value.spotlights) ? value.spotlights.filter(object).map((item, index) => ({ id: text(item.id, 160) || `${deskId}-spotlight-${index}`, character: text(item.character, 200), opportunity: text(item.opportunity, 4000), ...PREP.provenanceFields(item) })).filter(item => item.character || item.opportunity) : [],
       beats: Array.isArray(value.beats) ? value.beats.filter(object).map((beat, index) => ({ id: text(beat.id, 160) || `${deskId}-beat-${index}`, title: text(beat.title || beat.text, 240), kind: ["scene", "beat", "social", "exploration", "combat", "pressure"].includes(beat.kind) ? beat.kind : "beat", detail: text(beat.detail, 12000), question: text(beat.question, 4000), minutes: Number.isFinite(Number(beat.minutes)) && beat.minutes != null ? Math.max(0, Math.min(1440, Math.round(Number(beat.minutes)))) : 30, done: Boolean(beat.done), ...PREP.provenanceFields(beat) })).filter(beat => beat.title) : [],
@@ -132,7 +133,7 @@
     const scenes = (prep?.scenes || []).filter(scene => scene.title || scene.detail || scene.question).map(scene => ({ ...scene, title: scene.title || "Untitled scene", done: false }));
     const desk = normalizeDesk({
       id: deskId, sessionRef, status: "active", startedAt: now,
-      opening: prep?.opening, durationMinutes: prep?.durationMinutes, spotlights: prep?.spotlights,
+      opening: prep?.opening, openingProvenance: prep?.openingProvenance, durationMinutes: prep?.durationMinutes, spotlights: prep?.spotlights,
       pinned: prep?.pinned, clocks: prep?.clocks, revelations: prep?.revelations,
       beats: scenes.length ? scenes : directions.map((title, index) => ({ id: `${deskId}-beat-${index}`, title, kind: "beat", done: false }))
     }, deskId);

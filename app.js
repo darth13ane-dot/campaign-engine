@@ -1562,7 +1562,7 @@ function render() {
   nav.querySelectorAll(".nav-link").forEach(button => button.classList.toggle("active", button.dataset.view === currentView));
   settingsButton.classList.toggle("active", ["settings", "systems", "foundry", "archivist", "updates"].includes(currentView));
   const featureView = (name, fallback) => typeof globalThis[name] === "function" ? globalThis[name] : fallback;
-  const views = { dashboard: dashboardView, sessions: sessionsView, "session-prep": sessionPrepView, "prep-templates": prepTemplatesView, "prep-template-editor": prepTemplateEditorView, "prep-template-review": prepTemplateReviewView, "prep-continuity": continuityView, "player-packet": playerPacketView, "session-desk": sessionDeskView, reconciliation: reconciliationView, characters: c => recordView("characters", c), sheets: sheetsView, builder: c => featureView("builderStudioView", () => header("Builder studio", "RULES-AWARE CREATION", "Loading builder tools…"))(c), sources: c => featureView("sourcesFeatureView", () => header("Rulebooks & PDFs", "LOCAL REFERENCE LIBRARY", "Loading source tools…"))(c), quests: c => recordView("quests", c), arcs: arcsView, connections: connectionsView, locations: c => recordView("locations", c), journal: journalView, settings: settingsView, systems: c => featureView("systemsFeatureView", () => header("Game systems", "RULES LIBRARY", "Loading system tools…"))(c), copilot: copilotView, foundry: foundryView, archivist: archivistView, updates: desktopUpdateView, detail: entityDetailView, history: historyView, "sync-review": archivistReviewView, "source-detail": referenceDetailView };
+  const views = { dashboard: dashboardView, sessions: sessionsView, "session-prep": sessionPrepView, "prep-notes": prepNotesView, "prep-templates": prepTemplatesView, "prep-template-editor": prepTemplateEditorView, "prep-template-review": prepTemplateReviewView, "prep-continuity": continuityView, "player-packet": playerPacketView, "session-desk": sessionDeskView, reconciliation: reconciliationView, characters: c => recordView("characters", c), sheets: sheetsView, builder: c => featureView("builderStudioView", () => header("Builder studio", "RULES-AWARE CREATION", "Loading builder tools…"))(c), sources: c => featureView("sourcesFeatureView", () => header("Rulebooks & PDFs", "LOCAL REFERENCE LIBRARY", "Loading source tools…"))(c), quests: c => recordView("quests", c), arcs: arcsView, connections: connectionsView, locations: c => recordView("locations", c), journal: journalView, settings: settingsView, systems: c => featureView("systemsFeatureView", () => header("Game systems", "RULES LIBRARY", "Loading system tools…"))(c), copilot: copilotView, foundry: foundryView, archivist: archivistView, updates: desktopUpdateView, detail: entityDetailView, history: historyView, "sync-review": archivistReviewView, "source-detail": referenceDetailView };
   systemViews.forEach(view => {
     views[view.id] = campaignValue => featureView(
       view.renderer,
@@ -2208,8 +2208,8 @@ function parseAIJson(text) {
   if (!candidate) throw new Error("The AI response was not in the expected format.");
   return JSON.parse(candidate.trim());
 }
-async function callCampaignAI(endpoint, model, messages) {
-  const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${copilotToken}` }, body: JSON.stringify({ model, messages }) });
+async function callCampaignAI(endpoint, model, messages, options = {}) {
+  const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${copilotToken}` }, body: JSON.stringify({ model, messages }), signal: options.signal });
   if (!response.ok) throw new Error(`AI endpoint returned ${response.status}.`);
   const payload = await response.json();
   const text = asAssistantText(payload.choices?.[0]?.message?.content) || asAssistantText(payload.output_text);
@@ -2909,7 +2909,7 @@ function sessionDeskView(campaign) {
     ${ending}
     ${followingSessionPrepMarkup(campaign, desk)}
     ${session ? `<div class="header-actions player-packet-entry">${playerPacketAction(session)}</div>` : ""}
-    ${desk.opening ? `<section class="card desk-panel desk-prep-opening"><p class="eyebrow">OPENING SITUATION</p><p class="desk-prep-copy">${esc(desk.opening)}</p></section>` : ""}
+    ${desk.opening ? `<section class="card desk-panel desk-prep-opening"><p class="eyebrow">OPENING SITUATION</p><p class="desk-prep-copy">${esc(desk.opening)}</p>${(desk.openingProvenance || []).map(provenance => prepProvenanceMarkup(campaign, { provenance })).join("")}</section>` : ""}
     ${desk.spotlights?.length ? `<section class="card desk-panel desk-prep-opening"><p class="eyebrow">CHARACTER SPOTLIGHTS</p>${desk.spotlights.map(item => `<p class="desk-prep-copy"><b>${esc(item.character)}:</b> ${esc(item.opportunity)}</p>`).join("")}</section>` : ""}
     <div class="desk-layout">
       <section class="card desk-panel desk-runlist"><div class="section-title"><div><p class="eyebrow">RUN OF PLAY</p><h2>Scenes & pressures</h2></div><span class="tag">${desk.beats.filter(beat => beat.done).length}/${desk.beats.length}</span></div>

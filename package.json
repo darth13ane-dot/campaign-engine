@@ -1,7 +1,7 @@
 {
   "name": "campaign-engine",
   "productName": "Campaign Engine",
-  "version": "1.12.1",
+  "version": "1.13.0",
   "description": "A local-first GM preparation and session-running workspace with campaign integrations.",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -88,7 +88,10 @@
       "prep-template-starters.js",
       "prep-templates.js",
       "prep-template-views.js",
-      "prep-template.css"
+      "prep-template.css",
+      "prep-notes.js",
+      "prep-notes-views.js",
+      "prep-notes.css"
     ],
     "win": {
       "target": [

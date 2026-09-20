@@ -58,3 +58,7 @@ Preparation travels with the full campaign workspace, including its backups and 
 Check the save status before closing. Use the workspace backup/export controls for a complete recovery copy; the Markdown packet is a reading copy of the selected session.
 
 Desktop safety backups retain the twelve newest supported copies by backup creation time. Older copies use their filename timestamp where available. Unreadable and unsupported-version files are preserved for manual recovery, so the folder may contain more than twelve files. A workspace from a newer schema requires a compatible app version; opening or importing it preserves the original bytes.
+
+## Build from campaign notes
+
+Choose **Build from notes** to select campaign excerpts or paste GM notes, describe the session focus, and develop editable openings, scenes, choices, clues, spotlights, clocks, and tasks. Work manually offline or use your existing AI connection with an explicit sending choice. Select finished pieces before appending them to prep. Source quotes and suggested additions travel with the approved material. See [NOTES_TO_SESSION.md](NOTES_TO_SESSION.md) for the complete workflow and review limits.
