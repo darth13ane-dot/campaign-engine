@@ -10,7 +10,7 @@ The app retains Electron's sandbox and context isolation with Node integration d
 
 The application page enforces a Content Security Policy before resources load. JavaScript comes from local application assets; inline scripts, inline event handlers, and JavaScript string evaluation are blocked. PDF support permits WebAssembly compilation and a local worker. Existing UI styles require inline CSS. Interface fonts are bundled with their licenses and work offline; starting the app makes no font-service request. HTTPS images support campaign artwork. Configurable integrations retain HTTP/HTTPS connections, including local Foundry and AI services; this policy does not select or authorize a provider for the GM.
 
-These controls follow [Electron's security guidance](https://www.electronjs.org/docs/latest/tutorial/security). They are defense layers around the current local application. The desktop still serves its bundled page through `file://`; a future change to a dedicated application protocol must preserve existing origin storage and be tested as an upgrade. Keeping Electron and its dependencies current remains part of release maintenance.
+These controls follow [Electron's security guidance](https://www.electronjs.org/docs/latest/tutorial/security). They are defense layers around the current local application. The desktop still serves its bundled page through `file://`; a future change to a dedicated application protocol must preserve existing origin storage and be tested as an upgrade. v1.12.1 pins Electron 44.4.3 and verifies the runtime inside the built executable. [Runtime maintenance](RUNTIME_MAINTENANCE.md) covers ongoing support checks and the verified upgrade cycle.
 
 ## Custom connection programs
 

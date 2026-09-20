@@ -1,5 +1,11 @@
 # Sharing and desktop updates
 
+## Version 1.12.1 — Supported desktop runtime
+
+The Windows app moves from Electron 37.10.3 to the pinned Electron 44.4.3 release, including Chromium 152.0.7977.130 and Node 24.21.0. Package verification now reads the version from the built executable and rejects a runtime that differs from the reviewed dependency. Development requires Node 22.12.0 or later. [RUNTIME_MAINTENANCE.md](RUNTIME_MAINTENANCE.md) records the upstream sources, build procedure, and upgrade coverage.
+
+The existing 247 tests pass. Native checks cover PDF import and its worker, approved player previews, desktop access controls, custom connection approval, large-workspace saves, restart, and reviewed recovery. A controlled Electron 37 → 44 → 37 → 44 cycle retains the synthetic campaign, preparation, imported details, recovery copies, and both Windows-encrypted test credentials; credential files remain unchanged when loaded by the new runtime. Workspace exports remain separate from credentials.
+
 ## Version 1.12.0 — Recoverable browser storage
 
 Browser workspaces now save in IndexedDB, with the previous automatic save retained in the same transaction. The first load migrates the earlier localStorage workspace and recovery copy, preserving both exact originals for download. Interrupted migration can resume. The app reports **Saved** only after the transaction commits, and offers a download of current work if saving fails.
