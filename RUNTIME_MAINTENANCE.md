@@ -31,6 +31,8 @@ The v1.12.1 checks use synthetic campaigns, temporary profiles, and synthetic cr
 
 The upgrade exercise starts the old and new packaged application files under their matching Electron runtimes in the same isolated profile. It verifies application/data compatibility. Native installer replacement and the portable updater's process replacement still need a separate end-to-end OS exercise. Live Archivist authentication and a live Foundry world are separate compatibility checks. The local native test machine is Windows x64 build 26200; broader device and graphics-driver coverage remains a pilot task.
 
+Preparation compatibility has its own version boundary. v1.15.1 writes workflow format 3 and retains a recovery copy before upgrading existing saved preparation. The published v1.14.0 and v1.15.0 application archives, running under their matching Electron 44.4.3 runtime in an asserted temporary profile, reject those upgraded workspaces. Save, replacement, initialization, import, and close leave both workspace files byte-identical. Returning to the current package reopens page links and pending live notes; reviewed recovery and export/import survive another restart. The earlier runtime rollback exercise covers its original application and data versions.
+
 ## Keep the runtime maintained
 
 Before each release, check upstream support and security updates, review intervening breaking changes against the APIs used in `electron/`, and select an exact stable version. Update the lockfile without unrelated dependency changes. Keep the app's sandbox, isolated preload, current storage origin, and existing credential store through runtime-only maintenance.

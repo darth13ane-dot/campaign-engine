@@ -37,3 +37,25 @@ test("future workspace and session-workflow schemas require a compatible version
     assert.deepEqual(value, before);
   }
 });
+
+test("workspace validation accepts format 3 and protects future workflows including legacy aliases", () => {
+  assert.equal(schema.SESSION_WORKFLOW_SCHEMA_VERSION, require("../session-workflow.js").SCHEMA_VERSION);
+  for (const field of ["sessionWorkflow", "sessionDeskState", "reconciliationState"]) {
+    const value = { campaigns: [{ id: "campaign", [field]: { schemaVersion: 3, futurePlan: "preserve" } }] };
+    assert.deepEqual(schema.normalizeWorkspace(value).state, value);
+    value.campaigns[0][field].schemaVersion = 4;
+    const before = structuredClone(value);
+    assert.throws(() => schema.normalizeWorkspace(value), { code: "UNSUPPORTED_WORKSPACE_SCHEMA" });
+    assert.deepEqual(value, before);
+  }
+});
+
+test("workflow recovery checkpoints follow campaign identity and only actual format upgrades", () => {
+  const older = { campaigns: [{ id: "old", sessionWorkflow: { schemaVersion: 2 } }] };
+  const newer = { campaigns: [{ id: "old", sessionWorkflow: { schemaVersion: 3 } }] };
+  assert.equal(schema.needsWorkflowBackup(older, newer), true);
+  assert.equal(schema.needsWorkflowBackup(newer, newer), false);
+  assert.equal(schema.needsWorkflowBackup(undefined, newer), false);
+  assert.equal(schema.needsWorkflowBackup(older, { campaigns: [{ id: "different", sessionWorkflow: { schemaVersion: 3 } }] }), false);
+  assert.equal(schema.needsWorkflowBackup({ campaigns: [{ id: "old", sessionDeskState: { sessions: [] } }] }, newer), true);
+});

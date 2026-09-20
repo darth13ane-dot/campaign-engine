@@ -36,6 +36,33 @@ test("migrates exact legacy copies once, retains empty workspaces and rejects ol
   assert.equal((await create().load()).state.campaigns[0].title, "Edited");
   assert.equal(await store.readRaw("previous"), raw); assert.equal(await store.readRaw("legacy-primary"), raw);
 });
+
+test("preparation format upgrade preserves an exact recovery copy across saves and browser restart", async t => {
+  const { store, create } = fixture(t); await store.load();
+  const value = workspace("Before format upgrade");
+  value.state.campaigns[0].sessionWorkflow = { schemaVersion: 2, preps: { plan: { id: "plan", pinned: [{ type: "reference", id: "guide", name: "Guide", page: 7 }] } } };
+  await store.save(value); const raw = await store.readRaw();
+  require("../session-workflow.js").normalizeCampaign(value.state.campaigns[0]);
+  const saving = store.save(value); value.state.campaigns[0].sessionWorkflow.schemaVersion = 2;
+  await saving; value.state.campaigns[0].sessionWorkflow.schemaVersion = 3;
+  value.state.campaigns[0].title = "Later edit"; await store.save(value); await store.save(value);
+  const reopened = create(); assert.equal((await reopened.load()).state.campaigns[0].title, "Later edit");
+  const copies = (await reopened.listCopies()).filter(copy => copy.label === "Before preparation format 3 upgrade");
+  assert.equal(copies.length, 1); assert.equal(await reopened.readRaw(copies[0].id), raw);
+  assert.equal(JSON.parse(await reopened.readRaw()).state.campaigns[0].sessionWorkflow.preps.plan.pinned[0].page, 7);
+});
+
+test("an aborted format upgrade commits neither the new version nor its recovery copy", async t => {
+  const { store } = fixture(t); await store.load();
+  const value = workspace("Original"); value.state.campaigns[0].sessionWorkflow = { schemaVersion: 2, preps: {} };
+  await store.save(value); const raw = await store.readRaw(), copies = await store.listCopies(), revision = store.revision;
+  require("../session-workflow.js").normalizeCampaign(value.state.campaigns[0]);
+  const put = IDBObjectStore.prototype.put;
+  IDBObjectStore.prototype.put = function (...args) { const request = put.apply(this, args); request.addEventListener("success", () => this.transaction.abort()); return request; };
+  try { await assert.rejects(store.save(value), /canceled|abort/i); } finally { IDBObjectStore.prototype.put = put; }
+  assert.equal(await store.readRaw(), raw); assert.deepEqual(await store.listCopies(), copies); assert.equal(store.revision, revision);
+  await store.save(value); assert.equal((await store.listCopies()).filter(copy => /format 3/.test(copy.label)).length, 1);
+});
 test("captures writes before awaiting the database and saves a 24 MB workspace with its previous revision", async t => {
   const { store, create } = fixture(t); assert.equal(await store.load(), null);
   const value = workspace("Large"); value.state.campaigns[0].documents = [{ id: "large", title: "Reference", text: "x".repeat(24 * 1024 * 1024) }];

@@ -11,7 +11,7 @@
   const conflict = () => error("BROWSER_WORKSPACE_CONFLICT", "Another tab or an older app changed the saved workspace. Download your current work, then reload the saved workspace before editing again.");
   const parse = raw => raw == null ? null : SCHEMA.normalizeWorkspace(JSON.parse(raw));
   function compatible(raw, allowDamaged = false) {
-    try { parse(raw); return true; }
+    try { return parse(raw) || true; }
     catch (failure) { if (!allowDamaged || failure.code === SCHEMA.UNSUPPORTED_SCHEMA) throw failure; return false; }
   }
   function validateRecord(record) {
@@ -110,7 +110,9 @@
     function write(value, { replace = false, allowDamaged = false } = {}) {
       // Capture before any asynchronous database work: later edits belong to
       // the next queued save, even while this transaction is waiting.
-      const raw = JSON.stringify(SCHEMA.normalizeWorkspace(value, "browser"));
+      const workspace = SCHEMA.normalizeWorkspace(value, "browser");
+      const raw = JSON.stringify(workspace);
+      const versions = { campaigns: workspace.state.campaigns.map(campaign => ({ id: campaign.id, sessionWorkflow: { schemaVersion: campaign.sessionWorkflow?.schemaVersion } })) };
       const expected = revision;
       return transaction("readwrite", (record, store) => {
         if ((record?.revision || null) !== expected) throw conflict();
@@ -122,6 +124,10 @@
         if (record.migrationPending) throw error("BROWSER_MIGRATION_PENDING", "Retry opening the workspace to finish its storage migration before saving.");
         const validPrimary = compatible(record.primary, replace && allowDamaged);
         const validPrevious = compatible(record.previous, true);
+        if (validPrimary && SCHEMA.needsWorkflowBackup(validPrimary.state, versions)
+          && !record.preserved.some(copy => copy.raw === record.primary)) {
+          record.preserved.push({ id: `preserved-${crypto.randomUUID()}`, label: `Before preparation format ${SCHEMA.SESSION_WORKFLOW_SCHEMA_VERSION} upgrade`, raw: record.primary });
+        }
         for (const [label, original, valid] of [["primary", record.primary, validPrimary], ["previous", record.previous, validPrevious]]) {
           if (!valid && original != null && !record.preserved.some(copy => copy.raw === original)) record.preserved.push({ id: `preserved-${crypto.randomUUID()}`, label: `Preserved damaged ${label}`, raw: original });
         }

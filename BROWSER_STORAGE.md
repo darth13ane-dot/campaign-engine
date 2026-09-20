@@ -35,11 +35,14 @@ The reload clears pending restore and Archivist import reviews. Applying importe
 | --- | --- |
 | Previous automatic save | The primary data from the immediately preceding committed save. A subsequent save replaces this slot. |
 | Original workspace and recovery copy | Exact localStorage data copied during the first migration. Later saves retain these originals. |
+| Before preparation format upgrade | Exact workspace text retained when an existing workflow upgrades to format 3. Saved atomically with the upgraded workspace and retained through later saves. |
 | Preserved damaged data | Original workspace text retained before an explicitly reviewed recovery. Download it for manual repair. |
 | Older-app branch | Differing localStorage text retained when a conflicting older app's save is explicitly resolved. |
 | Downloaded backup | An external JSON file you control, suitable for reviewed restore in the browser or Windows app. |
 
 **Preview copy** uses the same validation and confirmation as importing a backup. **Download copy** retains the original stored text, including malformed copies that cannot be previewed. Recovery content and complete-workspace downloads are available in GM view.
+
+From v1.15.1, preparation uses workflow format 3. Earlier builds with workspace version checks protect upgraded saves and exports by refusing to open them. A compatible build upgrades existing format 2 plans without rebuilding their content. Opening and saving a pre-upgrade recovery copy in the current app upgrades it again; download that copy if you need its original format. Windows retains a separate pre-upgrade safety copy under its usual twelve-copy policy. Use downloaded backups for versions you need to keep permanently.
 
 The verified Chrome fixture contains four campaigns, 16,000 records, 800 sessions, and 2,400 reference pages: approximately 24.57 MB of compact JSON. It survived full browser restart and offline editing. Aborting a real transaction and crashing the renderer before commit retained both previously committed copies. These checks cover synthetic data on one Windows workstation; power loss, other browsers, mobile devices, eviction, and larger real libraries require additional verification. See [PERFORMANCE.md](PERFORMANCE.md).
 

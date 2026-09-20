@@ -1,5 +1,15 @@
 # Sharing and desktop updates
 
+## Version 1.15.1 — Protect preparation across app versions
+
+Session preparation now uses workflow format 3. This marks PDF page links, source attribution, pending note reviews, and saved live capture as requiring a compatible app. Earlier published builds could accept these plans and lose page links when starting play; builds from v1.12.0 through v1.15.0 now reject the upgraded workspace through their existing version checks.
+
+Existing format 2 plans upgrade in place, retaining their content. Before the first upgraded save, the browser preserves the exact earlier workspace in Recovery copies, and Windows creates a **Before preparation format upgrade** safety copy. A failed checkpoint prevents the Windows save; browser upgrades and their recovery copy commit together. Future workflow versions are rejected before normalization or live actions can change them.
+
+Use v1.15.1 or a later compatible build for upgraded workspaces and exports. Keep a downloaded backup when changing app versions. Windows safety copies follow the existing twelve-copy retention policy; browser recovery copies share the site's storage and can be removed by clearing or eviction. An older pre-upgrade copy contains the work saved at that time. [BROWSER_STORAGE.md](BROWSER_STORAGE.md) explains recovery and external backups.
+
+Verification includes 289 automated tests, a real-browser v1.15.0 upgrade and stale-tab check, PDF preparation through offline reload, and native published-app v1.14.0/v1.15.0 rejection with unchanged workspace files. Recovery download, preview, restore, current-version export/import, and restart pass; browser recovery controls were checked at 1440 and 390 pixels. Checks use synthetic campaigns and temporary profiles.
+
 ## Version 1.15.0 — PDF sources beside the session
 
 Imported PDF pages can now become selected sources in Build from notes, scene references, and live-desk pins. Search book titles or page text, review exact excerpts, and keep the original book/page identity through approved preparation, GM packets, and carry-forward. The live reader displays the linked page beside the situation and saved notes.

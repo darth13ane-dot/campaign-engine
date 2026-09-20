@@ -1,9 +1,9 @@
-const CACHE_NAME = "campaign-engine-shell-v44";
+const CACHE_NAME = "campaign-engine-shell-v45";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./workspace-schema.js?v=1",
-  "./browser-workspace-store.js?v=1",
+  "./workspace-schema.js?v=2",
+  "./browser-workspace-store.js?v=2",
   "./workspace-persistence.js?v=4",
   "./workspace-entry.js?v=2",
   "./workspace-entry.css?v=1",
@@ -29,7 +29,7 @@ const APP_SHELL = [
   "./session-table.js?v=2",
   "./session-table-views.js?v=2",
   "./session-table.css?v=2",
-  "./session-workflow.js?v=6",
+  "./session-workflow.js?v=7",
   "./prep-continuity.js?v=4",
   "./prep-continuity-views.js?v=2",
   "./prep-continuity.css?v=1",
