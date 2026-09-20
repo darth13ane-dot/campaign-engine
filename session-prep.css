@@ -103,6 +103,24 @@
 .prep-provenance-body > button { justify-self: start; padding: 6px 9px; font-size: 11px; }
 .prep-provenance-body .prep-existing-body { padding-top: 0; }
 .session-prep-page .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.prep-packet-dialog { width: min(1120px, calc(100vw - 36px)); height: calc(100dvh - 40px); max-height: none; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--ink-raised); color: var(--paper); }
+.prep-packet-dialog[open] { display: flex; flex-direction: column; }
+.prep-packet-dialog::backdrop { background: rgba(0,0,0,.7); }
+.prep-packet-controls { display: flex; justify-content: space-between; gap: 20px; align-items: center; padding: 18px 22px 10px; }
+.prep-packet-controls strong { font-size: 15px; }
+.prep-packet-controls p, .prep-packet-status { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.prep-packet-controls p { margin: 6px 0 0; max-width: 380px; }
+.prep-packet-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: 8px; }
+.prep-packet-actions button { min-height: 38px; white-space: normal; }
+.prep-packet-status { margin: 0; padding: 6px 22px 14px; }
+.prep-packet-dialog iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
+@media (max-width: 680px) {
+  .prep-packet-dialog { width: calc(100vw - 12px); height: calc(100dvh - 12px); max-width: none; border-radius: 6px; }
+  .prep-packet-controls { padding: 12px; flex-direction: column; align-items: stretch; gap: 10px; }
+  .prep-packet-actions { justify-content: start; gap: 6px; }
+  .prep-packet-actions button { flex: 1; padding: 8px; font-size: 11px; }
+  .prep-packet-status { padding: 0 12px 10px; font-size: 11px; }
+}
 :root[data-theme="parchment"] .session-prep-page .card { background: var(--ink-raised); }
 :root[data-theme="parchment"] .session-prep-page .prep-readiness { background: rgba(73,119,111,.06); }
 :root[data-theme="parchment"] .session-prep-page input:not([type="checkbox"]), :root[data-theme="parchment"] .session-prep-page textarea, :root[data-theme="parchment"] .session-prep-page select { background: rgba(78,60,31,.04); }

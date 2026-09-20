@@ -33,7 +33,11 @@ Applied **Planning prompts** remain separate from your authored fields. Empty te
 
 ## Take the plan to the table
 
-Choose **GM Markdown packet** to download the prepared material as a readable `.md` file. The packet is labeled **GM only** and includes private preparation. Store or print it using your preferred Markdown application.
+Choose **GM run sheet** to read a snapshot of the prepared session. Its contents and scene links take you to the relevant material within the document. **Back to prep** or Escape returns to the editor, including when keyboard focus is inside the sheet.
+
+**Download HTML** saves a self-contained reading copy. Open that file in a browser and use **Print** to print it or save as PDF. **Download Markdown** provides the same material for a Markdown editor. Both include the opening, session notes, ordered scenes and choices, spotlights, clues, clocks, tasks, source attribution, and supported fields from pinned or scene-linked records. Overviews and detailed notes appear separately; structured stats and relationships retain their values, and selected PDF pages retain their complete saved text.
+
+The sheet is labeled **GM only** and includes private preparation. Pending draft pieces, unrelated campaign records, and the live desk's separate notes stay outside this prep snapshot. Missing links remain visible as unavailable references. If the plan or a linked record changes while the preview is open, close it and open a fresh sheet before downloading. Player preview removes the document and disables its downloads.
 
 Start the session from the preparation workspace or Sessions. The first start copies the opening, scenes, pins, clues, clocks, and spotlight opportunities into the Live Session Desk. Scene details and decisions remain visible while playing.
 
@@ -53,7 +57,7 @@ From the ended desk or Consequence Inbox, use **Prepare the next session** to ch
 
 Your review selections and edits save with the target prep. Return through **Bring forward** after reopening the app to resume. If the source material, target plan, or active campaign threads change during review, refresh the review before applying it. **Refresh review** rebuilds suggestions and clears draft selections and edits; a confirmation protects work you have changed. Previously added prep remains available.
 
-Source disclosures in prep show where carried material came from, following stable identities when sessions are renamed. The GM Markdown packet includes those attributions. Missing source records are identified explicitly. Carried material retains its original identity through later sessions so reviewing the same source again can recognize an existing copy.
+Source disclosures in prep show where carried material came from, following stable identities when sessions are renamed. Both GM run-sheet formats include those attributions. Missing source records are identified explicitly. Carried material retains its original identity through later sessions so reviewing the same source again can recognize an existing copy.
 
 ## Prepare something for your players
 
@@ -63,7 +67,7 @@ Choose **Player packets** to assemble session recaps, briefings, or handouts. Ea
 
 Preparation travels with the full campaign workspace, including its backups and an approved Archivist refresh. Stable session references keep the plan and desk attached when the session is renamed. Legacy references are recovered when the corresponding session can be identified uniquely.
 
-Check the save status before closing. Use the workspace backup/export controls for a complete recovery copy; the Markdown packet is a reading copy of the selected session.
+Check the save status before closing. Use the workspace backup/export controls for a complete recovery copy; the GM run sheet is a reading copy of the selected session.
 
 Desktop safety backups retain the twelve newest supported copies by backup creation time. Older copies use their filename timestamp where available. Unreadable and unsupported-version files are preserved for manual recovery, so the folder may contain more than twelve files. A workspace from a newer schema requires a compatible app version; opening or importing it preserves the original bytes.
 
