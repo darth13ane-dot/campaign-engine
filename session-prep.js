@@ -89,6 +89,27 @@
     return result;
   }
 
+  function referenceKey(value) {
+    const ref = recordReference(value), field = identityFields.find(field => ref[field]);
+    return `${ref.type}:${field ? `${field}:${ref[field]}` : `name:${ref.name}`}`;
+  }
+
+  function normalizeReferences(value) {
+    const seen = new Set();
+    return rows(value).map(recordReference).filter(ref => {
+      if (!["character", "quest", "location", "journal", "session", "arc"].includes(ref.type) || !ref.name) return false;
+      const key = referenceKey(ref);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function sceneReferenceFields(value) {
+    const references = normalizeReferences(value?.references);
+    return references.length ? { references } : {};
+  }
+
   function provenanceFields(value) {
     const provenance = normalizeProvenance(value?.provenance);
     return provenance ? { provenance } : {};
@@ -113,7 +134,7 @@
       ...(object(value.templateReview) ? { templateReview: JSON.parse(JSON.stringify(value.templateReview)) } : {}),
       ...(object(value.notesWorkbench) ? { notesWorkbench: JSON.parse(JSON.stringify(value.notesWorkbench)) } : {}),
       durationMinutes: integer(value.durationMinutes, 180, 15, 1440),
-      scenes: rows(value.scenes).map((scene, index) => ({ id: rowId(scene, "scene", index), title: text(scene.title, 240), kind: ["scene", "social", "exploration", "combat", "pressure"].includes(scene.kind) ? scene.kind : "scene", minutes: integer(scene.minutes, 30, 0, 1440), detail: text(scene.detail), question: text(scene.question, 4000), ...promptFields(scene, ["title", "detail", "question"]), ...provenanceFields(scene) })),
+      scenes: rows(value.scenes).map((scene, index) => ({ id: rowId(scene, "scene", index), title: text(scene.title, 240), kind: ["scene", "social", "exploration", "combat", "pressure"].includes(scene.kind) ? scene.kind : "scene", minutes: integer(scene.minutes, 30, 0, 1440), detail: text(scene.detail), question: text(scene.question, 4000), ...promptFields(scene, ["title", "detail", "question"]), ...provenanceFields(scene), ...sceneReferenceFields(scene) })),
       pinned: rows(value.pinned).map(recordReference).filter(entry => entry.type && entry.name),
       revelations: rows(value.revelations).map((item, index) => ({ id: rowId(item, "revelation", index), text: text(item.text, 4000), checked: Boolean(item.checked), ...promptFields(item, ["text"]), ...provenanceFields(item) })),
       clocks: rows(value.clocks).map((clock, index) => {
@@ -143,6 +164,7 @@
 
   function readiness(prep, campaign) {
     const scenes = rows(prep?.scenes), tasks = rows(prep?.tasks);
+    const references = [...rows(prep?.pinned), ...scenes.flatMap(scene => rows(scene.references))];
     const namedScenes = scenes.filter(scene => text(scene.title));
     const durationMinutes = integer(prep?.durationMinutes, 180, 15, 1440);
     const plannedMinutes = scenes.reduce((sum, scene) => sum + integer(scene.minutes, 30, 0, 1440), 0);
@@ -151,7 +173,7 @@
       { id: "scenes", label: "Playable scenes prepared", done: namedScenes.length > 0 && scenes.every(scene => text(scene.title) && (text(scene.detail) || text(scene.question))) },
       { id: "timing", label: "Scene timings fit the session", done: namedScenes.length > 0 && scenes.every(scene => text(scene.title) && Number(scene.minutes) > 0) && plannedMinutes <= durationMinutes },
       { id: "spotlights", label: "Player spotlight prepared", done: rows(prep?.spotlights).some(item => text(item.character) && text(item.opportunity)) },
-      { id: "records", label: "Key campaign records pinned", done: rows(prep?.pinned).length > 0 && rows(prep?.pinned).every(item => text(item.type) && text(item.name) && (!campaign || resolvePinnedRecord(campaign, item))) },
+      { id: "records", label: "Key campaign records at hand", done: references.length > 0 && references.every(item => text(item.type) && text(item.name) && (!campaign || resolvePinnedRecord(campaign, item))) },
       { id: "tasks", label: "No outstanding prep tasks", done: tasks.every(item => text(item.text) && item.done === true) }
     ].map(check => ({ ...check, done: Boolean(check.done) }));
     return { checks, complete: checks.filter(check => check.done).length, total: checks.length, plannedMinutes, durationMinutes };
@@ -231,6 +253,7 @@
       out.push(`### ${index + 1}. ${line(scene.title || "Untitled scene")}`, "", `${line(scene.kind)} · ${scene.minutes} minutes`);
       if (scene.detail) out.push("", md(scene.detail));
       if (scene.question) out.push("", `**Meaningful choice:** ${md(scene.question)}`);
+      if (scene.references?.length) out.push("", `**At hand:** ${scene.references.map(ref => { const record = resolvePinnedRecord(campaign, ref); return `${line(record?.name || record?.title || ref.name)} (${line(ref.type)})${record ? "" : " — unavailable"}`; }).join("; ")}`);
       if (scene.provenance) out.push("", attribution(scene));
       out.push("");
     });
@@ -247,9 +270,10 @@
       });
     }
     list("Planning prompts still to develop", guidance);
-    if (prep.pinned.length) {
+    const packetReferences = normalizeReferences([...prep.pinned, ...scenes.flatMap(scene => scene.references || [])]);
+    if (packetReferences.length) {
       out.push("", "## Pinned campaign records", "");
-      for (const reference of prep.pinned) {
+      for (const reference of packetReferences) {
         const record = resolvePinnedRecord(campaign, reference);
         out.push(`### ${line(record?.name || record?.title || reference.name)} (${line(reference.type)})`, "");
         if (reference.provenance) out.push(attribution(reference), "");
@@ -261,5 +285,5 @@
     return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
   }
 
-  return { createId, sessionReference, ensureSessionReference, ensureSessionReferences, referencesMatch, findSession, resolveSession: findSession, findLinkedSessionItem, recordReference, normalizeProvenance, provenanceFields, normalizePrep, findPrepForSession, ensurePrep, readiness, resolvePinnedRecord, resolveRecord: resolvePinnedRecord, describeProvenance, exportMarkdown };
+  return { createId, sessionReference, ensureSessionReference, ensureSessionReferences, referencesMatch, findSession, resolveSession: findSession, findLinkedSessionItem, recordReference, referenceKey, normalizeReferences, sceneReferenceFields, normalizeProvenance, provenanceFields, normalizePrep, findPrepForSession, ensurePrep, readiness, resolvePinnedRecord, resolveRecord: resolvePinnedRecord, describeProvenance, exportMarkdown };
 });

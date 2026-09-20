@@ -1,9 +1,9 @@
 (function (root, factory) {
   const common = typeof module === "object" && module.exports;
-  const api = factory(common ? require("./session-prep.js") : root.CampaignSessionPrep, common ? require("./player-packet.js") : root.CampaignPlayerPacket);
+  const api = factory(common ? require("./session-prep.js") : root.CampaignSessionPrep, common ? require("./player-packet.js") : root.CampaignPlayerPacket, common ? require("./session-table.js") : root.CampaignSessionTable);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.CampaignSessionWorkflow = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function (PREP, PACKETS) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (PREP, PACKETS, TABLE) {
   "use strict";
 
   const SCHEMA_VERSION = 2;
@@ -63,10 +63,12 @@
       ...(Array.isArray(value.openingProvenance) ? { openingProvenance: value.openingProvenance.map(PREP.normalizeProvenance).filter(Boolean) } : {}),
       durationMinutes: Math.max(15, Math.min(1440, Number(value.durationMinutes) || 180)),
       spotlights: Array.isArray(value.spotlights) ? value.spotlights.filter(object).map((item, index) => ({ id: text(item.id, 160) || `${deskId}-spotlight-${index}`, character: text(item.character, 200), opportunity: text(item.opportunity, 4000), ...PREP.provenanceFields(item) })).filter(item => item.character || item.opportunity) : [],
-      beats: Array.isArray(value.beats) ? value.beats.filter(object).map((beat, index) => ({ id: text(beat.id, 160) || `${deskId}-beat-${index}`, title: text(beat.title || beat.text, 240), kind: ["scene", "beat", "social", "exploration", "combat", "pressure"].includes(beat.kind) ? beat.kind : "beat", detail: text(beat.detail, 12000), question: text(beat.question, 4000), minutes: Number.isFinite(Number(beat.minutes)) && beat.minutes != null ? Math.max(0, Math.min(1440, Math.round(Number(beat.minutes)))) : 30, done: Boolean(beat.done), ...PREP.provenanceFields(beat) })).filter(beat => beat.title) : [],
+      beats: Array.isArray(value.beats) ? value.beats.filter(object).map((beat, index) => ({ id: text(beat.id, 160) || `${deskId}-beat-${index}`, title: text(beat.title || beat.text, 240), kind: ["scene", "beat", "social", "exploration", "combat", "pressure"].includes(beat.kind) ? beat.kind : "beat", detail: text(beat.detail, 12000), question: text(beat.question, 4000), minutes: Number.isFinite(Number(beat.minutes)) && beat.minutes != null ? Math.max(0, Math.min(1440, Math.round(Number(beat.minutes)))) : 30, done: Boolean(beat.done), ...PREP.provenanceFields(beat), ...PREP.sceneReferenceFields(beat) })).filter(beat => beat.title) : [],
       pinned: Array.isArray(value.pinned) ? value.pinned.filter(object).map(PREP.recordReference).filter(entry => entry.type && entry.name) : [],
       scratch: text(value.scratch, 12000),
-      log: Array.isArray(value.log) ? value.log.filter(object).map((entry, index) => ({ id: text(entry.id, 160) || `${deskId}-log-${index}`, at: text(entry.at, 80) || new Date().toISOString(), text: text(entry.text, 8000) })).filter(entry => entry.text) : [],
+      ...(object(value.tableDrafts) ? { tableDrafts: TABLE.normalizeDrafts(value.tableDrafts) } : {}),
+      ...(text(value.focusedBeatId, 160) ? { focusedBeatId: text(value.focusedBeatId, 160) } : {}),
+      log: Array.isArray(value.log) ? value.log.filter(object).map((entry, index) => ({ id: text(entry.id, 160) || `${deskId}-log-${index}`, at: text(entry.at, 80) || new Date().toISOString(), text: text(entry.text, 8000), ...TABLE.normalizeLogScene(entry) })).filter(entry => entry.text) : [],
       clocks: Array.isArray(value.clocks) ? value.clocks.filter(object).map((clock, index) => ({ id: text(clock.id, 160) || `${deskId}-clock-${index}`, label: text(clock.label, 160), value: Math.max(0, Number(clock.value) || 0), max: Math.max(1, Math.min(20, Number(clock.max) || 4)), ...PREP.provenanceFields(clock) })).filter(clock => clock.label) : [],
       revelations: Array.isArray(value.revelations) ? value.revelations.filter(object).map((item, index) => ({ id: text(item.id, 160) || `${deskId}-revelation-${index}`, text: text(item.text, 4000), checked: Boolean(item.checked), ...PREP.provenanceFields(item) })).filter(item => item.text) : []
     };

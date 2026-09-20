@@ -167,7 +167,7 @@
       const sceneRows = isLive ? rows(context.desk.beats) : rows(context.prep?.scenes);
       for (const scene of sceneRows) {
         if (isLive && scene.done || !(text(scene.title || scene.text) || text(scene.detail) || text(scene.question))) continue;
-        const after = { title: text(scene.title || scene.text || "Untitled scene", 240), kind: ["scene", "social", "exploration", "combat", "pressure"].includes(scene.kind) ? scene.kind : "scene", minutes: Number.isFinite(Number(scene.minutes)) ? Math.max(0, Math.min(1440, Math.round(Number(scene.minutes)))) : 30, detail: text(scene.detail), question: text(scene.question, 4000) };
+        const after = { title: text(scene.title || scene.text || "Untitled scene", 240), kind: ["scene", "social", "exploration", "combat", "pressure"].includes(scene.kind) ? scene.kind : "scene", minutes: Number.isFinite(Number(scene.minutes)) ? Math.max(0, Math.min(1440, Math.round(Number(scene.minutes)))) : 30, detail: text(scene.detail), question: text(scene.question, 4000), ...PREP.sceneReferenceFields(scene) };
         add("scenes", "scenes", scene, after, isLive ? "Live scene not marked complete." : "Prepared earlier; no live progress recorded.", isLive ? "beats" : "scenes", null, [`${prior}: ${isLive ? "This live scene was not marked complete when the session ended." : "This scene was prepared earlier; no live progress is recorded."}`]);
       }
       if (!isLive && !sceneRows.some(scene => text(scene.title || scene.detail || scene.question))) {

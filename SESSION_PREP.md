@@ -62,3 +62,7 @@ Desktop safety backups retain the twelve newest supported copies by backup creat
 ## Build from campaign notes
 
 Choose **Build from notes** to select campaign excerpts or paste GM notes, describe the session focus, and develop editable openings, scenes, choices, clues, spotlights, clocks, and tasks. Work manually offline or use your existing AI connection with an explicit sending choice. Select finished pieces before appending them to prep. Source quotes and suggested additions travel with the approved material. See [NOTES_TO_SESSION.md](NOTES_TO_SESSION.md) for the complete workflow and review limits.
+
+## Keep scene references close during play
+
+Use **At hand for this scene** to link the people, places, and notes needed for a situation. The first live desk carries those references into a focused scene with an inline reader. Pending table notes and quick-capture ideas save while you use other controls. See [SESSION_TABLE.md](SESSION_TABLE.md) for focus, reference reading, captured notes, and ended-session review.

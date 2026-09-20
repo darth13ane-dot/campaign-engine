@@ -1,5 +1,7 @@
 /* GM-only session preparation. App integration stays in app.js. */
 let activeSessionPrepId = null;
+let prepSceneReferencePickerId = null;
+let prepSceneReferenceQuery = "";
 
 function sessionPrepCore() { return window.CampaignSessionPrep; }
 function activeSessionPrep(campaign = activeCampaign()) {
@@ -81,6 +83,20 @@ function prepProvenanceMarkup(campaign, item) {
   if (!source) return "";
   return `<details class="prep-provenance"><summary>From ${esc(source.label)}${source.missing ? ` <span>· source unavailable</span>` : ""}</summary><div class="prep-provenance-body"><p>${esc(source.context)}</p>${source.record ? prepPinnedRecordDetails(source.record, "Saved details for this source record") : ""}${source.desk ? `<button class="secondary-button" type="button" data-open-session-desk="${esc(source.desk.id)}">Open source session log</button>` : ""}${source.session && !source.desk && source.session.recap ? `<details class="prep-existing-body"><summary>Saved source session notes</summary><p>${esc(source.session.recap)}</p></details>` : ""}</div></details>`;
 }
+function prepSceneReferenceOptions(campaign, scene, query = "") {
+  const linked = new Set((scene.references || []).map(prepRecordKey));
+  const search = query.trim().toLocaleLowerCase();
+  const entries = Object.entries({ ...prepRecordLists(campaign), session: campaign.sessions }).flatMap(([type, records]) => (records || []).map(record => prepRecordRef(type, record)))
+    .filter(ref => !linked.has(prepRecordKey(ref)) && (!search || `${ref.type} ${ref.name}`.toLocaleLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name));
+  return `<option value="">Choose a record${entries.length > 100 ? " · refine search for more" : ""}…</option>${entries.slice(0, 100).map(ref => `<option value="${esc(encodeURIComponent(JSON.stringify(ref)))}">${esc(ENTRY_TYPES[ref.type] || ref.type)} · ${esc(ref.name)} · ${esc(String(ref.archivistId || ref.localId || ref.id || "").slice(-8))}</option>`).join("")}`;
+}
+function prepSceneReferencesMarkup(campaign, scene) {
+  const references = sessionPrepCore().normalizeReferences(scene.references);
+  return `<div class="prep-scene-references"><strong>At hand for this scene</strong><p class="prep-help">Link the people, places, notes, and rules details you want beside this situation during play.</p><div class="table-reference-chips">${references.map(ref => {
+    const record = prepResolveRecord(campaign, ref);
+    return `<span>${esc(record?.name || record?.title || ref.name)}${record ? "" : " · unavailable"}<button type="button" class="prep-icon-button" data-scene-unlink="${esc(sessionPrepCore().referenceKey(ref))}" data-scene-id="${esc(scene.id)}" aria-label="Unlink ${esc(ref.name)} from this scene">×</button></span>`;
+  }).join("")}</div>${prepSceneReferencePickerId === scene.id ? `<form data-scene-reference-form="${esc(scene.id)}"><label>Find a record<input type="search" data-scene-reference-search="${esc(scene.id)}" value="${esc(prepSceneReferenceQuery)}" placeholder="Search names or record types…" /></label><label>Record<select name="reference" required>${prepSceneReferenceOptions(campaign, scene, prepSceneReferenceQuery)}</select></label><div class="table-actions"><button class="secondary-button" type="submit">Link to this scene</button><button class="quiet-button" type="button" data-scene-close-picker>Close picker</button></div></form>` : `<button type="button" class="quiet-button" data-scene-link="${esc(scene.id)}">＋ Link a campaign record</button>`}</div>`;
+}
 function prepSceneMarkup(scene, index, total, campaign) {
   const kinds = { scene: "Scene", social: "Social", exploration: "Exploration", combat: "Combat", pressure: "Pressure" };
   return `<article class="prep-scene" data-prep-card="${esc(scene.id)}">
@@ -90,6 +106,7 @@ function prepSceneMarkup(scene, index, total, campaign) {
     <label>Situation & useful details<textarea ${prepField("scenes", scene.id, "detail")} rows="3" maxlength="6000" placeholder="Who wants what? What can the characters interact with? Add stakes, cues, and useful rules here.">${esc(scene.detail || "")}</textarea></label>
     <label>Meaningful question or choice<textarea ${prepField("scenes", scene.id, "question")} rows="2" maxlength="1000" placeholder="What can the players decide, discover, or change?">${esc(scene.question || "")}</textarea></label>
     ${prepProvenanceMarkup(campaign, scene)}
+    ${prepSceneReferencesMarkup(campaign, scene)}
   </article>`;
 }
 function prepPinnedMarkup(campaign, prep) {

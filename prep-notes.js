@@ -169,7 +169,7 @@
       if (row.collection === "opening") {
         next.opening = [next.opening, row.after.opening].filter(Boolean).join("\n\n");
         (next.openingProvenance ||= []).push(provenance);
-      } else (next[row.collection] ||= []).push({ ...row.after, id: PREP.createId(`notes-${row.collection}`), provenance });
+      } else (next[row.collection] ||= []).push({ ...row.after, id: PREP.createId(`notes-${row.collection}`), provenance, ...(row.collection === "scenes" && book.draft.pinSources ? PREP.sceneReferenceFields({ references: sourceNotes.flatMap(note => note.ref ? [note.ref] : []) }) : {}) });
     }
     if (book.draft.pinSources) for (const source of book.sources.filter(source => used.has(source.id) && source.ref)) {
       const record = PREP.resolvePinnedRecord(campaign, source.ref);
