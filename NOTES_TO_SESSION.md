@@ -22,7 +22,7 @@ Exact quotes establish traceability. They do not prove that a generated scene fo
 
 ## Review and add to prep
 
-Edit individual pieces and select the ones you want to use. The review shows new scene minutes and the combined time budget. The optional pin control adds campaign records cited by selected pieces to the prep references.
+Edit individual pieces and select the ones you want to use. The review shows new scene minutes and the combined time budget. The optional pin control adds campaign records cited by selected pieces to the prep references. Approved scenes also keep those records as scene-specific links for the live table.
 
 **Add selected to session prep** appends the selected material. Existing openings and scene plans remain; an opening that would exceed the saved field limit is rejected before any piece is applied. Campaign canon and existing live-desk progress remain intact. Applied pieces leave the draft, and unselected pieces stay available for later review. Source excerpts and suggested additions remain attached to approved pieces, including opening paragraphs, and appear in the GM Markdown packet. First starting the session carries this preparation and attribution into its live desk.
 

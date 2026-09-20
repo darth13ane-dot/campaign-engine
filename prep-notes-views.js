@@ -66,7 +66,14 @@ function prepNotesUpdateFeedback() {
   if (!page) return;
   page.querySelector("[data-notes-alert]").innerHTML = prepNotesError ? `<p class="notes-warning">${esc(prepNotesError)}</p>` : "";
   const toolbar = page.querySelector("[data-notes-toolbar]");
-  if (toolbar) toolbar.innerHTML = prepNotesToolbar(prepNotesContext());
+  if (toolbar) {
+    const updated = document.createElement("div");
+    updated.innerHTML = prepNotesToolbar(prepNotesContext());
+    // A field's blur/change event can fire between pressing and releasing Apply.
+    // Keep that button attached so the click and keyboard focus remain valid.
+    toolbar.firstElementChild.innerHTML = updated.firstElementChild.innerHTML;
+    toolbar.querySelector("[data-notes-apply]").disabled = updated.querySelector("[data-notes-apply]").disabled;
+  }
 }
 function prepNotesEdit(field) {
   const { book } = prepNotesContext();

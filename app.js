@@ -1576,6 +1576,7 @@ function render() {
   root.innerHTML = restricted ? playerPreviewRestrictedView() : views[currentView](displayedCampaign);
   if (!restricted && currentView === "settings") root.querySelector(".settings-grid")?.insertAdjacentHTML("beforeend", appearancePanel());
   if (!restricted && currentView === "foundry") root.querySelector(".integration-grid")?.insertAdjacentHTML("beforeend", foundryExportPanel(campaign));
+  tableAfterRender();
   updateSaveStatus();
   if (playerPreviewActive()) root.insertAdjacentHTML("afterbegin", playerPreviewBanner());
   const guideType = { sessions: "session", characters: "characters", quests: "quests", locations: "locations", journal: "journal" }[currentView];
@@ -2875,12 +2876,7 @@ function deskEntryAction(entry) {
   return entry.type === "arc" ? `data-open-arc-entry="${esc(entry.name)}"` : `data-open-entity data-entity-type="${esc(entry.type)}" data-entity-name="${esc(entry.name)}"`;
 }
 function deskPinMarkup(campaign, entry) {
-  const remove = `<button class="quiet-button" type="button" data-desk-unpin-ref="${esc(encodeURIComponent(JSON.stringify(entry.pinRef)))}" aria-label="Unpin ${esc(entry.name)}">Unpin</button>`;
-  if (!prepNameIsUnique(campaign, entry)) {
-    const record = SESSION_PREP.resolvePinnedRecord(campaign, entry.pinRef);
-    return `<article class="desk-pin-reference"><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small><strong>${esc(entry.name)}</strong>${prepPinnedRecordDetails(record || {})}${remove}</article>`;
-  }
-  return `<div class="desk-pin-reference"><button type="button" ${deskEntryAction(entry)}><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small><strong>${esc(entry.name)}</strong></button>${remove}</div>`;
+  return `<div class="desk-pin-reference">${tableReferenceButton(campaign, entry.pinRef)}<button class="quiet-button" type="button" data-desk-unpin-ref="${esc(encodeURIComponent(JSON.stringify(entry.pinRef)))}" aria-label="Unpin ${esc(entry.name)}">Unpin</button></div>`;
 }
 function followingSessionOptions(campaign, desk) {
   const source = sessionForDesk(campaign, desk);
@@ -2900,32 +2896,34 @@ function sessionDeskView(campaign) {
   const entries = Object.entries({ ...prepRecordLists(campaign), session: campaign.sessions }).flatMap(([type, records]) => (records || []).filter(record => record !== session).map(record => prepRecordRef(type, record)));
   const pinned = desk.pinned.flatMap(reference => {
     const record = SESSION_PREP.resolvePinnedRecord(campaign, reference);
-    return record ? [{ ...reference, name: record.name || record.title, pinRef: reference }] : [];
+    return [{ ...reference, name: record?.name || record?.title || reference.name, pinRef: reference }];
   });
   const pinnedKeys = new Set(desk.pinned.map(prepRecordKey));
-  const ending = deskEndConfirmation ? `<section class="desk-end-confirm card" role="alert"><div><strong>End this session?</strong><p>The desk will become read-only for play and a recoverable consequence draft will open. Canon still will not change without approval.</p></div><button class="secondary-button" type="button" data-cancel-end-session>Keep playing</button><button class="danger-button" type="button" data-confirm-end-session>End session</button></section>` : "";
-  return `<div class="session-desk-page">
+  const tableDrafts = window.CampaignSessionTable.normalizeDrafts(desk.tableDrafts);
+  const ending = deskEndConfirmation ? `<section class="desk-end-confirm card" role="alert"><div><strong>End this session?</strong><p>The desk will become read-only for play and a recoverable consequence draft will open. Canon still will not change without approval.</p>${tableDrafts.logText?.trim() ? `<p>Your pending log note will be saved before the session ends.</p>` : ""}</div><button class="secondary-button" type="button" data-cancel-end-session>Keep playing</button><button class="danger-button" type="button" data-confirm-end-session>${tableDrafts.logText?.trim() ? "Save note & end session" : "End session"}</button></section>` : "";
+  return `<div class="session-desk-page" data-desk-id="${esc(desk.id)}">
     ${header(session?.title || desk.sessionRef.name, desk.status === "active" ? "LIVE SESSION DESK" : "SESSION COMPLETE", desk.status === "active" ? "Run the table from one focused workspace. Everything here saves locally." : "This session is complete. Review its proposed consequences before changing canon.", `<div class="header-actions"><button class="secondary-button" type="button" data-view-jump="sessions">Sessions</button>${desk.status === "active" ? `<button class="danger-button" type="button" data-end-session>End session</button>` : `<button class="primary-button" type="button" data-open-reconciliation="${esc(desk.id)}">Review consequences <span>→</span></button>`}</div>`)}
     ${ending}
     ${followingSessionPrepMarkup(campaign, desk)}
     ${session ? `<div class="header-actions player-packet-entry">${playerPacketAction(session)}</div>` : ""}
     ${desk.opening ? `<section class="card desk-panel desk-prep-opening"><p class="eyebrow">OPENING SITUATION</p><p class="desk-prep-copy">${esc(desk.opening)}</p>${(desk.openingProvenance || []).map(provenance => prepProvenanceMarkup(campaign, { provenance })).join("")}</section>` : ""}
     ${desk.spotlights?.length ? `<section class="card desk-panel desk-prep-opening"><p class="eyebrow">CHARACTER SPOTLIGHTS</p>${desk.spotlights.map(item => `<p class="desk-prep-copy"><b>${esc(item.character)}:</b> ${esc(item.opportunity)}</p>`).join("")}</section>` : ""}
+    <section class="card table-focus" data-table-focus-area>${tableFocusMarkup(campaign, desk)}</section>
     <div class="desk-layout">
       <section class="card desk-panel desk-runlist"><div class="section-title"><div><p class="eyebrow">RUN OF PLAY</p><h2>Scenes & pressures</h2></div><span class="tag">${desk.beats.filter(beat => beat.done).length}/${desk.beats.length}</span></div>
-        <div class="desk-beats">${desk.beats.length ? desk.beats.map((beat, index) => `<div class="desk-beat ${beat.done ? "done" : ""}"><button class="check-dot" type="button" data-desk-beat-toggle="${esc(beat.id)}" aria-label="Mark ${esc(beat.title)} ${beat.done ? "not done" : "done"}">${beat.done ? "✓" : ""}</button><div><small>${esc(beat.kind)}${beat.minutes ? ` · ${beat.minutes} min` : ""}</small><strong>${esc(beat.title)}</strong>${beat.detail ? `<p class="desk-prep-copy">${esc(beat.detail)}</p>` : ""}${beat.question ? `<p class="desk-prep-copy"><b>Decision:</b> ${esc(beat.question)}</p>` : ""}</div><div class="desk-order"><button type="button" data-desk-beat-move="${esc(beat.id)}" data-direction="up" aria-label="Move up" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-desk-beat-move="${esc(beat.id)}" data-direction="down" aria-label="Move down" ${index === desk.beats.length - 1 ? "disabled" : ""}>↓</button><button type="button" data-desk-beat-remove="${esc(beat.id)}" aria-label="Remove">×</button></div></div>`).join("") : `<p class="empty-copy">Add the first scene, beat, or pressure. The order stays flexible.</p>`}</div>
-        <form class="desk-inline-form" data-desk-beat-form><select name="kind" aria-label="Beat type"><option>scene</option><option>beat</option><option>pressure</option></select><input required name="title" maxlength="240" placeholder="Add a flexible beat…" /><button class="secondary-button" type="submit">Add</button></form>
+        <div class="desk-beats">${tableOutlineMarkup(campaign, desk)}</div>
+        <form class="desk-inline-form" data-desk-beat-form><select name="kind" data-table-draft="sceneKind" aria-label="Beat type">${["scene", "beat", "social", "exploration", "combat", "pressure"].map(kind => `<option${kind === (tableDrafts.sceneKind || "scene") ? " selected" : ""}>${kind}</option>`).join("")}</select><input required name="title" data-table-draft="sceneTitle" maxlength="240" value="${esc(tableDrafts.sceneTitle || "")}" placeholder="Add a flexible beat…" /><button class="secondary-button" type="submit">Add</button></form>
       </section>
       <section class="card desk-panel desk-notes"><div class="section-title"><div><p class="eyebrow">CONTINUOUS NOTES</p><h2>Scratchpad & log</h2></div><span class="save-hint" data-save-status>Saved</span></div>
         <label class="desk-scratch-label">Working scratchpad<textarea data-desk-scratch rows="5" maxlength="12000" placeholder="Names, rulings, damage, questions…">${esc(desk.scratch || "")}</textarea></label>
-        <form class="desk-log-form" data-desk-log-form><label>Commit a timestamped note<textarea required name="text" rows="3" maxlength="8000" placeholder="What just happened?"></textarea></label><button class="primary-button" type="submit">Add to log <span>＋</span></button></form>
-        <div class="desk-log">${desk.log.length ? [...desk.log].reverse().map(entry => `<article><time datetime="${esc(entry.at)}">${esc(deskTime(entry.at))}</time><p>${esc(entry.text)}</p></article>`).join("") : `<p class="empty-copy">Timestamped events will collect here.</p>`}</div>
+        <form class="desk-log-form" data-desk-log-form><label>Commit a timestamped note<textarea required name="text" data-table-draft="logText" rows="3" maxlength="8000" placeholder="What just happened?">${esc(tableDrafts.logText || "")}</textarea></label><p class="prep-help" data-table-log-context>${tableDrafts.logSceneRef?.title ? `Note for: ${esc(tableDrafts.logSceneRef.title)}` : ""}</p><button class="primary-button" type="submit">Add to log <span>＋</span></button></form>
+        <div class="desk-log">${desk.log.length ? [...desk.log].reverse().map(entry => `<article><time datetime="${esc(entry.at)}">${esc(deskTime(entry.at))}</time><div>${entry.sceneRef?.title ? `<small>${esc(entry.sceneRef.title)}</small>` : ""}<p>${esc(entry.text)}</p></div></article>`).join("") : `<p class="empty-copy">Timestamped events will collect here.</p>`}</div>
       </section>
       <aside class="desk-side">
         <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">AT HAND</p><h2>Pinned records</h2></div></div><div class="desk-pins">${pinned.length ? pinned.map(entry => deskPinMarkup(campaign, entry)).join("") : `<p class="empty-copy">Pin the people, places, quests, arcs, notes, and stats you expect to need.</p>`}</div><form class="desk-inline-form" data-desk-pin-form><select required name="entry"><option value="">Choose a record…</option>${entries.filter(entry => !pinnedKeys.has(prepRecordKey(entry))).map(entry => `<option value="${esc(encodeURIComponent(JSON.stringify(entry)))}">${esc(ENTRY_TYPES[entry.type] || entry.type)} · ${esc(entry.name)}</option>`).join("")}</select><button class="secondary-button" type="submit">Pin</button></form></section>
         <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">FAST CAPTURE</p><h2>Create without leaving</h2></div></div><div class="desk-capture"><button type="button" data-desk-capture="characters">NPC</button><button type="button" data-desk-capture="locations">World entry</button><button type="button" data-desk-capture="quests">Quest</button><button type="button" data-desk-capture="journal">Journal note</button></div></section>
-        <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">PRESSURE</p><h2>Clocks & counters</h2></div></div><div class="desk-clocks">${desk.clocks.map(clock => `<div><strong>${esc(clock.label)}</strong><span>${clock.value}/${clock.max}</span><button type="button" data-desk-clock="${esc(clock.id)}" data-delta="-1" aria-label="Decrease">−</button><button type="button" data-desk-clock="${esc(clock.id)}" data-delta="1" aria-label="Increase">＋</button></div>`).join("")}</div><form class="desk-inline-form" data-desk-clock-form><input required name="label" maxlength="160" placeholder="Clock or counter" /><input required name="max" type="number" min="1" max="20" value="4" aria-label="Maximum" /><button class="secondary-button" type="submit">Add</button></form></section>
-        <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">DISCOVERIES</p><h2>Clues & revelations</h2></div></div><div class="desk-revelations">${desk.revelations.map(item => `<button class="${item.checked ? "checked" : ""}" type="button" data-desk-revelation="${esc(item.id)}"><span>${item.checked ? "✓" : ""}</span>${esc(item.text)}</button>`).join("")}</div><form class="desk-inline-form" data-desk-revelation-form><input required name="text" maxlength="500" placeholder="Clue or revelation" /><button class="secondary-button" type="submit">Add</button></form></section>
+        <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">PRESSURE</p><h2>Clocks & counters</h2></div></div><div class="desk-clocks">${desk.clocks.map(clock => `<div><strong>${esc(clock.label)}</strong><span>${clock.value}/${clock.max}</span><button type="button" data-desk-clock="${esc(clock.id)}" data-delta="-1" aria-label="Decrease">−</button><button type="button" data-desk-clock="${esc(clock.id)}" data-delta="1" aria-label="Increase">＋</button></div>`).join("")}</div><form class="desk-inline-form" data-desk-clock-form><input required name="label" data-table-draft="clockLabel" maxlength="160" value="${esc(tableDrafts.clockLabel || "")}" placeholder="Clock or counter" /><input required name="max" data-table-draft="clockMax" type="number" min="1" max="20" value="${esc(tableDrafts.clockMax || "4")}" aria-label="Maximum" /><button class="secondary-button" type="submit">Add</button></form></section>
+        <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">DISCOVERIES</p><h2>Clues & revelations</h2></div></div><div class="desk-revelations">${desk.revelations.map(item => `<button class="${item.checked ? "checked" : ""}" type="button" data-desk-revelation="${esc(item.id)}"><span>${item.checked ? "✓" : ""}</span>${esc(item.text)}</button>`).join("")}</div><form class="desk-inline-form" data-desk-revelation-form><input required name="text" data-table-draft="revelationText" maxlength="1000" value="${esc(tableDrafts.revelationText || "")}" placeholder="Clue or revelation" /><button class="secondary-button" type="submit">Add</button></form></section>
       </aside>
     </div>
   </div>`;
@@ -3077,6 +3075,8 @@ root.addEventListener("click", async event => {
   if (event.target.closest("[data-confirm-end-session]")) {
     event.stopImmediatePropagation();
     const desk = activeDesk(campaign); if (!desk) return;
+    if (desk.status !== "active") return;
+    if (desk.tableDrafts?.logText?.trim()) window.CampaignSessionTable.commitDraft(desk, "log");
     SESSION_WORKFLOW.endDesk(campaign, desk.id);
     const session = sessionForDesk(campaign, desk);
     if (session) session.upcoming = false;
@@ -3361,10 +3361,25 @@ root.addEventListener("submit", async event => {
     return;
   }
   if (event.target.matches("[data-desk-beat-form]")) {
-    event.preventDefault(); const form = new FormData(event.target); desk?.beats.push({ id: `beat-${Date.now()}`, kind: String(form.get("kind") || "beat"), title: String(form.get("title") || "").trim(), done: false }); saveState(); render(); return;
+    event.preventDefault();
+    if (tableBlocked() || desk?.status !== "active") return;
+    try {
+      const form = new FormData(event.target), table = window.CampaignSessionTable;
+      table.setDraft(desk, "sceneTitle", String(form.get("title") || ""));
+      table.setDraft(desk, "sceneKind", String(form.get("kind") || ""));
+      table.commitDraft(desk, "scene"); saveState(); render();
+    } catch (error) { showToast(error.message); }
+    return;
   }
   if (event.target.matches("[data-desk-log-form]")) {
-    event.preventDefault(); const value = String(new FormData(event.target).get("text") || "").trim(); if (value && desk) desk.log.push({ id: `log-${Date.now()}`, at: new Date().toISOString(), text: value }); saveState(); render(); return;
+    event.preventDefault();
+    if (tableBlocked() || desk?.status !== "active") return;
+    try {
+      const form = new FormData(event.target), table = window.CampaignSessionTable;
+      table.setDraft(desk, "logText", String(form.get("text") || ""));
+      table.commitDraft(desk, "log"); saveState(); render();
+    } catch (error) { showToast(error.message); }
+    return;
   }
   if (event.target.matches("[data-desk-pin-form]")) {
     event.preventDefault();
@@ -3374,10 +3389,25 @@ root.addEventListener("submit", async event => {
     saveState(); render(); return;
   }
   if (event.target.matches("[data-desk-clock-form]")) {
-    event.preventDefault(); const form = new FormData(event.target); const label = String(form.get("label") || "").trim(); if (label && desk) desk.clocks.push({ id: `clock-${Date.now()}`, label, value: 0, max: Math.max(1, Math.min(20, Number(form.get("max")) || 4)) }); saveState(); render(); return;
+    event.preventDefault();
+    if (tableBlocked() || desk?.status !== "active") return;
+    try {
+      const form = new FormData(event.target), table = window.CampaignSessionTable;
+      table.setDraft(desk, "clockLabel", String(form.get("label") || ""));
+      table.setDraft(desk, "clockMax", String(form.get("max") || ""));
+      table.commitDraft(desk, "clock"); saveState(); render();
+    } catch (error) { showToast(error.message); }
+    return;
   }
   if (event.target.matches("[data-desk-revelation-form]")) {
-    event.preventDefault(); const value = String(new FormData(event.target).get("text") || "").trim(); if (value && desk) desk.revelations.push({ id: `revelation-${Date.now()}`, text: value, checked: false }); saveState(); render(); return;
+    event.preventDefault();
+    if (tableBlocked() || desk?.status !== "active") return;
+    try {
+      const form = new FormData(event.target), table = window.CampaignSessionTable;
+      table.setDraft(desk, "revelationText", String(form.get("text") || ""));
+      table.commitDraft(desk, "revelation"); saveState(); render();
+    } catch (error) { showToast(error.message); }
+    return;
   }
   if (event.target.matches("[data-manual-proposal-form]")) {
     event.preventDefault(); const form = new FormData(event.target); const choice = JSON.parse(decodeURIComponent(String(form.get("target") || ""))); const record = campaign[choice.collection]?.[choice.index]; if (!record) return;

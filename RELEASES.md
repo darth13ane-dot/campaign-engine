@@ -1,5 +1,13 @@
 # Sharing and desktop updates
 
+## Version 1.14.0 — Prepared scenes at the table
+
+Scenes can now retain their own campaign references from manual preparation, approved note drafts, and continuity. The live desk focuses one situation with its meaningful choice and source notes, and an inline reader opens the exact linked record beside it. Renames follow stable identities; missing sources remain visible. GM packets include scene-linked record details.
+
+Pending log notes and other quick-capture fields now save through redraws, navigation, offline reload and restarts. Committing a note retains the scene where writing began. End-session confirmation saves a pending log note once, and ended desks allow reference browsing while protecting recorded play from further edits. [SESSION_TABLE.md](SESSION_TABLE.md) describes the workflow and limits.
+
+The notes review also preserves its approval button while validation updates, so clicking immediately after editing applies the selected pieces on the first click.
+
 ## Version 1.13.0 — Campaign notes into playable prep
 
 **Build from notes** connects selected campaign excerpts to the Session Prep workspace. GMs can shape a draft manually or request structured pieces through their AI connection, edit openings and scenes, review source quotes and suggested additions, then append selected pieces to preparation. Unselected pieces remain saved, and campaign canon and live progress remain intact. Stable identities, stale-source review, exact-quote validation, and retained attribution protect the handoff from notes to play.
