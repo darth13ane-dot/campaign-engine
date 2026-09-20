@@ -1,10 +1,17 @@
 /* Keep the prepared situation and its records beside live notes. */
 let tableReferenceTarget = null;
 let tableReviewScene = null;
+let tablePinSearch = null;
 const TABLE_MUTATIONS = '[data-desk-beat-toggle], [data-desk-beat-move], [data-desk-beat-remove], [data-desk-unpin-ref], [data-desk-capture], [data-desk-clock], [data-desk-revelation], [data-desk-scratch], [data-table-draft], [data-end-session], [data-confirm-end-session]';
 const TABLE_FORMS = '[data-desk-beat-form], [data-desk-log-form], [data-desk-pin-form], [data-desk-clock-form], [data-desk-revelation-form]';
 function tableCore() { return window.CampaignSessionTable; }
 function tableBlocked() { return playerPreviewActive() || workspaceReplacementPending(); }
+function tablePinQuery(campaign, desk) { return tablePinSearch?.campaignId === campaign.id && tablePinSearch?.deskId === desk.id ? tablePinSearch.query : ""; }
+function tablePinOptions(campaign, desk, query = tablePinQuery(campaign, desk)) {
+  const pinned = new Set(desk.pinned.map(prepRecordKey)), session = sessionForDesk(campaign, desk);
+  const entries = prepReferenceChoices(campaign, query, { sessions: true }).filter(ref => !pinned.has(prepRecordKey(ref)) && !(ref.type === "session" && sessionPrepCore().referencesMatch(ref, session)));
+  return `<option value="">Choose a record or page${entries.length > 100 ? " · refine search for more" : ""}…</option>${entries.slice(0, 100).map(ref => `<option value="${esc(encodeURIComponent(JSON.stringify(ref)))}">${esc(ENTRY_TYPES[ref.type] || ref.type)} · ${esc(ref.name)} · ${esc(String(ref.archivistId || ref.localId || ref.id || "").slice(-8))}</option>`).join("")}`;
+}
 function tableFocusedScene(desk) {
   const reviewId = desk.status === "ended" && tableReviewScene?.deskId === desk.id && tableReviewScene.campaignId === activeCampaign()?.id ? tableReviewScene.sceneId : desk.focusedBeatId;
   return tableCore().focusedScene(desk, reviewId);
@@ -17,6 +24,7 @@ function tableRecordReader(campaign, desk) {
   if (tableReferenceTarget?.campaignId !== campaign.id || tableReferenceTarget?.deskId !== desk.id) return `<aside class="table-reader table-reader-empty"><p class="eyebrow">QUICK REFERENCE</p><h3>Keep a record beside the scene</h3><p>Open a scene reference or pinned record to read its details here while your notes remain at hand.</p></aside>`;
   const ref = tableReferenceTarget.ref, record = prepResolveRecord(campaign, ref);
   const fields = record ? [["Role", record.role], ["Status", record.status], ["Overview", record.description], ["Details", record.detail], ["Journal", record.body], ["Session notes", record.recap], ["Pressure", record.tension], ["Next step", record.nextStep], ["Voice", record.voice], ["Quirks", record.quirks], ["Relationships", record.relationships], ["Stats / rules", record.statBlock], ["Possible directions", record.directions], ["Tags", record.tags], ["Factions", record.factions]].filter(([, value]) => value != null && String(value).trim()) : [];
+  if (record?.referenceType === "pdf") fields.splice(0, fields.length, ["Extracted PDF text", record.body || "No selectable text on this page. Import a text-based or OCR-processed PDF to use it as source notes."]);
   return `<aside class="table-reader" aria-label="Reference reader"><div class="table-reader-heading"><div><p class="eyebrow">${esc(ENTRY_TYPES[ref.type] || ref.type)}</p><h3 tabindex="-1" data-table-reader-heading>${esc(record?.name || record?.title || ref.name)}</h3></div><button type="button" class="prep-icon-button" data-table-close-reference aria-label="Close reference">×</button></div>${record ? `<div class="table-reader-body">${fields.map(([label, value]) => `<section><h4>${esc(label)}</h4><p>${esc(Array.isArray(value) ? value.join("\n") : typeof value === "object" ? JSON.stringify(value, null, 2) : value)}</p></section>`).join("") || `<p>This record has no further saved details.</p>`}</div>` : `<p>This original record is unavailable or its identity is ambiguous. Its link remains saved; a different record with the same name will keep its own identity.</p>`}</aside>`;
 }
 function tableFocusMarkup(campaign, desk) {
@@ -53,6 +61,12 @@ for (const eventType of ["click", "submit", "input", "change"]) tableRoot.addEve
 }, true);
 tableRoot.addEventListener("input", event => {
   if (tableBlocked()) return;
+  if (event.target.matches("[data-table-pin-search]")) {
+    const campaign = activeCampaign(), desk = activeDesk(campaign);
+    if (desk?.status !== "active") return;
+    tablePinSearch = { campaignId: campaign.id, deskId: desk.id, query: event.target.value };
+    event.target.form.elements.entry.innerHTML = tablePinOptions(campaign, desk);
+  }
   if (event.target.matches("[data-table-draft]")) {
     const desk = activeDesk();
     if (!desk || desk.status !== "active") return;

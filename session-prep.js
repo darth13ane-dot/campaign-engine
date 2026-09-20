@@ -1,8 +1,8 @@
 (function (root, factory) {
-  const api = factory();
+  const api = factory(typeof module === "object" && module.exports ? require("./prep-sources.js") : root.CampaignPrepSources);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.CampaignSessionPrep = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function () {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (SOURCES) {
   "use strict";
 
   const object = value => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -67,6 +67,7 @@
   }
 
   function recordReference(value) {
+    if (value?.type === "reference") return { ...SOURCES.reference(value), ...provenanceFields(value) };
     const reference = { type: text(value?.type, 40), name: text(value?.name || value?.title, 200) };
     for (const field of identityFields) if (text(value?.[field], 160)) reference[field] = text(value[field], 160);
     return { ...reference, ...provenanceFields(value) };
@@ -78,18 +79,22 @@
     if (text(value.sourceDeskId, 160)) result.sourceDeskId = text(value.sourceDeskId, 160);
     if (object(value.sourceSessionRef)) result.sourceSessionRef = sessionReference(value.sourceSessionRef);
     if (object(value.recordRef)) {
-      result.recordRef = { type: text(value.recordRef.type, 40), name: text(value.recordRef.name, 200) };
-      for (const field of identityFields) if (text(value.recordRef[field], 160)) result.recordRef[field] = text(value.recordRef[field], 160);
+      if (value.recordRef.type === "reference") result.recordRef = SOURCES.reference(value.recordRef);
+      else {
+        result.recordRef = { type: text(value.recordRef.type, 40), name: text(value.recordRef.name, 200) };
+        for (const field of identityFields) if (text(value.recordRef[field], 160)) result.recordRef[field] = text(value.recordRef[field], 160);
+      }
     }
     if (text(value.label, 500)) result.label = text(value.label, 500);
     if (value.sourceCollection === "notes") {
-      result.sourceNotes = rows(value.sourceNotes).slice(0, 12).map(note => ({ label: text(note.label, 240), text: text(note.text, 1000), ...(object(note.ref) ? { ref: { type: text(note.ref.type, 40), ...sessionReference(note.ref) } } : {}) }));
+      result.sourceNotes = rows(value.sourceNotes).slice(0, 12).map(note => ({ label: text(note.label, 240), text: text(note.text, 1000), ...(object(note.ref) ? { ref: note.ref.type === "reference" ? SOURCES.reference(note.ref) : { type: text(note.ref.type, 40), ...sessionReference(note.ref) } } : {}) }));
       result.additions = text(value.additions, 2000);
     }
     return result;
   }
 
   function referenceKey(value) {
+    if (value?.type === "reference") return SOURCES.key(value);
     const ref = recordReference(value), field = identityFields.find(field => ref[field]);
     return `${ref.type}:${field ? `${field}:${ref[field]}` : `name:${ref.name}`}`;
   }
@@ -97,7 +102,7 @@
   function normalizeReferences(value) {
     const seen = new Set();
     return rows(value).map(recordReference).filter(ref => {
-      if (!["character", "quest", "location", "journal", "session", "arc"].includes(ref.type) || !ref.name) return false;
+      if (!["character", "quest", "location", "journal", "session", "arc", "reference"].includes(ref.type) || !ref.name) return false;
       const key = referenceKey(ref);
       if (seen.has(key)) return false;
       seen.add(key);
@@ -180,12 +185,19 @@
   }
 
   function resolvePinnedRecord(campaign, reference) {
+    if (reference?.type === "reference") return SOURCES.resolve(campaign, reference);
     const collection = { character: "characters", characters: "characters", quest: "quests", quests: "quests", location: "locations", locations: "locations", journal: "journal", session: "sessions", arc: "arcs" }[reference?.type];
     const records = rows(campaign?.[collection]);
     const exact = records.filter(record => referencesMatch(reference, record));
     if (exact.length) return exact.length === 1 ? exact[0] : null;
     const legacy = records.filter(record => referencesMatch(reference, record, { allowLegacyName: true }));
     return legacy.length === 1 ? legacy[0] : null;
+  }
+
+  function sameRecordReference(campaign, left, right) {
+    if (left?.type !== right?.type) return false;
+    const record = resolvePinnedRecord(campaign, left);
+    return Boolean(record) && (left.type === "reference" ? referenceKey(left) === referenceKey(right) : record === resolvePinnedRecord(campaign, right));
   }
 
   function describeProvenance(campaign, value) {
@@ -285,5 +297,5 @@
     return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
   }
 
-  return { createId, sessionReference, ensureSessionReference, ensureSessionReferences, referencesMatch, findSession, resolveSession: findSession, findLinkedSessionItem, recordReference, referenceKey, normalizeReferences, sceneReferenceFields, normalizeProvenance, provenanceFields, normalizePrep, findPrepForSession, ensurePrep, readiness, resolvePinnedRecord, resolveRecord: resolvePinnedRecord, describeProvenance, exportMarkdown };
+  return { createId, sessionReference, ensureSessionReference, ensureSessionReferences, referencesMatch, findSession, resolveSession: findSession, findLinkedSessionItem, recordReference, referenceKey, sameRecordReference, sourceRecords: SOURCES.listRecords, normalizeReferences, sceneReferenceFields, normalizeProvenance, provenanceFields, normalizePrep, findPrepForSession, ensurePrep, readiness, resolvePinnedRecord, resolveRecord: resolvePinnedRecord, describeProvenance, exportMarkdown };
 });

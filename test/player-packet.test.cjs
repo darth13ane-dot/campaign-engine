@@ -450,9 +450,9 @@ test("duplicate imported packet IDs recover every document and require fresh app
   assert.deepEqual(rawMap, before);
 });
 
-test("browser UMD uses only prep and knowledge dependencies and produces the same approval fingerprints", () => {
+test("browser UMD uses pure prep, source and knowledge dependencies and produces the same approval fingerprints", () => {
   const context = vm.createContext({ TextEncoder, structuredClone, crypto: crypto.webcrypto });
-  for (const file of ["session-prep.js", "campaign-knowledge.js", "player-packet.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), context, { filename: file });
+  for (const file of ["prep-sources.js", "session-prep.js", "campaign-knowledge.js", "player-packet.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), context, { filename: file });
   assert.equal(context.CampaignSessionWorkflow, undefined);
   const value = campaign(), result = manualPacket(value, "Café — 界 🜂");
   const browser = context.CampaignPlayerPacket;

@@ -470,7 +470,8 @@ const ENTRY_TYPES = {
   location: "World",
   journal: "Journal",
   session: "Session",
-  arc: "Story arc"
+  arc: "Story arc",
+  reference: "PDF reference"
 };
 const CONNECTION_TYPES = ["Allied with", "Depends on", "Hunts", "Is tied to", "Knows about", "Leads to", "Opposes", "Protects", "Reveals", "Seeks"];
 const ARC_STATUSES = ["Planned", "Active", "On hold", "Complete"];
@@ -2893,12 +2894,10 @@ function sessionDeskView(campaign) {
   const desk = activeDesk(campaign);
   if (!desk) return `<div class="empty-state"><h2>This live desk is unavailable.</h2><p>Return to Sessions and open a planned session.</p><button class="primary-button" type="button" data-view-jump="sessions">Back to sessions</button></div>`;
   const session = sessionForDesk(campaign, desk);
-  const entries = Object.entries({ ...prepRecordLists(campaign), session: campaign.sessions }).flatMap(([type, records]) => (records || []).filter(record => record !== session).map(record => prepRecordRef(type, record)));
   const pinned = desk.pinned.flatMap(reference => {
     const record = SESSION_PREP.resolvePinnedRecord(campaign, reference);
     return [{ ...reference, name: record?.name || record?.title || reference.name, pinRef: reference }];
   });
-  const pinnedKeys = new Set(desk.pinned.map(prepRecordKey));
   const tableDrafts = window.CampaignSessionTable.normalizeDrafts(desk.tableDrafts);
   const ending = deskEndConfirmation ? `<section class="desk-end-confirm card" role="alert"><div><strong>End this session?</strong><p>The desk will become read-only for play and a recoverable consequence draft will open. Canon still will not change without approval.</p>${tableDrafts.logText?.trim() ? `<p>Your pending log note will be saved before the session ends.</p>` : ""}</div><button class="secondary-button" type="button" data-cancel-end-session>Keep playing</button><button class="danger-button" type="button" data-confirm-end-session>${tableDrafts.logText?.trim() ? "Save note & end session" : "End session"}</button></section>` : "";
   return `<div class="session-desk-page" data-desk-id="${esc(desk.id)}">
@@ -2920,7 +2919,7 @@ function sessionDeskView(campaign) {
         <div class="desk-log">${desk.log.length ? [...desk.log].reverse().map(entry => `<article><time datetime="${esc(entry.at)}">${esc(deskTime(entry.at))}</time><div>${entry.sceneRef?.title ? `<small>${esc(entry.sceneRef.title)}</small>` : ""}<p>${esc(entry.text)}</p></div></article>`).join("") : `<p class="empty-copy">Timestamped events will collect here.</p>`}</div>
       </section>
       <aside class="desk-side">
-        <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">AT HAND</p><h2>Pinned records</h2></div></div><div class="desk-pins">${pinned.length ? pinned.map(entry => deskPinMarkup(campaign, entry)).join("") : `<p class="empty-copy">Pin the people, places, quests, arcs, notes, and stats you expect to need.</p>`}</div><form class="desk-inline-form" data-desk-pin-form><select required name="entry"><option value="">Choose a record…</option>${entries.filter(entry => !pinnedKeys.has(prepRecordKey(entry))).map(entry => `<option value="${esc(encodeURIComponent(JSON.stringify(entry)))}">${esc(ENTRY_TYPES[entry.type] || entry.type)} · ${esc(entry.name)}</option>`).join("")}</select><button class="secondary-button" type="submit">Pin</button></form></section>
+        <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">AT HAND</p><h2>Pinned records</h2></div></div><div class="desk-pins">${pinned.length ? pinned.map(entry => deskPinMarkup(campaign, entry)).join("") : `<p class="empty-copy">Pin campaign records and PDF pages you expect to need.</p>`}</div><form class="table-pin-form" data-desk-pin-form><label>Find a record or PDF page<input type="search" data-table-pin-search value="${esc(tablePinQuery(campaign, desk))}" placeholder="Name, book, or page text…" /></label><div class="desk-inline-form"><select required name="entry" aria-label="Record or PDF page">${tablePinOptions(campaign, desk)}</select><button class="secondary-button" type="submit">Pin</button></div></form></section>
         <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">FAST CAPTURE</p><h2>Create without leaving</h2></div></div><div class="desk-capture"><button type="button" data-desk-capture="characters">NPC</button><button type="button" data-desk-capture="locations">World entry</button><button type="button" data-desk-capture="quests">Quest</button><button type="button" data-desk-capture="journal">Journal note</button></div></section>
         <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">PRESSURE</p><h2>Clocks & counters</h2></div></div><div class="desk-clocks">${desk.clocks.map(clock => `<div><strong>${esc(clock.label)}</strong><span>${clock.value}/${clock.max}</span><button type="button" data-desk-clock="${esc(clock.id)}" data-delta="-1" aria-label="Decrease">−</button><button type="button" data-desk-clock="${esc(clock.id)}" data-delta="1" aria-label="Increase">＋</button></div>`).join("")}</div><form class="desk-inline-form" data-desk-clock-form><input required name="label" data-table-draft="clockLabel" maxlength="160" value="${esc(tableDrafts.clockLabel || "")}" placeholder="Clock or counter" /><input required name="max" data-table-draft="clockMax" type="number" min="1" max="20" value="${esc(tableDrafts.clockMax || "4")}" aria-label="Maximum" /><button class="secondary-button" type="submit">Add</button></form></section>
         <section class="card desk-panel"><div class="section-title"><div><p class="eyebrow">DISCOVERIES</p><h2>Clues & revelations</h2></div></div><div class="desk-revelations">${desk.revelations.map(item => `<button class="${item.checked ? "checked" : ""}" type="button" data-desk-revelation="${esc(item.id)}"><span>${item.checked ? "✓" : ""}</span>${esc(item.text)}</button>`).join("")}</div><form class="desk-inline-form" data-desk-revelation-form><input required name="text" data-table-draft="revelationText" maxlength="1000" value="${esc(tableDrafts.revelationText || "")}" placeholder="Clue or revelation" /><button class="secondary-button" type="submit">Add</button></form></section>

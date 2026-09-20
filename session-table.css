@@ -19,6 +19,7 @@
 .table-reference-button:hover, .table-reference-button:focus-visible { border-color: var(--gold); }
 .table-reader { border-left: 1px solid var(--line); padding-left: 24px; }
 .table-reader h3 { margin: 0; font: 600 23px var(--font-display); overflow-wrap: anywhere; }
+.table-reader-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
 .table-reader > p { color: var(--muted); line-height: 1.8; font-size: 13px; }
 .table-reader-body { max-height: 480px; overflow: auto; margin-top: 18px; padding-right: 8px; }
 .table-reader-body h4 { color: var(--gold-pale); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; margin: 16px 0 5px; }
@@ -34,6 +35,8 @@
 .prep-scene-references > .quiet-button { margin-top: 9px; }
 .desk-log small { display: block; color: var(--gold-pale); font-size: 11px; margin-bottom: 5px; }
 .desk-log-form > .prep-help { margin: 0; }
+.table-pin-form { display: grid; gap: 10px; }
+.table-pin-form > label { display: grid; gap: 7px; font-size: 12px; color: var(--muted); }
 .session-desk-page :disabled { cursor: default; opacity: .55; }
 @media (max-width: 1050px) { .table-focus-layout { grid-template-columns: 1fr; } .table-reader { border-left: 0; border-top: 1px solid var(--line); padding: 22px 0 0; } }
 @media (max-width: 600px) { .table-focus { padding: 17px; } .table-scene-heading h2 { font-size: 24px; } .table-reader-body { max-height: 350px; } .desk-end-confirm { flex-wrap: wrap; } .desk-end-confirm > div { flex-basis: 100%; } }

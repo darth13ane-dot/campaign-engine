@@ -33,3 +33,5 @@ The workspace and its source material are GM-only. Player preview excludes draft
 ## Verification
 
 Domain tests cover system-neutral manual authoring, request scope, exact citation validation, atomic application, repeated application, source identity, stale reviews, late responses, field limits, normalization, backup roundtrips, player projection, and prep-to-live transfer. Browser checks use synthetic campaigns and controlled AI responses to cover editing, reload, narrow layouts, errors, approval, exports, and offline use. Native checks exercise the packaged application with isolated profiles. No paid provider call or live Archivist/Foundry write is needed for these checks.
+
+Version 1.15.0 adds imported PDF pages to source selection. Search the book title or page text, then review a focused exact excerpt. Approved quotes retain their original book and PDF page; [PREP_SOURCES.md](PREP_SOURCES.md) covers page identity, source changes, and sending scope.

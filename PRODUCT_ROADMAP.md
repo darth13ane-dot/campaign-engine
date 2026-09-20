@@ -39,11 +39,17 @@ The GM identified turning campaign notes into a playable next session as the rem
 
 Acceptance gates: drafts and review edits survive reload and backup; external requests include only the described selected context; invalid or stale citations block application; unselected pieces remain saved; repeated approval cannot replay applied pieces; canon and live progress remain intact; manual preparation works offline; player preview excludes private drafts; the published package matches tested source. Real GM use should now evaluate whether this reduces the effort from notes to a runnable session and whether the prepared situations stay useful when players change direction.
 
-## Current planning milestone: v1.14.0 — Prepared scenes at the table
+## Delivered planning milestone: v1.14.0 — Prepared scenes at the table
 
 The live workflow audit reproduced lost pending log text when another control redrew the desk, and pinned-reference navigation left the table workspace. This milestone adds recoverable capture drafts, scene-specific stable references, a focused situation with an inline record reader, and explicit protection of ended play. Approved note drafts, GM packets, and continuity retain scene links. [SESSION_TABLE.md](SESSION_TABLE.md) explains the resulting workflow.
 
 Acceptance gates: exact same-name references resolve correctly; missing records stay visible; notes and quick captures survive other actions and offline/native restart; log notes retain their original scene; first play and carry-forward preserve scene references; existing live progress remains unchanged on resume; ended sessions remain browsable with mutation blocked; GM material remains private; Windows builds and the downloaded release match the tested code.
+
+## Current planning milestone: v1.15.0 — Sources beside the session
+
+The audit found that imported PDF pages were searchable in the library but absent from notes drafting and scene-reference selection. This milestone connects exact book/page references to selected excerpts, prepared situations, live lookup, GM packets, and carry-forward. It uses the existing local library and supports rules and setting material across systems. [PREP_SOURCES.md](PREP_SOURCES.md) defines the workflow and acceptance gates.
+
+Acceptance gates: selected page text is searchable; same-title books and separate pages retain exact identities; removed or ambiguous sources remain unavailable; selected-page changes require another draft review; external AI requests include only selected excerpts; approved quotes and page links survive normalization, first play, offline/native restart, exports, and continuity; source documents and player privacy remain protected; the published Windows assets match tested source.
 
 ## Established foundation
 

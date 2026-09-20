@@ -66,3 +66,5 @@ Choose **Build from notes** to select campaign excerpts or paste GM notes, descr
 ## Keep scene references close during play
 
 Use **At hand for this scene** to link the people, places, and notes needed for a situation. The first live desk carries those references into a focused scene with an inline reader. Pending table notes and quick-capture ideas save while you use other controls. See [SESSION_TABLE.md](SESSION_TABLE.md) for focus, reference reading, captured notes, and ended-session review.
+
+Version 1.15.0 lets the scene and general reference pickers search imported PDF page text. Linked pages travel through first play, GM packets and carry-forward. See [PREP_SOURCES.md](PREP_SOURCES.md) for exact-page identity and extraction limits.

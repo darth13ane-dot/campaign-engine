@@ -19,20 +19,22 @@
     return result;
   }
   function refFor(type, record) {
-    return { type, name: String(record.name || record.title || "Untitled record"), ...Object.fromEntries(IDS.filter(key => record[key]).map(key => [key, String(record[key])])) };
+    return PREP.recordReference({ ...record, type, name: String(record.name || record.title || "Untitled record") });
   }
   function recordText(record) {
+    if (record?.referenceType === "pdf") return text(record.body);
     const fields = { recap: "Session notes", description: "Overview", detail: "Details", body: "Journal", role: "Role", status: "Status", tension: "Pressure", change: "Possible change", nextStep: "Next step", voice: "Voice", quirks: "Quirks", relationships: "Relationships", directions: "Possible directions", milestones: "Milestones" };
     return Object.entries(fields).filter(([key]) => text(record?.[key]) || Array.isArray(record?.[key])).map(([key, label]) => `${label}: ${Array.isArray(record[key]) ? record[key].filter(value => typeof value === "string").join("\n") : text(record[key])}`).join("\n\n");
   }
   function recordSnapshot(record) {
     return JSON.stringify({ name: record.name || record.title, text: recordText(record) });
   }
+  function sourceLabel(type, record) { return type === "reference" ? record.title : `${type} · ${record.name || record.title}`; }
   function listRecords(campaign, query = "") {
     const search = text(query).toLocaleLowerCase();
-    return Object.entries(TYPES).flatMap(([type, collection]) => (campaign[collection] || []).map(record => ({ ref: refFor(type, record), record })))
-      .filter(({ ref, record }) => !search || `${ref.name} ${ref.type} ${recordText(record)}`.toLocaleLowerCase().includes(search))
-      .sort((a, b) => a.ref.name.localeCompare(b.ref.name));
+    return [...Object.entries(TYPES).flatMap(([type, collection]) => (campaign[collection] || []).map(record => ({ ref: refFor(type, record), record }))), ...PREP.sourceRecords(campaign, query)]
+      .filter(({ ref, record }) => ref.type === "reference" || !search || `${ref.name} ${ref.type} ${recordText(record)}`.toLocaleLowerCase().includes(search))
+      .sort((a, b) => a.ref.name.localeCompare(b.ref.name, undefined, { numeric: true }));
   }
   function context(campaign, session) {
     const target = PREP.findSession(campaign, PREP.sessionReference(session));
@@ -54,9 +56,9 @@
     const book = ensureWorkbench(campaign, session);
     if (book.sources.length >= 12) throw new Error("Use up to 12 focused source excerpts per draft.");
     const record = ref && PREP.resolvePinnedRecord(campaign, ref);
-    if (ref && (!TYPES[ref.type] || !record || !IDS.some(key => ref[key]))) throw new Error("This source is missing or its identity is ambiguous.");
-    if (record && book.sources.some(source => source.ref && PREP.resolvePinnedRecord(campaign, source.ref) === record)) throw new Error("This record is already among your selected notes.");
-    const source = { id: PREP.createId("note"), label: record ? `${ref.type} · ${record.name || record.title}` : "Pasted GM notes", text: record ? recordText(record).slice(0, 6000) : "", ...(record ? { ref: refFor(ref.type, record), snapshot: recordSnapshot(record), fullLength: recordText(record).length } : {}) };
+    if (ref && ((!TYPES[ref.type] && ref.type !== "reference") || !record || !IDS.some(key => ref[key]))) throw new Error("This source is missing or its identity is ambiguous.");
+    if (record && book.sources.some(source => PREP.sameRecordReference(campaign, source.ref, ref))) throw new Error("This record is already among your selected notes.");
+    const source = { id: PREP.createId("note"), label: record ? sourceLabel(ref.type, record) : "Pasted GM notes", text: record ? recordText(record).slice(0, 6000) : "", ...(record ? { ref: refFor(ref.type, record), snapshot: recordSnapshot(record), fullLength: recordText(record).length } : {}) };
     book.sources.push(source);
     return source;
   }
@@ -71,7 +73,7 @@
     const record = source.ref && PREP.resolvePinnedRecord(campaign, source.ref);
     if (!record) throw new Error("The original source record is unavailable. Its excerpt remains saved.");
     source.ref = refFor(source.ref.type, record);
-    source.label = `${source.ref.type} · ${source.ref.name}`;
+    source.label = sourceLabel(source.ref.type, record);
     source.text = recordText(record).slice(0, 6000);
     source.fullLength = recordText(record).length;
     source.snapshot = recordSnapshot(record);
@@ -172,8 +174,7 @@
       } else (next[row.collection] ||= []).push({ ...row.after, id: PREP.createId(`notes-${row.collection}`), provenance, ...(row.collection === "scenes" && book.draft.pinSources ? PREP.sceneReferenceFields({ references: sourceNotes.flatMap(note => note.ref ? [note.ref] : []) }) : {}) });
     }
     if (book.draft.pinSources) for (const source of book.sources.filter(source => used.has(source.id) && source.ref)) {
-      const record = PREP.resolvePinnedRecord(campaign, source.ref);
-      if (!next.pinned.some(pin => pin.type === source.ref.type && PREP.resolvePinnedRecord(campaign, pin) === record)) next.pinned.push(clone(source.ref));
+      if (!next.pinned.some(pin => PREP.sameRecordReference(campaign, pin, source.ref))) next.pinned.push(clone(source.ref));
     }
     const applied = new Set(status.selected.map(row => row.id));
     next.notesWorkbench.draft.rows = next.notesWorkbench.draft.rows.filter(row => !applied.has(row.id));

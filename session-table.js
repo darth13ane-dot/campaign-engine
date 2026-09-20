@@ -80,7 +80,7 @@
     const record = PREP.resolvePinnedRecord(campaign, ref);
     if (!scene || !record || !["archivistId", "localId", "id"].some(key => ref?.[key])) throw new Error("Choose an available campaign record with a stable identity.");
     const references = PREP.normalizeReferences(scene.references);
-    if (references.some(value => value.type === ref.type && PREP.resolvePinnedRecord(campaign, value) === record)) return false;
+    if (references.some(value => PREP.sameRecordReference(campaign, value, ref))) return false;
     const normalized = PREP.normalizeReferences([ref]);
     if (!normalized.length) throw new Error("This reference type is unavailable.");
     scene.references = [...references, ...normalized];
