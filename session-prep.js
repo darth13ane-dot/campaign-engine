@@ -82,6 +82,10 @@
       for (const field of identityFields) if (text(value.recordRef[field], 160)) result.recordRef[field] = text(value.recordRef[field], 160);
     }
     if (text(value.label, 500)) result.label = text(value.label, 500);
+    if (value.sourceCollection === "notes") {
+      result.sourceNotes = rows(value.sourceNotes).slice(0, 12).map(note => ({ label: text(note.label, 240), text: text(note.text, 1000), ...(object(note.ref) ? { ref: { type: text(note.ref.type, 40), ...sessionReference(note.ref) } } : {}) }));
+      result.additions = text(value.additions, 2000);
+    }
     return result;
   }
 
@@ -103,9 +107,11 @@
       id: prepId,
       sessionRef: sessionReference(value.sessionRef || { name: value.sessionTitle }),
       opening: text(value.opening),
+      ...(Array.isArray(value.openingProvenance) ? { openingProvenance: value.openingProvenance.map(normalizeProvenance).filter(Boolean) } : {}),
       ...promptFields(value, ["opening"]),
       ...(object(value.continuityReview) ? { continuityReview: JSON.parse(JSON.stringify(value.continuityReview)) } : {}),
       ...(object(value.templateReview) ? { templateReview: JSON.parse(JSON.stringify(value.templateReview)) } : {}),
+      ...(object(value.notesWorkbench) ? { notesWorkbench: JSON.parse(JSON.stringify(value.notesWorkbench)) } : {}),
       durationMinutes: integer(value.durationMinutes, 180, 15, 1440),
       scenes: rows(value.scenes).map((scene, index) => ({ id: rowId(scene, "scene", index), title: text(scene.title, 240), kind: ["scene", "social", "exploration", "combat", "pressure"].includes(scene.kind) ? scene.kind : "scene", minutes: integer(scene.minutes, 30, 0, 1440), detail: text(scene.detail), question: text(scene.question, 4000), ...promptFields(scene, ["title", "detail", "question"]), ...provenanceFields(scene) })),
       pinned: rows(value.pinned).map(recordReference).filter(entry => entry.type && entry.name),
@@ -163,6 +169,11 @@
   function describeProvenance(campaign, value) {
     const provenance = normalizeProvenance(value);
     if (!provenance) return null;
+    if (provenance.sourceCollection === "notes") {
+      const notes = provenance.sourceNotes || [];
+      const missing = notes.some(note => note.ref && !resolvePinnedRecord(campaign, note.ref));
+      return { label: notes.map(note => note.label).join("; ") || "Selected notes", context: notes.map(note => `${note.label}: “${note.text}”`).join("\n\n") + (provenance.additions ? `\n\nSuggested additions reviewed by the GM: ${provenance.additions}` : "") + (missing ? "\n\nAn original source is unavailable; these excerpts were retained with the prepared piece." : ""), missing, record: null, recordRef: null, session: null, desk: null };
+    }
     const record = provenance.recordRef ? resolvePinnedRecord(campaign, provenance.recordRef) : null;
     const recordKinds = { character: "Character", quest: "Quest", location: "World entry", journal: "Journal", session: "Session", arc: "Story arc" };
     const recordLabel = provenance.recordRef ? `${recordKinds[provenance.recordRef.type] || "Campaign record"} · ${text(record?.name || record?.title || provenance.recordRef.name || "Unnamed record", 200)}` : "";
@@ -209,6 +220,7 @@
     };
     const timing = readiness(prep);
     const out = [`# ${line(session?.title || prep.sessionRef.name)} — Session Prep`, "", "**GM ONLY — PRIVATE PREPARATION**", "", `Campaign: ${line(campaign?.title || "Campaign")}`, `Session: ${line(session?.number || prep.sessionRef.number || "Unnumbered")} · ${line(session?.date || "Unscheduled")}`, `Time: ${timing.plannedMinutes} minutes planned / ${timing.durationMinutes} minutes available`, "", "## Opening situation", "", md(prep.opening) || "Opening still to prepare."];
+    for (const provenance of prep.openingProvenance || []) out.push("", attribution({ provenance }));
     if (text(session?.recap)) out.push("", "## Session plan", "", md(session.recap));
     const directions = (Array.isArray(session?.directions) ? session.directions : []).map(direction => text(direction)).filter(Boolean);
     if (directions.length) out.push("", "## Possible directions", "", ...directions.map(direction => `- ${md(direction)}`));

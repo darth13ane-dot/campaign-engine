@@ -1,5 +1,11 @@
 # Sharing and desktop updates
 
+## Version 1.13.0 — Campaign notes into playable prep
+
+**Build from notes** connects selected campaign excerpts to the Session Prep workspace. GMs can shape a draft manually or request structured pieces through their AI connection, edit openings and scenes, review source quotes and suggested additions, then append selected pieces to preparation. Unselected pieces remain saved, and campaign canon and live progress remain intact. Stable identities, stale-source review, exact-quote validation, and retained attribution protect the handoff from notes to play.
+
+[NOTES_TO_SESSION.md](NOTES_TO_SESSION.md) describes the workflow, sending scope, offline path, and verification limits. Automated provider responses validate integration behavior; live provider quality remains unverified.
+
 ## Version 1.12.1 — Supported desktop runtime
 
 The Windows app moves from Electron 37.10.3 to the pinned Electron 44.4.3 release, including Chromium 152.0.7977.130 and Node 24.21.0. Package verification now reads the version from the built executable and rejects a runtime that differs from the reviewed dependency. Development requires Node 22.12.0 or later. [RUNTIME_MAINTENANCE.md](RUNTIME_MAINTENANCE.md) records the upstream sources, build procedure, and upgrade coverage.
