@@ -20,10 +20,49 @@ test("normalizes legacy workflow state without adding state to unused campaigns"
   const migrated = campaign();
   migrated.sessionDeskState = { sessions: [{ id: "desk-old", sessionTitle: "The Crossing", beats: [{ text: "Open the door" }] }] };
   workflow.normalizeCampaign(migrated);
-  assert.equal(migrated.sessionWorkflow.schemaVersion, 2);
+  assert.equal(migrated.sessionWorkflow.schemaVersion, 3);
   assert.deepEqual(migrated.sessionWorkflow.preps, {});
   assert.equal(migrated.sessionWorkflow.desks["desk-old"].beats[0].title, "Open the door");
   assert.equal(migrated.sessionDeskState, undefined);
+});
+
+test("schema 2 upgrade preserves page identities, pending work, live capture and extension data in place", () => {
+  const value = campaign(), ref = { type: "reference", id: "book", name: "River guide", page: 2 };
+  const provenance = { key: "quote", sourceNotes: [{ label: "River guide", text: "The ferry waits.", ref }] };
+  value.sessionWorkflow = {
+    schemaVersion: 2,
+    preps: { plan: { id: "plan", pinned: [ref], scenes: [{ id: "scene", title: "Crossing", references: [ref], provenance }], notesWorkbench: { draft: { rows: [{ id: "pending", selected: true, after: { detail: "Keep my edit" } }] } }, continuity: { privateDraft: "Keep this review" } } },
+    desks: { live: { id: "live", focusedBeatId: "scene", tableDrafts: { logText: "Uncommitted observation", logSceneRef: { id: "scene", title: "Crossing" } }, beats: [{ id: "scene", title: "Crossing", references: [ref], done: true }], log: [{ id: "log", text: "An earlier decision", sceneRef: { id: "scene", title: "Crossing" } }] } },
+    reconciliations: { review: { id: "review", proposals: [], appliedProposalIds: ["approved"] } }, playerPackets: {}, extension: { original: true }
+  };
+  const originalWorkflow = value.sessionWorkflow, expected = structuredClone(value);
+  expected.sessionWorkflow.schemaVersion = 3;
+  workflow.normalizeCampaign(value); workflow.normalizeCampaign(value);
+  assert.equal(value.sessionWorkflow, originalWorkflow);
+  assert.deepEqual(value, expected);
+});
+
+test("unsupported workflow versions reject normalization and live actions before any mutation", () => {
+  for (const schemaVersion of [4, 99, "99", -1, "invalid"]) {
+    const value = campaign();
+    value.sessionWorkflow = { schemaVersion, preps: {}, desks: {}, privateFutureData: { preserve: "exactly" } };
+    const before = structuredClone(value);
+    for (const action of [
+      () => workflow.normalizeWorkflow(value.sessionWorkflow), () => workflow.normalizeCampaign(value),
+      () => workflow.ensureWorkflow(value), () => workflow.findDeskForSession(value, value.sessions[0]),
+      () => workflow.startDesk(value, value.sessions[0]), () => workflow.endDesk(value, "desk"),
+      () => workflow.createReconciliation(value, "desk"), () => workflow.applyApproved(value, "draft", [])
+    ]) {
+      assert.throws(action, { code: "UNSUPPORTED_WORKSPACE_SCHEMA" });
+      assert.deepEqual(value, before);
+    }
+  }
+  for (const field of ["sessionDeskState", "reconciliationState"]) {
+    const value = campaign(); value[field] = { schemaVersion: 99, future: "preserve" };
+    const before = structuredClone(value);
+    assert.throws(() => workflow.normalizeCampaign(value), { code: "UNSUPPORTED_WORKSPACE_SCHEMA" });
+    assert.deepEqual(value, before);
+  }
 });
 
 test("starts, resumes, and explicitly ends a session desk", () => {

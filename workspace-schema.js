@@ -5,6 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
   const WORKSPACE_SCHEMA_VERSION = 1;
+  const SESSION_WORKFLOW_SCHEMA_VERSION = 3;
   const UNSUPPORTED_SCHEMA = "UNSUPPORTED_WORKSPACE_SCHEMA";
   const object = value => Boolean(value) && typeof value === "object" && !Array.isArray(value);
   const collections = ["sessions", "characters", "quests", "locations", "journal", "arcs", "connections", "documents", "builders", "checklist", "systems"];
@@ -24,6 +25,17 @@
       throw error;
     }
   }
+  function assertWorkflowVersion(workflow) {
+    if (object(workflow)) version(workflow.schemaVersion, SESSION_WORKFLOW_SCHEMA_VERSION, "Session workflow");
+  }
+  function needsWorkflowBackup(previousState, nextState) {
+    const next = new Map((nextState?.campaigns || []).map(campaign => [campaign.id, campaign.sessionWorkflow]));
+    return (previousState?.campaigns || []).some(campaign => {
+      const previous = campaign.sessionWorkflow || campaign.sessionDeskState || campaign.reconciliationState;
+      return object(previous) && Number(previous.schemaVersion ?? 0) < SESSION_WORKFLOW_SCHEMA_VERSION
+        && Number(next.get(campaign.id)?.schemaVersion) === SESSION_WORKFLOW_SCHEMA_VERSION;
+    });
+  }
   function assertState(state) {
     if (!object(state) || !Array.isArray(state.campaigns)) invalid("This workspace", "an object with a campaigns list");
     const ids = new Set();
@@ -39,7 +51,7 @@
       const workflow = campaign.sessionWorkflow;
       if (workflow != null) {
         if (!object(workflow)) invalid(`${label} session workflow`, "an object");
-        version(workflow.schemaVersion, 2, "Session workflow");
+        assertWorkflowVersion(workflow);
         for (const field of ["preps", "desks", "reconciliations", "playerPackets", "drafts"]) {
           if (workflow[field] == null) continue;
           if (!object(workflow[field])) invalid(`${label} ${field}`, "a record map");
@@ -52,6 +64,7 @@
         }
         if (workflow.sessions != null) records(workflow.sessions, `${label} legacy sessions`);
       }
+      for (const field of ["sessionDeskState", "reconciliationState"]) assertWorkflowVersion(campaign[field]);
     });
     for (const field of ["appearance", "copilot", "foundry", "prepTemplates"]) if (state[field] != null && !object(state[field])) invalid(`Workspace ${field}`, "an object");
     return state;
@@ -71,5 +84,5 @@
       savedAt: workspace.savedAt
     };
   }
-  return { WORKSPACE_SCHEMA_VERSION, UNSUPPORTED_SCHEMA, assertState, normalizeWorkspace, summary };
+  return { WORKSPACE_SCHEMA_VERSION, SESSION_WORKFLOW_SCHEMA_VERSION, UNSUPPORTED_SCHEMA, assertWorkflowVersion, needsWorkflowBackup, assertState, normalizeWorkspace, summary };
 });

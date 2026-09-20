@@ -1,12 +1,12 @@
 (function (root, factory) {
   const common = typeof module === "object" && module.exports;
-  const api = factory(common ? require("./session-prep.js") : root.CampaignSessionPrep, common ? require("./player-packet.js") : root.CampaignPlayerPacket, common ? require("./session-table.js") : root.CampaignSessionTable);
+  const api = factory(common ? require("./session-prep.js") : root.CampaignSessionPrep, common ? require("./player-packet.js") : root.CampaignPlayerPacket, common ? require("./session-table.js") : root.CampaignSessionTable, common ? require("./workspace-schema.js") : root.CampaignWorkspaceSchema);
   if (typeof module === "object" && module.exports) module.exports = api;
   if (root) root.CampaignSessionWorkflow = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function (PREP, PACKETS, TABLE) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (PREP, PACKETS, TABLE, SCHEMA) {
   "use strict";
 
-  const SCHEMA_VERSION = 2;
+  const SCHEMA_VERSION = SCHEMA.SESSION_WORKFLOW_SCHEMA_VERSION;
   const RECORD_COLLECTIONS = ["characters", "quests", "locations", "journal", "arcs"];
   const MUTABLE_FIELDS = {
     characters: ["name", "role", "description", "tags", "factions", "voice", "quirks", "relationships", "statBlock"],
@@ -76,6 +76,7 @@
 
   function normalizeWorkflow(value) {
     if (!object(value)) return emptyWorkflow();
+    SCHEMA.assertWorkflowVersion(value);
     const preps = {};
     Object.entries(object(value.preps) ? value.preps : {}).forEach(([key, prep]) => { const next = PREP.normalizePrep(prep, key); if (next) Object.defineProperty(preps, next.id, { value: next, enumerable: true, writable: true, configurable: true }); });
     const playerPackets = normalizePacketMap(value.playerPackets);
@@ -96,7 +97,11 @@
 
   function normalizeCampaign(campaign) {
     if (!object(campaign)) return campaign;
-    if (campaign.sessionWorkflow?.schemaVersion === SCHEMA_VERSION) {
+    for (const field of ["sessionWorkflow", "sessionDeskState", "reconciliationState"]) SCHEMA.assertWorkflowVersion(campaign[field]);
+    // Schema 3 marks page-aware prep and live capture as incompatible with older
+    // builds. Existing schema 2 content already has this shape: preserve it in place.
+    if ([2, SCHEMA_VERSION].includes(Number(campaign.sessionWorkflow?.schemaVersion))) {
+      campaign.sessionWorkflow.schemaVersion = SCHEMA_VERSION;
       if (!normalizedPacketWorkflows.has(campaign.sessionWorkflow)) {
         campaign.sessionWorkflow.playerPackets = normalizePacketMap(campaign.sessionWorkflow.playerPackets);
         normalizedPacketWorkflows.add(campaign.sessionWorkflow);

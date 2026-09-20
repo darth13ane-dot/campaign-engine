@@ -1,7 +1,7 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
-const { WORKSPACE_SCHEMA_VERSION, UNSUPPORTED_SCHEMA, assertState, normalizeWorkspace, summary } = require("../workspace-schema.js");
+const { WORKSPACE_SCHEMA_VERSION, UNSUPPORTED_SCHEMA, needsWorkflowBackup, assertState, normalizeWorkspace, summary } = require("../workspace-schema.js");
 
 function safeTimestamp(date = new Date()) {
   return date.toISOString().replace(/[:.]/g, "-");
@@ -105,6 +105,10 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
   async function saveState(state) {
     assertState(state);
     const existing = await loadWorkspace();
+    if (needsWorkflowBackup(existing?.state, state)) {
+      await assertPreviousSchemaSupported();
+      await createSafetyBackup("before-workflow-upgrade");
+    }
     return writeWorkspace({
       ...(existing || {}),
       state,
@@ -204,7 +208,7 @@ function createWorkspaceStore({ directory, appVersion, now = () => new Date() })
     const copies = await Promise.all(ids.map(async id => {
       const source = id === "previous" ? previousPath : path.join(backupDirectory, id);
       const reason = id.replace(/^campaign-engine-/, "").replace(/-\d{4}-\d{2}-\d{2}T.*$/, "").replace(/\.json$/, "");
-      const labels = { previous: "Previous automatic save", manual: "Manual safety copy", "reviewed-restore": "Before workspace restore", "before-import": "Before backup import", "before-delete-campaign": "Before campaign deletion", "before-archivist-bridge": "Before Archivist import", "preserved-primary": "Preserved primary file", "preserved-previous": "Preserved previous file" };
+      const labels = { previous: "Previous automatic save", manual: "Manual safety copy", "reviewed-restore": "Before workspace restore", "before-import": "Before backup import", "before-workflow-upgrade": "Before preparation format upgrade", "before-delete-campaign": "Before campaign deletion", "before-archivist-bridge": "Before Archivist import", "preserved-primary": "Preserved primary file", "preserved-previous": "Preserved previous file" };
       const label = labels[reason] || reason.replace(/-/g, " ");
       const info = { id, label, timestamp: (await fs.stat(source)).mtimeMs };
       try {

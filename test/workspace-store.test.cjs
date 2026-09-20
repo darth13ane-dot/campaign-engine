@@ -41,6 +41,37 @@ test("initializes a private workspace and preserves Archivist details on saves",
   assert.equal(workspace.appVersion, "9.9.9");
 });
 
+test("desktop format upgrade keeps a pre-upgrade recovery copy after later saves and reopen", async t => {
+  const { directory, store } = await temporaryStore(t), before = state("Original");
+  before.campaigns[0].sessionWorkflow = { schemaVersion: 2, preps: { plan: { id: "plan", pinned: [{ type: "reference", id: "guide", name: "Guide", page: 7 }] } } };
+  const archivist = { importedAt: "2026-09-20", campaigns: { "campaign-1": { journal: "Keep imported details" } } };
+  await store.initializeWorkspace({ state: before, archivist });
+  const next = structuredClone(before); require("../session-workflow.js").normalizeCampaign(next.campaigns[0]);
+  await store.saveState(next); next.campaigns[0].title = "Later edit"; await store.saveState(next); await store.saveState(next);
+  const copies = (await fs.readdir(store.backupDirectory)).filter(name => name.includes("before-workflow-upgrade"));
+  assert.equal(copies.length, 1);
+  const backup = JSON.parse(await fs.readFile(path.join(store.backupDirectory, copies[0]), "utf8"));
+  assert.deepEqual(backup.state, before); assert.deepEqual(backup.archivist, archivist);
+  const reopened = await createWorkspaceStore({ directory, appVersion: "9.9.10" }).loadWorkspace();
+  assert.deepEqual(reopened.state, next); assert.deepEqual(reopened.archivist, archivist);
+});
+
+test("a failed desktop format checkpoint leaves both existing workspace copies intact", async t => {
+  const { directory, store } = await temporaryStore(t), before = state("Original");
+  before.campaigns[0].sessionWorkflow = { schemaVersion: 2, preps: {} };
+  await store.initializeWorkspace({ state: before }); await store.saveState(before);
+  const files = [store.workspacePath, path.join(directory, "campaign-engine-workspace.previous.json")], originals = await Promise.all(files.map(file => fs.readFile(file)));
+  const next = structuredClone(before); require("../session-workflow.js").normalizeCampaign(next.campaigns[0]);
+  const writeFile = fs.writeFile;
+  const mock = t.mock.method(fs, "writeFile", async (file, ...args) => {
+    if (String(file).includes("before-workflow-upgrade")) throw Object.assign(new Error("Checkpoint permission denied"), { code: "EACCES" });
+    return writeFile(file, ...args);
+  });
+  await assert.rejects(store.saveState(next), { code: "EACCES" }); mock.mock.restore();
+  assert.deepEqual(await Promise.all(files.map(file => fs.readFile(file))), originals);
+  await store.saveState(next); assert.equal((await store.loadWorkspace()).state.campaigns[0].sessionWorkflow.schemaVersion, 3);
+});
+
 test("persists versioned live-session and reconciliation state in backups", async t => {
   const { store } = await temporaryStore(t);
   const sessionWorkflow = {
@@ -56,7 +87,7 @@ test("persists versioned live-session and reconciliation state in backups", asyn
   assert.equal(backup.state.campaigns[0].sessionWorkflow.reconciliations["draft-1"].status, "draft");
 });
 
-test("schema 2 preparation and live progress survive desktop save, export, import, and reopen", async t => {
+test("current preparation and live progress survive desktop save, export, import, and reopen", async t => {
   const { directory, store } = await temporaryStore(t);
   const prepCore = require("../session-prep.js");
   const workflow = require("../session-workflow.js");
@@ -102,7 +133,7 @@ test("schema 2 preparation and live progress survive desktop save, export, impor
   const reopenedDestination = createWorkspaceStore({ directory: importedDirectory, appVersion: "9.9.12" });
   const restored = (await reopenedDestination.loadWorkspace()).state.campaigns[0];
   restored.sessionWorkflow = workflow.normalizeWorkflow(restored.sessionWorkflow);
-  assert.equal(restored.sessionWorkflow.schemaVersion, 2);
+  assert.equal(restored.sessionWorkflow.schemaVersion, 3);
   assert.equal(restored.sessions[0].localId, "session-1");
   assert.deepEqual(prepCore.findPrepForSession(restored, restored.sessions[0]), expected.sessionWorkflow.preps[prep.id]);
   assert.deepEqual(workflow.startDesk(restored, restored.sessions[0]), expected.sessionWorkflow.desks[desk.id]);
