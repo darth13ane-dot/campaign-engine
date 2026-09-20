@@ -22,7 +22,8 @@
       if (revision === savedRevision) return Promise.resolve();
       const target = revision;
       notify("saving");
-      // Invoke synchronous browser storage before returning, including during pagehide.
+      // Capture and start the writer synchronously; saving finishes only when
+      // its promise confirms the transaction or desktop write has completed.
       let result;
       try { result = write(snapshot()); } catch (error) { notify("error", error); return Promise.reject(error); }
       running = Promise.resolve(result).then(() => {
@@ -39,7 +40,11 @@
       timer = setTimeout(save, delay);
       if (!deadline) deadline = setTimeout(save, maxWait);
     }
-    return { request, flush, get dirty() { return revision !== savedRevision; } };
+    function reset() {
+      if (running) throw new Error("Wait for the pending workspace save before reloading.");
+      clearTimers(); revision = savedRevision = 0; notify("saved");
+    }
+    return { request, flush, reset, get dirty() { return revision !== savedRevision; } };
   }
   return { initialState, createSaveController };
 });

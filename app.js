@@ -15,6 +15,7 @@ const FOUNDRY_LIVE_ACTIONS = window.CampaignFoundryLiveActions || null;
 const CHARACTER_FILTERS = window.CampaignCharacterFilters || null;
 const CAMPAIGN_KNOWLEDGE = window.CampaignKnowledge || null;
 const DESKTOP_API = window.campaignEngineDesktop || null;
+const BROWSER_STORE = DESKTOP_API ? null : window.CampaignBrowserWorkspace.createStore({ onUnavailable(error) { workspaceSaveError = error; workspaceSaveStatus = "error"; updateSaveStatus(); } });
 const historyTracker = window.CampaignHistory.createTracker();
 
 const seed = {
@@ -88,7 +89,7 @@ const SYSTEM_REGISTRY = window.CampaignSystemRegistry;
 let workspaceLoadError = null;
 let workspaceLoadErrorCode = null;
 let workspaceOriginalBrowserData = null;
-let state = loadState();
+let state = DESKTOP_API ? loadState() : { activeCampaignId: null, campaigns: [] };
 hydrateCampaignState();
 let currentView = "dashboard";
 let activeFilter = "All";
@@ -116,6 +117,7 @@ let workspaceImportInProgress = false;
 let nextHistoryLabel = "Campaign edit";
 let workspaceSaveStatus = "saved";
 let workspaceSaveError = null;
+let browserWorkspaceOpening = null;
 let builderTab = "character";
 let builderSystem = "";
 const SYSTEM_LIBRARY = Object.fromEntries(SYSTEM_REGISTRY.all().map(definition => [
@@ -190,7 +192,7 @@ const workspaceSaver = window.CampaignPersistence.createSaveController({
   },
   write(snapshot) {
     if (workspaceLoadError) throw new Error("Resolve the workspace recovery notice before saving.");
-    if (!DESKTOP_API?.saveWorkspaceState) return localStorage.setItem(STORAGE_KEY, JSON.stringify({ schemaVersion: 1, state: snapshot, archivist: ARCHIVIST_DETAILS_ROOT }));
+    if (!DESKTOP_API?.saveWorkspaceState) return BROWSER_STORE.save({ schemaVersion: 1, state: snapshot, archivist: ARCHIVIST_DETAILS_ROOT });
     return DESKTOP_API.saveWorkspaceState(snapshot).then(info => { desktopWorkspaceInfo = info || desktopWorkspaceInfo; });
   },
   onStatus({ status, error, dirty }) {
@@ -212,9 +214,16 @@ function updateSaveStatus() {
     alert.hidden = !workspaceSaveError || Boolean(DESKTOP_API) || playerPreviewActive();
     const message = workspaceSaveError?.name === "QuotaExceededError"
       ? "Browser storage is full. Download your current workspace before closing, then restore the backup in the Windows app."
-      : "Your latest changes could not be saved. Download your current workspace before closing, or retry saving.";
+      : workspaceSaveError?.code === "BROWSER_WORKSPACE_CONFLICT" || workspaceSaveError?.code === "BROWSER_STORAGE_CHANGED"
+        ? workspaceSaveError.message
+        : "Your latest changes could not be saved. Download your current workspace before closing, or retry saving.";
     const node = alert.querySelector("p");
     if (node.textContent !== message) node.textContent = message;
+  }
+}
+function noticeBrowserConflict(error) {
+  if (BROWSER_STORE && ["BROWSER_WORKSPACE_CONFLICT", "BROWSER_STORAGE_CHANGED"].includes(error?.code)) {
+    workspaceSaveError = error; workspaceSaveStatus = "error"; updateSaveStatus();
   }
 }
 function saveState(label = "Campaign edit") {
@@ -253,6 +262,35 @@ function applyWorkspace(workspace) {
 }
 async function flushDesktopSaves() {
   await workspaceSaver.flush();
+}
+function initializeBrowserWorkspace(options) {
+  if (browserWorkspaceOpening) return browserWorkspaceOpening;
+  document.querySelector(".app-shell").inert = true;
+  browserWorkspaceOpening = (async () => {
+    try {
+      const saved = await BROWSER_STORE.load(options);
+      applyWorkspace(saved || { schemaVersion: 1, state: window.CampaignPersistence.initialState(null, ARCHIVIST_SNAPSHOT, { activeCampaignId: null, campaigns: [] }), archivist: ARCHIVIST_DETAILS_ROOT });
+      workspaceSaver.reset();
+    } catch (error) {
+      workspaceLoadError = error.message; workspaceLoadErrorCode = error.code;
+    }
+    render();
+  })().finally(() => { browserWorkspaceOpening = null; document.querySelector(".app-shell").inert = false; });
+  return browserWorkspaceOpening;
+}
+async function reloadBrowserWorkspace() {
+  if (DESKTOP_API || playerPreviewActive() || workspaceReplacementPending()) return;
+  if (!confirm("Open the saved browser workspace? Download any unsaved work first. This replaces the open workspace; work saved by an older app is preserved in Recovery copies.")) return;
+  document.querySelector(".app-shell").inert = true;
+  try {
+    await workspaceSaver.flush().catch(() => {});
+    await initializeBrowserWorkspace({ resolveLegacyConflict: true });
+    if (!workspaceLoadError) {
+      pendingWorkspaceRestore = null; pendingArchivistReview = null;
+      currentView = "dashboard"; detailTarget = null; invalidateCampaignSearch(); render();
+      showToast("Saved browser workspace opened. Recovery copies remain available.");
+    }
+  } finally { document.querySelector(".app-shell").inert = false; }
 }
 async function initializeDesktopWorkspace() {
   if (!DESKTOP_API?.loadWorkspace) return;

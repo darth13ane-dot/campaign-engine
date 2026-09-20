@@ -1,7 +1,7 @@
 {
   "name": "campaign-engine",
   "productName": "Campaign Engine",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "A local-first GM preparation and session-running workspace with campaign integrations.",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -25,6 +25,7 @@
   "devDependencies": {
     "electron": "^37.2.6",
     "electron-builder": "^26.0.12",
+    "fake-indexeddb": "6.2.5",
     "pdfjs-dist": "5.6.205"
   },
   "build": {
@@ -48,6 +49,7 @@
       "campaign-history.js",
       "workspace-persistence.js",
       "workspace-schema.js",
+      "browser-workspace-store.js",
       "workspace-entry.js",
       "workspace-entry.css",
       "foundry-actor-normalizer.js",

@@ -18,9 +18,11 @@ Use **Settings → Back up workspace** to export a complete JSON backup. It cont
 
 Windows stores the workspace in its private AppData directory and maintains a previous automatic save. **Create local safety copy** adds a named recovery file. The app retains the twelve newest supported safety copies; unreadable or unsupported copies are preserved for manual recovery. **Open data folder** opens their location.
 
-The browser retains one previous workspace before a confirmed restore or campaign deletion. Download regular backups to retain additional versions and recover after browser data is cleared.
+The browser keeps the previous automatic save in IndexedDB. On its first storage upgrade, it also retains the exact original workspace and recovery copy. **Browse recovery copies** lists these and any preserved damaged or older-app copies, with individual downloads. Download regular backups to retain additional versions and recover after browser data is cleared.
 
-If browser saving fails, use **Download current workspace** in the warning above the page before closing. This includes your latest unsaved changes; the save indicator clears after a successful save. For a storage-full warning, restore the downloaded backup in the Windows app to continue with a larger workspace. [Campaign size and performance](PERFORMANCE.md) describes measured examples and storage limits.
+Wait for **Saved** before closing the browser. If saving fails, use **Download current workspace** in the warning above the page. This includes your latest unsaved changes; the save indicator clears after a successful save. For a storage-full warning, restore the downloaded backup in the Windows app to continue. [Campaign size and performance](PERFORMANCE.md) describes measured examples and storage limits.
+
+If another tab has saved a newer workspace, download your unsaved work, then choose **Reload saved workspace** and confirm. This opens the latest committed copy and clears the stale draft from the current tab. Older-app changes are retained in Recovery copies for separate review. Keep active editing in one tab; review and transfer any wanted material from a downloaded draft deliberately. [Browser storage and recovery](BROWSER_STORAGE.md) explains migration, offline use, conflicts, and recovery limits.
 
 ## Review and restore
 
@@ -31,13 +33,13 @@ If browser saving fails, use **Download current workspace** in the warning above
 
 The current workspace remains active during review. A changed current workspace requires a fresh preview. Restoration saves a recovery copy before replacing the primary data; a failed replacement keeps the current workspace active. Successful restoration returns to the overview or welcome screen.
 
-**Browse recovery copies** opens the desktop's safety copies and previous automatic save, or the browser's previous workspace. Choose **Preview copy**, then follow the same review and confirmation. Copies that cannot be opened show their error. Browser recovery data can also be downloaded in its original form.
+**Browse recovery copies** opens the desktop's safety copies and previous automatic save, or the browser's automatic and preserved copies. Choose **Preview copy**, then follow the same review and confirmation. Copies that cannot be opened show their error. Browser recovery data can also be downloaded in its original form.
 
 ## When saved data needs attention
 
 A failed load opens **Recover your workspace** and protects the saved data from ordinary edits. Try **Retry loading**, preview a recovery copy, or choose a valid downloaded backup. In the browser, **Download saved data** preserves the exact original text for recovery. On Windows, use **Open data folder** to access preserved files.
 
-An explicitly confirmed desktop recovery can replace damaged primary and previous files after preserving both original byte sequences as separate recovery files. Storage errors stop replacement. A workspace or session workflow created by a newer, unsupported format requires a compatible application version; the original remains protected.
+An explicitly confirmed recovery can replace damaged primary and previous workspace data after preserving both originals: separate files on Windows, or downloadable preserved records in the browser database. Storage errors stop replacement. A workspace, browser database, or session workflow created by a newer, unsupported format requires a compatible application version; the original remains protected. If the browser database itself is structurally damaged, use a downloaded backup in another browser profile or the Windows app.
 
 Missing or duplicate campaign identities, malformed record lists, and malformed planning containers require a corrected backup. Work on a copy of the file. The error identifies the offending area; current data remains intact.
 

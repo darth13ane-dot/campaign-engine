@@ -11,4 +11,6 @@ It then launches in its own window, works offline after its first load, and upda
 
 Opening `index.html` directly remains useful for local viewing, but browsers do not allow PWA installation or background updates from `file://` URLs.
 
-The PDF reader uses browser modules and should be used over HTTP(S) or in the Windows app. Its text, page numbers, and record history are saved with the workspace. Large libraries can exceed a browser's local storage quota; the save indicator reports failures and workspace export remains available for recovery.
+The PDF reader uses browser modules and should be used over HTTP(S) or in the Windows app. Its text, page numbers, and record history are saved with the workspace. v1.12.0 stores browser workspaces in IndexedDB and migrates the earlier localStorage workspace while retaining both original copies. Keep the same site address and browser profile to reopen that workspace. A hosted-site move requires a downloaded backup and reviewed restore on the new site.
+
+Wait for **Saved** before closing. IndexedDB remains browser-managed storage: available space, private browsing, clearing site data, and eviction affect retention. The app reports save failures and offers a download of unsaved work. Keep external backups and use **Reload saved workspace** to resolve a competing tab's save. See [Browser storage and recovery](BROWSER_STORAGE.md) for the migration and recovery workflow and [Performance](PERFORMANCE.md) for measured capacity examples.

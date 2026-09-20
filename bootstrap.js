@@ -1,4 +1,5 @@
 /* Start after all feature views and handlers are registered. */
+document.querySelector("#reloadSavedWorkspace").addEventListener("click", () => reloadBrowserWorkspace());
 document.querySelector("#downloadUnsavedWorkspace").addEventListener("click", () => {
   if (playerPreviewActive() || DESKTOP_API) return;
   try { downloadBrowserWorkspace(); showToast("Current workspace downloaded, including unsaved changes."); }
@@ -19,13 +20,14 @@ if (!DESKTOP_API) {
   window.addEventListener("pagehide", () => { workspaceSaver.flush().catch(() => {}); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") workspaceSaver.flush().catch(() => {}); });
   window.addEventListener("beforeunload", event => {
-    if (workspaceSaveError && workspaceSaver.dirty) { event.preventDefault(); event.returnValue = ""; }
+    if (workspaceSaver.dirty) { workspaceSaver.flush().catch(() => {}); event.preventDefault(); event.returnValue = ""; }
   });
 }
 async function startCampaignEngine() {
-  if (DESKTOP_API) document.querySelector(".app-shell").inert = true;
-  render();
-  await initializeDesktopWorkspace();
+  document.querySelector(".app-shell").inert = true;
+  root.innerHTML = `<p role="status">Opening your workspace…</p>`;
+  if (DESKTOP_API) await initializeDesktopWorkspace();
+  else await initializeBrowserWorkspace();
   document.querySelector(".app-shell").inert = false;
   initializeDesktopApiKey();
   initializeDesktopFoundryApiKey();
