@@ -7,6 +7,7 @@ const { createPortableUpdater } = require("./portable-updater.cjs");
 const { normalizeUpdateUrl, resolveUpdateSettings } = require("./update-settings.cjs");
 const { createWorkspaceStore, normalizeWorkspace } = require("./workspace-store.cjs");
 const { createWorkspaceCloseGuard } = require("./workspace-close.cjs");
+const { createDesktopSecurity, confirmCustomBridge } = require("./desktop-security.cjs");
 const { bridgeError, normalizeBridgeSettings, syncArchivistBridge, testArchivistBridge } = require("./archivist-mcp-bridge.cjs");
 
 let mainWindow;
@@ -21,6 +22,8 @@ let credentialStore;
 let foundryCredentialStore;
 let portableUpdater;
 let workspaceCloseGuard;
+const entryPath = path.join(__dirname, "..", "index.html");
+const desktopSecurity = createDesktopSecurity({ getWindow: () => mainWindow, entryPath, ipcMain, shell });
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) app.quit();
@@ -142,15 +145,15 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false
     }
   });
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (validUpdateUrl(url)) shell.openExternal(url);
-    return { action: "deny" };
-  });
-  mainWindow.loadFile(path.join(__dirname, "..", "index.html"));
+  desktopSecurity.secureWindow(mainWindow);
+  mainWindow.loadFile(entryPath);
   workspaceCloseGuard = createWorkspaceCloseGuard({
     requestFlush: () => mainWindow.webContents.send("desktop:prepare-to-close"),
     close: () => mainWindow.close(),
@@ -172,8 +175,8 @@ autoUpdater.on("download-progress", progress => sendUpdateState({ status: "downl
 autoUpdater.on("update-downloaded", info => sendUpdateState({ status: "downloaded", version: info.version, message: `Version ${info.version} is ready to install.` }));
 autoUpdater.on("error", error => sendUpdateState({ status: "error", message: error.message || "Desktop update failed." }));
 
-ipcMain.handle("desktop:get-update-state", () => ({ ...updateState, currentVersion: app.getVersion(), portable: isPortableBuild(), settings: { ...updateSettings } }));
-ipcMain.handle("desktop:save-update-settings", (_, settings) => {
+desktopSecurity.handle("desktop:get-update-state", () => ({ ...updateState, currentVersion: app.getVersion(), portable: isPortableBuild(), settings: { ...updateSettings } }));
+desktopSecurity.handle("desktop:save-update-settings", (_, settings) => {
   const updateUrl = String(settings?.updateUrl || "").trim();
   if (updateUrl && !validUpdateUrl(updateUrl)) throw new Error("Use an HTTPS release-feed URL.");
   saveUpdateSettings({ updateUrl: normalizeUpdateUrl(updateUrl), autoCheck: Boolean(settings?.autoCheck) });
@@ -181,8 +184,8 @@ ipcMain.handle("desktop:save-update-settings", (_, settings) => {
   sendUpdateState({ status: updateUrl ? "ready" : "not-configured", message: updateUrl ? "Release feed saved." : "No update feed configured." });
   return { ...updateState, settings: { ...updateSettings } };
 });
-ipcMain.handle("desktop:check-for-updates", () => checkForUpdates());
-ipcMain.handle("desktop:download-update", async () => {
+desktopSecurity.handle("desktop:check-for-updates", () => checkForUpdates());
+desktopSecurity.handle("desktop:download-update", async () => {
   try {
     if (isPortableBuild()) await portableUpdater.download();
     else await autoUpdater.downloadUpdate();
@@ -192,7 +195,7 @@ ipcMain.handle("desktop:download-update", async () => {
     throw error;
   }
 });
-ipcMain.handle("desktop:install-update", async () => {
+desktopSecurity.handle("desktop:install-update", async () => {
   try {
     if (isPortableBuild()) return await portableUpdater.install(() => app.quit());
     return autoUpdater.quitAndInstall(false, true);
@@ -201,33 +204,32 @@ ipcMain.handle("desktop:install-update", async () => {
     throw error;
   }
 });
-ipcMain.handle("desktop:open-external", (_, url) => {
-  if (!validUpdateUrl(url)) throw new Error("Only http and https links can be opened outside Campaign Engine.");
-  return shell.openExternal(url);
+desktopSecurity.handle("desktop:open-external", (_, url) => {
+  return desktopSecurity.openExternal(url);
 });
-ipcMain.handle("desktop:workspace-load", async () => ({
+desktopSecurity.handle("desktop:workspace-load", async () => ({
   workspace: await workspaceStore.loadWorkspace(),
   info: await workspaceStore.getInfo()
 }));
-ipcMain.handle("desktop:workspace-initialize", async (_, workspace) => {
+desktopSecurity.handle("desktop:workspace-initialize", async (_, workspace) => {
   const saved = await workspaceStore.initializeWorkspace(workspace);
   return { workspace: saved, info: await workspaceStore.getInfo() };
 });
-ipcMain.handle("desktop:workspace-replace", async (_, workspace, reason) => {
+desktopSecurity.handle("desktop:workspace-replace", async (_, workspace, reason) => {
   const saved = await workspaceStore.replaceWorkspace(workspace, reason || "before-replace");
   return { workspace: saved, info: await workspaceStore.getInfo() };
 });
-ipcMain.handle("desktop:workspace-save-state", async (_, state) => {
+desktopSecurity.handle("desktop:workspace-save-state", async (_, state) => {
   const saved = await workspaceStore.saveState(state);
   return workspaceStore.getInfo(saved);
 });
-ipcMain.on("desktop:workspace-dirty", (event, dirty) => {
-  if (event.sender === mainWindow?.webContents) workspaceCloseGuard?.setDirty(dirty);
+desktopSecurity.on("desktop:workspace-dirty", (event, dirty) => {
+  workspaceCloseGuard?.setDirty(dirty);
 });
-ipcMain.on("desktop:workspace-close-ready", (event, result) => {
-  if (event.sender === mainWindow?.webContents) workspaceCloseGuard?.finish(result).catch(error => console.error("Workspace close failed:", error));
+desktopSecurity.on("desktop:workspace-close-ready", (event, result) => {
+  workspaceCloseGuard?.finish(result).catch(error => console.error("Workspace close failed:", error));
 });
-ipcMain.handle("desktop:workspace-export", async () => {
+desktopSecurity.handle("desktop:workspace-export", async () => {
   const date = new Date().toISOString().slice(0, 10);
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "Back up Campaign Engine",
@@ -238,7 +240,7 @@ ipcMain.handle("desktop:workspace-export", async () => {
   await workspaceStore.exportWorkspace(result.filePath);
   return { canceled: false, filePath: result.filePath, info: await workspaceStore.getInfo() };
 });
-ipcMain.handle("desktop:workspace-import", async () => {
+desktopSecurity.handle("desktop:workspace-import", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "Restore a Campaign Engine backup",
     properties: ["openFile"],
@@ -248,36 +250,36 @@ ipcMain.handle("desktop:workspace-import", async () => {
   const workspace = normalizeWorkspace(JSON.parse(await fs.promises.readFile(result.filePaths[0], "utf8")), app.getVersion());
   return { canceled: false, workspace, fileName: path.basename(result.filePaths[0]) };
 });
-ipcMain.handle("desktop:workspace-list-backups", async event => {
-  if (event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error("Workspace recovery is available from the main application window.");
+desktopSecurity.handle("desktop:workspace-list-backups", async () => {
   return workspaceStore.listWorkspaceBackups();
 });
-ipcMain.handle("desktop:workspace-read-backup", async (event, id) => {
-  if (event.sender !== mainWindow?.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error("Workspace recovery is available from the main application window.");
+desktopSecurity.handle("desktop:workspace-read-backup", async (_, id) => {
   return workspaceStore.readWorkspaceBackup(id);
 });
-ipcMain.handle("desktop:workspace-create-safety-backup", async (_, reason) => {
+desktopSecurity.handle("desktop:workspace-create-safety-backup", async (_, reason) => {
   const filePath = await workspaceStore.createSafetyBackup(reason || "manual");
   return { filePath, info: await workspaceStore.getInfo() };
 });
-ipcMain.handle("desktop:workspace-open-folder", async () => {
+desktopSecurity.handle("desktop:workspace-open-folder", async () => {
   const error = await shell.openPath(app.getPath("userData"));
   if (error) throw new Error(error);
   return workspaceStore.getInfo();
 });
-ipcMain.handle("desktop:api-key-load", () => credentialStore.loadApiKey());
-ipcMain.handle("desktop:api-key-save", (_, apiKey) => credentialStore.saveApiKey(apiKey));
-ipcMain.handle("desktop:api-key-clear", () => credentialStore.clearApiKey());
-ipcMain.handle("desktop:foundry-api-key-load", () => foundryCredentialStore.loadApiKey());
-ipcMain.handle("desktop:foundry-api-key-save", (_, apiKey) => foundryCredentialStore.saveApiKey(apiKey));
-ipcMain.handle("desktop:foundry-api-key-clear", () => foundryCredentialStore.clearApiKey());
-ipcMain.handle("desktop:archivist-bridge-state", () => archivistBridgeState({ status: archivistBridgeSettings.command ? "configured" : "not-configured" }));
-ipcMain.handle("desktop:archivist-bridge-save", (_, settings) => archivistBridgeState({ status: "saved", settings: saveArchivistBridgeSettings(settings) }));
+desktopSecurity.handle("desktop:api-key-load", () => credentialStore.loadApiKey());
+desktopSecurity.handle("desktop:api-key-save", (_, apiKey) => credentialStore.saveApiKey(apiKey));
+desktopSecurity.handle("desktop:api-key-clear", () => credentialStore.clearApiKey());
+desktopSecurity.handle("desktop:foundry-api-key-load", () => foundryCredentialStore.loadApiKey());
+desktopSecurity.handle("desktop:foundry-api-key-save", (_, apiKey) => foundryCredentialStore.saveApiKey(apiKey));
+desktopSecurity.handle("desktop:foundry-api-key-clear", () => foundryCredentialStore.clearApiKey());
+desktopSecurity.handle("desktop:archivist-bridge-state", () => archivistBridgeState({ status: archivistBridgeSettings.command ? "configured" : "not-configured" }));
+desktopSecurity.handle("desktop:archivist-bridge-save", (_, settings) => archivistBridgeState({ status: "saved", settings: saveArchivistBridgeSettings(settings) }));
 async function runArchivistConnection(settings, sync) {
   if (archivistBridgeRunning) throw new Error("An Archivist connection is already running. Finish that sign-in first.");
   archivistBridgeRunning = true;
   try {
-    const nextSettings = saveArchivistBridgeSettings(settings || archivistBridgeSettings);
+    const nextSettings = normalizeBridgeSettings(settings || archivistBridgeSettings);
+    await confirmCustomBridge({ settings: nextSettings, dialog, window: mainWindow });
+    saveArchivistBridgeSettings(nextSettings);
     const options = { authDirectory: path.join(app.getPath("userData"), "archivist-auth") };
     const result = await (sync ? syncArchivistBridge : testArchivistBridge)(nextSettings, options);
     const lastStatus = sync ? `Fetched ${result.campaignCount} campaigns for review` : `Connected · ${result.tools.length} tools`;
@@ -289,8 +291,8 @@ async function runArchivistConnection(settings, sync) {
     throw new Error(message);
   } finally { archivistBridgeRunning = false; }
 }
-ipcMain.handle("desktop:archivist-bridge-test", (_, settings) => runArchivistConnection(settings, false));
-ipcMain.handle("desktop:archivist-bridge-sync", (_, settings) => runArchivistConnection(settings, true));
+desktopSecurity.handle("desktop:archivist-bridge-test", (_, settings) => runArchivistConnection(settings, false));
+desktopSecurity.handle("desktop:archivist-bridge-sync", (_, settings) => runArchivistConnection(settings, true));
 
 app.whenReady().then(() => {
   workspaceStore = createWorkspaceStore({

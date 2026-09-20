@@ -15,7 +15,8 @@ assert.equal(packedPackage.version, pkg.version, "The built version must match t
 const html = asar.extractFile(archive, "index.html").toString();
 const linked = [...html.matchAll(/(?:src|href)="([^"?#]+)(?:\?[^"#]*)?"/g)].map(match => match[1]).filter(name => !name.startsWith("http"));
 const pdf = JSON.parse(fs.readFileSync(path.join(root, "vendor/pdfjs/assets.json"))).map(name => name.replace(/^\.\//, ""));
-for (const name of new Set([...linked, ...pdf, "service-worker.js", "electron/main.cjs", "electron/preload.cjs", "electron/workspace-close.cjs", "electron/workspace-store.cjs", "electron/archivist-mcp-bridge.cjs", "electron/archivist-proxy.cjs"])) {
+const fonts = JSON.parse(fs.readFileSync(path.join(root, "vendor/fonts/assets.json"))).map(name => name.replace(/^\.\//, ""));
+for (const name of new Set([...linked, ...pdf, ...fonts, "vendor/fonts/assets.json", "vendor/pdfjs/assets.json", "service-worker.js", "electron/main.cjs", "electron/desktop-security.cjs", "electron/preload.cjs", "electron/workspace-close.cjs", "electron/workspace-store.cjs", "electron/archivist-mcp-bridge.cjs", "electron/archivist-proxy.cjs"])) {
   const source = ["archivist-data.js", "archivist-details.js"].includes(name) ? path.join(root, "release-assets", name) : path.join(root, name);
   assert(asar.extractFile(archive, path.normalize(name)).equals(fs.readFileSync(source)), `${name} is absent or differs from the validated source.`);
 }
@@ -27,4 +28,4 @@ if (process.env.CAMPAIGN_ENGINE_PRIVATE_BUILD !== "1") {
   assert.equal(context.window.ARCHIVIST_SNAPSHOT.campaigns.length, 0, "Public releases must exclude private campaigns.");
   assert.equal(Object.keys(context.window.ARCHIVIST_DETAILS.campaigns).length, 0, "Public releases must exclude private campaign details.");
 }
-console.log(`Verified packaged v${pkg.version}: all HTML/PDF runtime assets match source; ${process.env.CAMPAIGN_ENGINE_PRIVATE_BUILD === "1" ? "explicit private build" : "private snapshots excluded"}.`);
+console.log(`Verified packaged v${pkg.version}: all HTML/PDF/font runtime assets match source; ${process.env.CAMPAIGN_ENGINE_PRIVATE_BUILD === "1" ? "explicit private build" : "private snapshots excluded"}.`);

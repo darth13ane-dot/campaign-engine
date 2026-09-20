@@ -1,4 +1,4 @@
-const CACHE_NAME = "campaign-engine-shell-v38";
+const CACHE_NAME = "campaign-engine-shell-v39";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -10,7 +10,8 @@ const APP_SHELL = [
   "./campaign-search.js?v=3",
   "./source-library.js?v=1",
   "./workspace-views.js?v=4",
-  "./bootstrap.js?v=1",
+  "./bootstrap.js?v=2",
+  "./vendor/fonts/fonts.css",
   "./vendor/pdfjs/pdf.mjs",
   "./vendor/pdfjs/pdf.worker.mjs",
   "./styles.css?v=20",
@@ -56,10 +57,11 @@ const APP_SHELL = [
 ];
 
 self.addEventListener("install", event => {
-  event.waitUntil(Promise.all([caches.open(CACHE_NAME), fetch("./vendor/pdfjs/assets.json").then(response => {
-    if (!response.ok) throw new Error("PDF assets are not prepared.");
+  const manifests = ["./vendor/pdfjs/assets.json", "./vendor/fonts/assets.json"];
+  event.waitUntil(Promise.all([caches.open(CACHE_NAME), ...manifests.map(url => fetch(url).then(response => {
+    if (!response.ok) throw new Error("Local PDF or font assets are not prepared.");
     return response.json();
-  })]).then(([cache, pdfAssets]) => cache.addAll([...new Set([...APP_SHELL, ...pdfAssets])])).then(() => self.skipWaiting()));
+  }))]).then(([cache, ...assetLists]) => cache.addAll([...new Set([...APP_SHELL, ...manifests, ...assetLists.flat()])])).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", event => {
