@@ -175,6 +175,67 @@ test("readiness reports actual preparation, timing overruns, unfinished tasks, a
   assert.equal(prep.readiness({}).checks.find(check => check.id === "scenes").done, false);
 });
 
+test("prep review identifies missing scene situations and choices even beside a complete scene with the same name", () => {
+  const value = campaign(), plan = filledPrep(value);
+  plan.scenes.push({ ...plan.scenes[0], id: "second", question: "" });
+  let status = prep.readiness(plan, value);
+  assert.equal(status.checks.find(check => check.id === "scenes").done, false);
+  assert.match(status.nextSteps.find(step => step.id === "scene-1").label, /Scene 2/);
+  assert.deepEqual(status.nextSteps.find(step => step.id === "scene-1").target, { type: "field", collection: "scenes", index: 1, field: "question" });
+  plan.scenes[1].question = "Which route?"; plan.scenes[1].detail = "";
+  status = prep.readiness(plan, value);
+  assert.equal(status.nextSteps.find(step => step.id === "scene-1").target.field, "detail");
+  plan.scenes[1].detail = "A locked gate.";
+  assert.equal(prep.readiness(plan, value).nextSteps.length, 0);
+});
+
+test("prep review distinguishes missing pinned and scene PDF references by their exact page and location", () => {
+  const value = campaign(), plan = filledPrep(value);
+  value.documents = [{ id: "guide", title: "River guide", pageTexts: [{ page: 1, text: "The ferry waits." }] }];
+  const ref = { type: "reference", id: "guide", name: "River guide", page: 1 };
+  plan.pinned.push(ref);
+  plan.scenes[0].references = [{ ...ref, page: 2 }];
+  let steps = prep.readiness(plan, value).nextSteps;
+  assert.equal(steps.filter(step => step.target.type === "scene-reference").length, 1);
+  assert.equal(steps.filter(step => step.target.type === "pin").length, 0);
+  value.documents[0].id = "replacement";
+  steps = prep.readiness(plan, value).nextSteps;
+  assert.deepEqual(steps.find(step => step.target.type === "pin").target, { type: "pin", index: 1 });
+  assert.deepEqual(steps.find(step => step.target.type === "scene-reference").target, { type: "scene-reference", index: 0 });
+});
+
+test("prep review gives concrete targets for unfinished supporting work and clears them after edits", () => {
+  const value = campaign(), plan = filledPrep(value);
+  plan.scenes[0].minutes = 150; plan.tasks[0].done = false;
+  plan.spotlights.push({ id: "partial", character: "Ada", opportunity: "" });
+  plan.revelations.push({ id: "blank", text: "" }); plan.clocks[0].label = "";
+  const steps = prep.readiness(plan, value).nextSteps;
+  assert.match(steps.find(step => step.id === "budget").label, /30 minutes over/);
+  assert.equal(steps.find(step => step.id === "task-0").target.field, "done");
+  assert.equal(steps.find(step => step.id === "spotlight-1").target.field, "opportunity");
+  assert.equal(steps.find(step => step.id === "revelations-1").target.field, "text");
+  assert.equal(steps.find(step => step.id === "clocks-0").target.field, "label");
+  assert.equal(prep.readiness(plan, value).checks.find(check => check.id === "spotlights").done, false);
+  plan.scenes[0].minutes = 45; plan.tasks[0].done = true; plan.spotlights[1].opportunity = "Read the seal.";
+  plan.revelations[1].text = "The seal is a copy."; plan.clocks[0].label = "Flood";
+  assert.deepEqual(prep.readiness(plan, value).nextSteps, []);
+});
+
+test("prep review is derived without changing canon, live progress or pending draft approvals", () => {
+  const value = campaign(), plan = filledPrep(value);
+  const desk = workflow.startDesk(value, value.sessions[0]); desk.scratch = "Live observations";
+  plan.notesWorkbench = { schemaVersion: 1, draft: { rows: [{ id: "draft", selected: false }] } };
+  plan.tasks[0].done = false;
+  const before = structuredClone(value);
+  const review = prep.readiness(plan, value);
+  assert.equal(review.nextSteps.find(step => step.id === "notes-draft").target.type, "notes");
+  assert.deepEqual(value, before);
+  const restored = workflow.normalizeWorkflow(JSON.parse(JSON.stringify(value.sessionWorkflow)));
+  assert.deepEqual(prep.readiness(restored.preps[plan.id], value).nextSteps, review.nextSteps);
+  plan.notesWorkbench.schemaVersion = 99;
+  assert.equal(prep.readiness(plan, value).nextSteps.some(step => step.id === "notes-draft"), false);
+});
+
 test("private Markdown packet contains prepared material and resolved pins, omits unrelated records, and leaves canon untouched", () => {
   const value = campaign(), plan = filledPrep(value);
   value.characters[0].name = "Captain Vale";

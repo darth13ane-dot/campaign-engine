@@ -1,4 +1,4 @@
-const CACHE_NAME = "campaign-engine-shell-v45";
+const CACHE_NAME = "campaign-engine-shell-v46";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -23,9 +23,9 @@ const APP_SHELL = [
   "./archivist-merge.js?v=5",
   "./campaign-cleanup.js?v=1",
   "./prep-sources.js?v=1",
-  "./session-prep.js?v=7",
-  "./session-prep-views.js?v=8",
-  "./session-prep.css?v=3",
+  "./session-prep.js?v=8",
+  "./session-prep-views.js?v=9",
+  "./session-prep.css?v=4",
   "./session-table.js?v=2",
   "./session-table-views.js?v=2",
   "./session-table.css?v=2",

@@ -2,6 +2,7 @@
 let activeSessionPrepId = null;
 let prepSceneReferencePickerId = null;
 let prepSceneReferenceQuery = "";
+let prepReviewExpanded = false;
 
 function sessionPrepCore() { return window.CampaignSessionPrep; }
 function activeSessionPrep(campaign = activeCampaign()) {
@@ -10,7 +11,9 @@ function activeSessionPrep(campaign = activeCampaign()) {
 function openSessionPrep(campaign, session) {
   if (playerPreviewActive() || !session || !sessionPrepCore()) return;
   SESSION_WORKFLOW.ensureWorkflow(campaign);
-  activeSessionPrepId = sessionPrepCore().ensurePrep(campaign, session).id;
+  const nextPrepId = sessionPrepCore().ensurePrep(campaign, session).id;
+  if (activeSessionPrepId !== nextPrepId) prepReviewExpanded = false;
+  activeSessionPrepId = nextPrepId;
   currentView = "session-prep";
   saveState();
   render();
@@ -70,9 +73,55 @@ function prepTimeCopy(status) {
 function prepReadinessMarkup(prep, campaign) {
   const status = sessionPrepCore().readiness(prep, campaign);
   const guidance = window.CampaignPrepTemplates?.promptProgress(prep);
-  return `<div class="prep-readiness-heading"><div><p class="eyebrow">PREP CHECK</p><strong>${status.complete} of ${status.total} prompts covered</strong></div><span class="prep-readiness-fraction">${status.total ? Math.round(status.complete / status.total * 100) : 0}%</span></div>
-    <progress value="${status.complete}" max="${Math.max(1, status.total)}" aria-label="Prep prompts covered"></progress>
-    <ul class="prep-readiness-checks">${status.checks.map(check => `<li class="${check.done ? "is-done" : ""}"><span aria-hidden="true">${check.done ? "✓" : "○"}</span>${esc(check.label)}</li>`).join("")}</ul>${guidance?.total ? `<p class="prep-template-progress" data-template-guidance-progress>${guidance.remaining} of ${guidance.total} template prompts still to develop. Write your own details in the empty fields.</p>` : ""}<p class="prep-help">Use these prompts to judge what your table needs. You can start play at any point.</p>`;
+  return `<div class="prep-readiness-heading"><div><p class="eyebrow">PREPARATION REVIEW</p><strong data-prep-review-count>${prepReviewCount(status)}</strong></div></div>
+    <ol class="prep-review-list" data-prep-review-list>${status.nextSteps.map((step, index) => `<li data-prep-review-row="${esc(step.id)}" ${index >= 4 && !prepReviewExpanded ? "hidden" : ""}><button type="button" data-prep-review="${esc(step.id)}"><strong>${esc(step.label)}</strong><span>${esc(step.action)}</span></button></li>`).join("")}</ol>
+    <button class="quiet-button prep-review-toggle" type="button" data-prep-review-expand aria-expanded="${prepReviewExpanded}" ${status.nextSteps.length > 4 ? "" : "hidden"}>${prepReviewExpanded ? "Show fewer items" : `Show all ${status.nextSteps.length} items`}</button>
+    <p class="prep-review-empty" data-prep-review-empty ${status.nextSteps.length ? "hidden" : ""}>The prepared fields are covered. Read through the situations and judge what your table needs.</p>
+    <details class="prep-coverage"><summary data-prep-coverage-summary>${status.complete} of ${status.total} prompts covered</summary><ul class="prep-readiness-checks" data-prep-coverage-checks>${prepCoverageMarkup(status)}</ul></details>
+    <p class="prep-template-progress" data-template-guidance-progress ${guidance?.total ? "" : "hidden"}>${prepGuidanceCopy(guidance)}</p><p class="prep-help">Choose an item to go to its field or controls. These prompts guide your review; you can start play at any point.</p>`;
+}
+function prepReviewCount(status) { return status.nextSteps.length ? `${status.nextSteps.length} ${status.nextSteps.length === 1 ? "item" : "items"} to consider` : "Ready for your final read-through"; }
+function prepCoverageMarkup(status) { return status.checks.map(check => `<li class="${check.done ? "is-done" : ""}"><span aria-hidden="true">${check.done ? "✓" : "○"}</span>${esc(check.label)}</li>`).join(""); }
+function prepGuidanceCopy(guidance) { return guidance?.total ? `${guidance.remaining} of ${guidance.total} template prompts still to develop. Write your own details in the empty fields.` : ""; }
+function prepSyncReview(panel, status, guidance) {
+  panel.querySelector("[data-prep-review-count]").textContent = prepReviewCount(status);
+  panel.querySelector("[data-prep-review-empty]").hidden = Boolean(status.nextSteps.length);
+  panel.querySelector("[data-prep-coverage-summary]").textContent = `${status.complete} of ${status.total} prompts covered`;
+  panel.querySelector("[data-prep-coverage-checks]").innerHTML = prepCoverageMarkup(status);
+  const progress = panel.querySelector("[data-template-guidance-progress]");
+  progress.hidden = !guidance?.total; progress.textContent = prepGuidanceCopy(guidance);
+  const toggle = panel.querySelector("[data-prep-review-expand]");
+  toggle.hidden = status.nextSteps.length <= 4; toggle.setAttribute("aria-expanded", String(prepReviewExpanded));
+  toggle.textContent = prepReviewExpanded ? "Show fewer items" : `Show all ${status.nextSteps.length} items`;
+  const list = panel.querySelector("[data-prep-review-list]");
+  const existing = new Map(Array.from(list.children, row => [row.dataset.prepReviewRow, row]));
+  status.nextSteps.forEach((step, index) => {
+    let row = existing.get(step.id);
+    if (!row) {
+      row = document.createElement("li"); row.dataset.prepReviewRow = step.id;
+      const button = document.createElement("button"); button.type = "button"; button.dataset.prepReview = step.id;
+      button.append(document.createElement("strong"), document.createElement("span")); row.append(button);
+    }
+    row.querySelector("strong").textContent = step.label; row.querySelector("span").textContent = step.action;
+    row.hidden = index >= 4 && !prepReviewExpanded;
+    // Keep existing buttons attached when blur finishes a field edit before click.
+    if (list.children[index] !== row) list.insertBefore(row, list.children[index] || null);
+    existing.delete(step.id);
+  });
+  existing.forEach(row => row.remove());
+}
+function prepFollowReview(prep, campaign, id) {
+  const target = sessionPrepCore().readiness(prep, campaign).nextSteps.find(step => step.id === id)?.target;
+  const page = document.querySelector("[data-prep-id]");
+  if (!target || !page) return;
+  let control;
+  if (target.type === "field") control = Array.from(page.querySelectorAll("[data-prep-field]")).filter(field => (field.dataset.prepCollection || null) === target.collection && field.dataset.prepField === target.field)[target.index];
+  else if (target.type === "add") control = Array.from(page.querySelectorAll("[data-prep-add]")).find(button => button.dataset.prepAdd === target.collection);
+  else if (target.type === "pins") control = page.querySelector("[data-prep-pin-search]");
+  else if (target.type === "pin") control = page.querySelectorAll(".prep-pin")[target.index];
+  else if (target.type === "scene-reference") control = page.querySelectorAll(".prep-scene-references")[target.index];
+  else if (target.type === "notes") { openPrepNotes(campaign, sessionPrepCore().findSession(campaign, prep.sessionRef)); return; }
+  if (control) { control.focus({ preventScroll: true }); control.scrollIntoView({ block: "center" }); }
 }
 function prepPlanningPrompts(item) {
   const labels = { opening: "Opening", title: "Stage", detail: "Situation", question: "Choice", character: "Character", opportunity: "Opportunity", text: "Develop", label: "Counter" };
@@ -92,7 +141,7 @@ function prepSceneReferenceOptions(campaign, scene, query = "") {
 }
 function prepSceneReferencesMarkup(campaign, scene) {
   const references = sessionPrepCore().normalizeReferences(scene.references);
-  return `<div class="prep-scene-references"><strong>At hand for this scene</strong><p class="prep-help">Link people, places, notes, and PDF pages you want beside this situation during play.</p><div class="table-reference-chips">${references.map(ref => {
+  return `<div class="prep-scene-references" tabindex="-1"><strong>At hand for this scene</strong><p class="prep-help">Link people, places, notes, and PDF pages you want beside this situation during play.</p><div class="table-reference-chips">${references.map(ref => {
     const record = prepResolveRecord(campaign, ref);
     return `<span>${esc(record?.name || record?.title || ref.name)}${record ? "" : " · unavailable"}<button type="button" class="prep-icon-button" data-scene-unlink="${esc(sessionPrepCore().referenceKey(ref))}" data-scene-id="${esc(scene.id)}" aria-label="Unlink ${esc(ref.name)} from this scene">×</button></span>`;
   }).join("")}</div>${prepSceneReferencePickerId === scene.id ? `<form data-scene-reference-form="${esc(scene.id)}"><label>Find a record<input type="search" data-scene-reference-search="${esc(scene.id)}" value="${esc(prepSceneReferenceQuery)}" placeholder="Name, book, or page text…" /></label><label>Record<select name="reference" required>${prepSceneReferenceOptions(campaign, scene, prepSceneReferenceQuery)}</select></label><div class="table-actions"><button class="secondary-button" type="submit">Link to this scene</button><button class="quiet-button" type="button" data-scene-close-picker>Close picker</button></div></form>` : `<button type="button" class="quiet-button" data-scene-link="${esc(scene.id)}">＋ Link a campaign record</button>`}</div>`;
@@ -116,7 +165,7 @@ function prepPinnedMarkup(campaign, prep) {
     const current = record ? prepRecordRef(entry.type, record) : entry;
     const uniqueName = record && prepNameIsUnique(campaign, current);
     const excerpt = String(record?.description || record?.detail || record?.body || record?.tension || "").replace(/<[^>]+>/g, " ").slice(0, 180);
-    return `<article class="prep-pin"><div><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small>${uniqueName ? `<button type="button" class="prep-record-link" ${deskEntryAction(current)}>${esc(current.name)}</button>` : `<strong>${esc(current.name)}</strong>`}${excerpt ? `<p>${esc(excerpt)}</p>` : ""}${record && !uniqueName ? `<p class="prep-help">${entry.type === "reference" ? "Read the saved text of this linked PDF page below." : "Several records share this name. Expand the saved details of your pinned record below."}</p>${prepPinnedRecordDetails(record)}` : ""}${!record ? `<p class="prep-help">This record is unavailable. Its reference remains in this plan.</p>` : ""}${prepProvenanceMarkup(campaign, entry)}</div><button class="prep-icon-button prep-remove" type="button" data-prep-unpin="${index}" aria-label="Unpin ${esc(current.name)}" title="Unpin record">×</button></article>`;
+    return `<article class="prep-pin" tabindex="-1"><div><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small>${uniqueName ? `<button type="button" class="prep-record-link" ${deskEntryAction(current)}>${esc(current.name)}</button>` : `<strong>${esc(current.name)}</strong>`}${excerpt ? `<p>${esc(excerpt)}</p>` : ""}${record && !uniqueName ? `<p class="prep-help">${entry.type === "reference" ? "Read the saved text of this linked PDF page below." : "Several records share this name. Expand the saved details of your pinned record below."}</p>${prepPinnedRecordDetails(record)}` : ""}${!record ? `<p class="prep-help">This record is unavailable. Its reference remains in this plan.</p>` : ""}${prepProvenanceMarkup(campaign, entry)}</div><button class="prep-icon-button prep-remove" type="button" data-prep-unpin="${index}" aria-label="Unpin ${esc(current.name)}" title="Unpin record">×</button></article>`;
   }).join("");
 }
 
@@ -155,7 +204,7 @@ function prepUpdateSummary(prep, campaign = activeCampaign()) {
   const note = page.querySelector("[data-prep-time-note]");
   note.textContent = prepTimeCopy(status);
   note.classList.toggle("prep-over-budget", status.plannedMinutes > status.durationMinutes);
-  page.querySelector("[data-prep-readiness]").innerHTML = prepReadinessMarkup(prep, campaign);
+  prepSyncReview(page.querySelector("[data-prep-readiness]"), status, window.CampaignPrepTemplates?.promptProgress(prep));
 }
 function prepApplyField(prep, field, commitNumbers = false) {
   const allowed = { scenes: ["title", "kind", "minutes", "detail", "question"], spotlights: ["character", "opportunity"], revelations: ["text"], clocks: ["label", "max", "value"], tasks: ["text", "done"] };
@@ -235,6 +284,16 @@ sessionPrepRoot.addEventListener("click", event => {
   if (!button) return;
   const { campaign, prep } = context;
   prepFlushFields(prep);
+  if (button.hasAttribute("data-prep-review-expand")) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    prepReviewExpanded = !prepReviewExpanded; prepUpdateSummary(prep, campaign);
+    if (prepReviewExpanded) context.page.querySelectorAll("[data-prep-review]")[4]?.focus();
+    return;
+  }
+  if (button.hasAttribute("data-prep-review")) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    prepFollowReview(prep, campaign, button.dataset.prepReview); return;
+  }
   const add = button.dataset.prepAdd;
   const remove = button.dataset.prepRemove;
   const move = button.dataset.prepMove;

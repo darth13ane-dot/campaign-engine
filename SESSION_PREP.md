@@ -17,6 +17,14 @@ The preparation checks reflect what you have entered. They help you spot gaps an
 
 Your existing session notes and possible story directions remain available alongside the structured plan. Preparing a session leaves its campaign record and play status intact.
 
+## Review the remaining preparation
+
+**Preparation review**, beside the opening, names the entries that need attention. Choose an item to focus its field or controls. Scene numbers distinguish repeated titles. Missing references take you to the existing link so you can inspect it, keep it, or deliberately replace it. Longer lists show four items first; **Show all** reveals the rest and moves keyboard focus to the next item.
+
+The review covers missing scene titles, situations and player choices; missing time estimates and budget overruns; unavailable records or PDF pages; incomplete spotlights, clues and clocks; unfinished tasks; and pieces remaining in a notes draft. It updates as you edit. Opening a draft keeps its existing selections and requires the usual review before anything enters prep.
+
+The supporting **prompts covered** checklist describes the fields present. Scenes need a title, situation, and choice to satisfy that prompt. These are structural reminders: assess the actual choices, stakes, information, and pacing yourself. A simple session can leave optional prompts unused, and **Start live session** remains available. Review works offline, remains GM-only, and derives from the saved plan without adding a new workspace format.
+
 ## Start from a reusable structure
 
 Choose **Use a template** to review one of six starters or a custom template from your global library. Select the prompts you want, write any session details already known, and choose **Add selected to prep**. Entries append to the current plan; changing its time budget requires selecting the suggested duration explicitly.
