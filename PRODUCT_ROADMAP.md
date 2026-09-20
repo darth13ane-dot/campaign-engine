@@ -53,11 +53,17 @@ Acceptance gates: selected page text is searchable; same-title books and separat
 
 The v1.15.1 compatibility audit reproduced lost page links when an older build started play from newer preparation. Workflow format 3 now protects upgraded saves through existing older-build version checks. Format 2 content upgrades in place with a pre-upgrade recovery copy. Tests cover interrupted saves, future-version rejection, older published app code, browser and native recovery, exports, and reopening the compatible build.
 
-## Current planning milestone: v1.16.0 — Actionable preparation review
+## Delivered planning milestone: v1.16.0 — Actionable preparation review
 
 The walkthrough found that the prep check could report every prompt covered while a scene lacked a player choice, and its static checklist offered no direct route to the unfinished entry. Preparation review now names each follow-up and focuses the relevant scene, reference, task, supporting field, or pending notes draft. It describes structural coverage and keeps the GM's decision to start play available.
 
 Acceptance gates: exact same-name scenes receive the intended focus; missing references remain attached until an explicit edit; edits and draft selections survive review navigation, offline reload, native restart and restore; repaired items update immediately without swallowing clicks; keyboard and narrow-layout controls work; reviewing prep preserves canon, live progress, and player privacy; existing workflow format 3 remains compatible; the published package matches the tested source. Real GM feedback must establish whether these prompts help reach a runnable plan more quickly.
+
+## Current planning milestone: v1.17.0 — A complete GM run sheet
+
+The packet audit reproduced missing detailed notes when a linked record also had an overview, and structured stats exported as an object placeholder. This milestone gives the GM a readable preview and printable, self-contained HTML beside the existing Markdown output. Both formats use the same selected preparation and complete supported reference fields, with scene-to-record navigation and source attribution.
+
+Acceptance gates: scenes retain their order, situations, choices, timings and exact references; selected reference fields and long page text remain complete; duplicate names and missing identities never attach to replacements; pending drafts and unrelated records stay outside the sheet; HTML treats campaign content as text and makes no external requests; preview downloads match the displayed snapshot and stale or player-mode previews cannot export; desktop, narrow, offline, print and native download checks pass; export preserves canon and play state; the published package and update feeds match the tested source. A real GM pilot must still establish usefulness during play.
 
 ## Established foundation
 

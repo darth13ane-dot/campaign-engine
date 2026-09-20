@@ -437,3 +437,66 @@ test("saved template guidance stays distinct from prepared text and exports only
   assert.doesNotMatch(markup, /<img|UnsupportedPrompt|UnappliedTemplateDraft/);
   assert.equal(JSON.stringify(value), before);
 });
+
+test("both GM formats retain complete linked fields, structured stats and long exact PDF page text", () => {
+  const value = campaign(), plan = filledPrep(value);
+  Object.assign(value.characters[0], { description: "OverviewPresent", detail: "DetailedTermsPresent", body: "JournalBodyPresent", recap: "SessionNotesPresent", statBlock: { wounds: 10, skills: ["Sail", "Bargain"] }, relationships: [{ name: "Rook", trust: "uncertain" }], tags: ["River watch"], factions: ["Watch"] });
+  value.documents = [{ id: "guide", title: "River guide", pageTexts: [{ page: 1, text: "OtherPageExcluded" }, { page: 2, text: "Long page. ".repeat(1600) + "PageEndingRetained" }] }];
+  plan.scenes[0].references = [{ type: "reference", id: "guide", name: "River guide · PDF page 2", page: 2 }];
+  for (const render of [prep.exportMarkdown, prep.exportHTML]) {
+    const packet = render(value, value.sessions[0], plan);
+    for (const marker of ["OverviewPresent", "DetailedTermsPresent", "JournalBodyPresent", "SessionNotesPresent", "wounds", "Sail", "Bargain", "Rook", "uncertain", "PageEndingRetained"]) assert(packet.includes(marker), marker);
+    assert.doesNotMatch(packet, /object Object|OtherPageExcluded|Unpinned secret record/);
+  }
+});
+
+test("GM HTML preserves ordered scenes and exact reference navigation without same-name substitution", () => {
+  const value = campaign(), plan = filledPrep(value);
+  value.characters[1] = { localId: "char-2", name: "Vale", detail: "SecondVale" };
+  plan.scenes.push({ id: "second", title: "At the gate", minutes: 15, question: "SecondChoice", detail: "SecondSituation", references: [{ type: "character", name: "Vale", localId: "char-2" }, { type: "character", name: "Vale", localId: "removed" }] });
+  plan.scenes.push({ id: "link-only", references: [{ type: "session", ...prep.sessionReference(value.sessions[0]) }] });
+  const html = prep.exportHTML(value, value.sessions[0], plan);
+  assert(html.indexOf('id="scene-1"') < html.indexOf('id="scene-2"'));
+  assert.match(html, /id="scene-3"/);
+  assert.match(html, /SecondVale/);
+  assert.equal((html.match(/linked record is unavailable/g) || []).length, 1);
+  const ids = [...html.matchAll(/id="([^"]+)"/g)].map(match => match[1]);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const [, target] of html.matchAll(/href="#([^"]+)"/g)) assert(ids.includes(target), target);
+  value.characters = value.characters.filter(record => record.localId !== "char-1");
+  value.characters.push({ localId: "replacement", name: "Vale", detail: "ReplacementExcluded" });
+  assert.doesNotMatch(prep.exportHTML(value, value.sessions[0], plan), /ReplacementExcluded/);
+});
+
+test("GM formats retain approved source attribution while pending reviews and live notes stay outside the snapshot", () => {
+  const value = campaign(), plan = filledPrep(value);
+  const source = { type: "character", localId: "char-1", name: "Vale" };
+  plan.scenes[0].provenance = { key: "approved", sourceCollection: "notes", sourceRowId: "reviewed", label: "Reviewed notes", sourceNotes: [{ label: "The guard", text: "A nervous guard", ref: source }], additions: "Proposed toll waived for a favour" };
+  plan.notesWorkbench = { schemaVersion: 1, sources: [{ text: "UnusedSourceExcluded" }], draft: { rows: [{ after: { text: "PendingNotesExcluded" } }] } };
+  plan.templateReview = { candidates: [{ after: { text: "PendingTemplateExcluded" } }] };
+  plan.continuityReview = { candidates: [{ after: { text: "PendingContinuityExcluded" } }] };
+  workflow.startDesk(value, value.sessions[0]).scratch = "LiveScratchExcluded";
+  const before = JSON.stringify(value);
+  for (const render of [prep.exportMarkdown, prep.exportHTML]) {
+    const result = render(value, value.sessions[0], plan);
+    assert.match(result, /A nervous guard/);
+    assert.match(result, /Proposed toll waived for a favour/);
+    assert.doesNotMatch(result, /UnusedSourceExcluded|PendingNotesExcluded|PendingTemplateExcluded|PendingContinuityExcluded|LiveScratchExcluded/);
+  }
+  assert.equal(JSON.stringify(value), before);
+});
+
+test("GM HTML treats hostile campaign content as text and only creates local document links", () => {
+  const value = campaign(), plan = filledPrep(value);
+  value.title = 'A <script>window.pwned=1</script> campaign';
+  plan.opening = '<img src="https://bad.example/leak" onerror="window.pwned=2"> [remote](https://bad.example)';
+  plan.scenes[0].title = '"><iframe src="https://bad.example"></iframe>';
+  value.characters[0].statBlock = { note: "</style><script>window.pwned=3</script>" };
+  const html = prep.exportHTML(value, value.sessions[0], plan);
+  assert.match(html, /GM ONLY — PRIVATE PREPARATION/);
+  assert.match(html, /Content-Security-Policy/);
+  assert.match(html, /default-src 'none'/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.doesNotMatch(html, /<script|<img|<iframe|<form|onerror="/);
+  for (const [, href] of html.matchAll(/href="([^"]+)"/g)) assert(href.startsWith("#"));
+});

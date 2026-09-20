@@ -1,5 +1,15 @@
 # Sharing and desktop updates
 
+## Version 1.17.0 — A complete GM run sheet
+
+**GM run sheet** opens a readable preparation snapshot with local contents and scene-reference links. Download self-contained HTML for offline reading and browser printing, or Markdown for your preferred editor. Both formats share the same content model and retain scene order, choices, timings, supporting preparation, and approved source attribution.
+
+The packet audit reproduced lost detailed notes when a linked record also had an overview, structured stats becoming an object placeholder, and selected reference text being shortened. The exports now retain each supported field separately, render nested values readably, and keep complete saved text from selected PDF pages. Missing references remain unavailable; pending reviews, unrelated records, and live-desk notes stay outside the prep snapshot.
+
+Preview controls preserve keyboard return and narrow layouts. Changes to preparation or sources require a fresh preview; player mode removes private content and disables downloads. Source text is escaped, document scripts remain disabled, and exported HTML makes no external requests. Workflow format 3 is unchanged. [SESSION_PREP.md](SESSION_PREP.md) explains use and [DESKTOP_SECURITY.md](DESKTOP_SECURITY.md) records the preview boundaries.
+
+Verification covers 297 automated tests; the browser journey from selected notes through approval, preview, downloads, and offline reopening; 1440/700/390 px layouts; script and resource blocking; and rendered A4/Letter print specimens. Native checks exercise restart, document navigation, and actual Electron downloads in an isolated synthetic profile. GM pilot usefulness, Windows signing, and installer/updater replacement remain broader readiness work.
+
 ## Version 1.16.0 — Actionable preparation review
 
 Session Prep now gives specific follow-up items with direct routes to the relevant fields or controls. The review identifies missing scene choices and situations, timing problems, unavailable references, unfinished supporting entries and tasks, and remaining notes-draft pieces. Scene numbers distinguish repeated titles. Four items appear first, with an explicit **Show all** control for longer plans.

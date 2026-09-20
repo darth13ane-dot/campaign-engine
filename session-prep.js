@@ -274,62 +274,109 @@
     };
   }
 
-  function exportMarkdown(campaign, session, value) {
+  // Packets keep complete selected text; input limits belong to the prep editor.
+  function packetText(value) {
+    if (Array.isArray(value)) return value.map(packetText).filter(Boolean).map(item => "- " + item.replace(/\n/g, "\n  ")).join("\n");
+    if (object(value)) return Object.entries(value).map(([key, item]) => {
+      const content = packetText(item);
+      return content ? key + ":" + (item && typeof item === "object" ? "\n  " + content.replace(/\n/g, "\n  ") : " " + content) : "";
+    }).filter(Boolean).join("\n");
+    return String(value ?? "").replace(/\r\n?/g, "\n").trim();
+  }
+  function packetSections(campaign, session, value) {
     const prep = normalizePrep(value || { sessionRef: sessionReference(session) });
-    const md = value => text(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/([\\`*_{}\[\]()#+.!|~-])/g, "\\$1");
-    const line = value => md(value).replace(/\n/g, " ");
+    const sections = [];
+    const section = (id, title, level = 2) => { const item = { id, title, level, blocks: [] }; sections.push(item); return item.blocks; };
+    const prose = (blocks, content, type = "text") => { if (packetText(content)) blocks.push({ type, text: packetText(content) }); };
     const attribution = item => {
       const source = describeProvenance(campaign, item.provenance);
-      return source ? `From ${line(source.label)}${source.missing ? " — source unavailable" : ""}. ${line(source.context)}` : "";
+      return source ? "From " + source.label + (source.missing ? " — source unavailable" : "") + ". " + source.context : "";
     };
-    const attributedItem = (content, item) => {
-      const source = attribution(item);
-      return source ? `${content}\n  ${source}` : content;
+    const scenes = prep.scenes.filter(scene => scene.title || scene.detail || scene.question || scene.references?.length);
+    const references = normalizeReferences([...prep.pinned, ...scenes.flatMap(scene => scene.references || [])]);
+    const records = references.map((reference, index) => ({ reference, record: resolvePinnedRecord(campaign, reference), id: "record-" + (index + 1) }));
+    const referenceLink = ref => {
+      const linked = records.find(item => referenceKey(item.reference) === referenceKey(ref));
+      const record = linked?.record;
+      return { text: (record?.name || record?.title || ref.name) + " (" + ref.type + ")" + (record ? "" : " — unavailable"), target: linked?.id };
     };
-    const timing = readiness(prep);
-    const out = [`# ${line(session?.title || prep.sessionRef.name)} — Session Prep`, "", "**GM ONLY — PRIVATE PREPARATION**", "", `Campaign: ${line(campaign?.title || "Campaign")}`, `Session: ${line(session?.number || prep.sessionRef.number || "Unnumbered")} · ${line(session?.date || "Unscheduled")}`, `Time: ${timing.plannedMinutes} minutes planned / ${timing.durationMinutes} minutes available`, "", "## Opening situation", "", md(prep.opening) || "Opening still to prepare."];
-    for (const provenance of prep.openingProvenance || []) out.push("", attribution({ provenance }));
-    if (text(session?.recap)) out.push("", "## Session plan", "", md(session.recap));
-    const directions = (Array.isArray(session?.directions) ? session.directions : []).map(direction => text(direction)).filter(Boolean);
-    if (directions.length) out.push("", "## Possible directions", "", ...directions.map(direction => `- ${md(direction)}`));
-    out.push("", "## Flexible scenes", "");
-    const scenes = prep.scenes.filter(scene => scene.title || scene.detail || scene.question);
-    if (!scenes.length) out.push("Scenes still to prepare.");
+    const opening = section("opening", "Opening situation");
+    prose(opening, prep.opening || "Opening still to prepare.");
+    for (const provenance of prep.openingProvenance || []) prose(opening, attribution({ provenance }), "attribution");
+    if (packetText(session?.recap)) prose(section("session-notes", "Session plan"), session.recap);
+    const directions = (Array.isArray(session?.directions) ? session.directions : []).map(packetText).filter(Boolean);
+    if (directions.length) section("directions", "Possible directions").push({ type: "list", items: directions.map(text => ({ text })) });
+    const outline = section("scenes", "Flexible scenes");
+    if (!scenes.length) prose(outline, "Scenes still to prepare.");
+    else outline.push({ type: "list", items: scenes.map((scene, index) => ({ text: (index + 1) + ". " + (scene.title || "Untitled scene") + " · " + scene.minutes + " min", target: "scene-" + (index + 1) })) });
     scenes.forEach((scene, index) => {
-      out.push(`### ${index + 1}. ${line(scene.title || "Untitled scene")}`, "", `${line(scene.kind)} · ${scene.minutes} minutes`);
-      if (scene.detail) out.push("", md(scene.detail));
-      if (scene.question) out.push("", `**Meaningful choice:** ${md(scene.question)}`);
-      if (scene.references?.length) out.push("", `**At hand:** ${scene.references.map(ref => { const record = resolvePinnedRecord(campaign, ref); return `${line(record?.name || record?.title || ref.name)} (${line(ref.type)})${record ? "" : " — unavailable"}`; }).join("; ")}`);
-      if (scene.provenance) out.push("", attribution(scene));
-      out.push("");
+      const blocks = section("scene-" + (index + 1), (index + 1) + ". " + (scene.title || "Untitled scene"), 3);
+      prose(blocks, scene.kind + " · " + scene.minutes + " minutes", "meta");
+      prose(blocks, scene.detail);
+      if (scene.question) blocks.push({ type: "field", label: "Meaningful choice", text: scene.question });
+      if (scene.references?.length) blocks.push({ type: "references", items: scene.references.map(referenceLink) });
+      prose(blocks, attribution(scene), "attribution");
     });
-    const list = (title, entries) => { if (entries.length) out.push("", `## ${title}`, "", ...entries); };
-    list("Player spotlights", prep.spotlights.filter(item => item.character || item.opportunity).map(item => attributedItem(`- **${line(item.character || "Choose a character")}:** ${md(item.opportunity)}`, item)));
-    list("Clues & revelations", prep.revelations.filter(item => item.text).map(item => attributedItem(`- ${md(item.text)}`, item)));
-    list("Clocks & counters", prep.clocks.filter(clock => clock.label).map(clock => attributedItem(`- ${line(clock.label)}: ${clock.value}/${clock.max}`, clock)));
-    list("Prep tasks", prep.tasks.filter(item => item.text).map(item => attributedItem(`- [${item.done ? "x" : " "}] ${md(item.text)}`, item)));
+    const list = (id, title, entries) => { if (entries.length) section(id, title).push({ type: "list", items: entries }); };
+    list("spotlights", "Player spotlights", prep.spotlights.filter(item => item.character || item.opportunity).map(item => ({ label: item.character || "Choose a character", text: item.opportunity, attribution: attribution(item) })));
+    list("revelations", "Clues & revelations", prep.revelations.filter(item => item.text).map(item => ({ text: item.text, attribution: attribution(item) })));
+    list("clocks", "Clocks & counters", prep.clocks.filter(clock => clock.label).map(clock => ({ text: clock.label + ": " + clock.value + "/" + clock.max, attribution: attribution(clock) })));
+    list("tasks", "Prep tasks", prep.tasks.filter(item => item.text).map(item => ({ text: item.text, checked: item.done, attribution: attribution(item) })));
     const guidance = [];
-    if (!prep.opening && prep.prompts?.opening) guidance.push(`- **Opening:** ${md(prep.prompts.opening)}`);
+    if (!prep.opening && prep.prompts?.opening) guidance.push({ label: "Opening", text: prep.prompts.opening });
     for (const [collection, label] of [["scenes", "Scene"], ["spotlights", "Spotlight"], ["revelations", "Revelation"], ["clocks", "Counter"], ["tasks", "Task"]]) {
       prep[collection].forEach((item, index) => {
-        for (const [field, prompt] of Object.entries(item.prompts || {})) if (!text(item[field]) && text(prompt)) guidance.push(`- **${label} ${index + 1} · ${line(field)}:** ${md(prompt)}`);
+        for (const [field, prompt] of Object.entries(item.prompts || {})) if (!text(item[field]) && text(prompt)) guidance.push({ label: label + " " + (index + 1) + " · " + field, text: prompt });
       });
     }
-    list("Planning prompts still to develop", guidance);
-    const packetReferences = normalizeReferences([...prep.pinned, ...scenes.flatMap(scene => scene.references || [])]);
-    if (packetReferences.length) {
-      out.push("", "## Pinned campaign records", "");
-      for (const reference of packetReferences) {
-        const record = resolvePinnedRecord(campaign, reference);
-        out.push(`### ${line(record?.name || record?.title || reference.name)} (${line(reference.type)})`, "");
-        if (reference.provenance) out.push(attribution(reference), "");
-        if (!record) { out.push("This linked record is unavailable. Review its link in the campaign.", ""); continue; }
-        const fields = [["Role", record.role], ["Status", record.status], ["Notes", record.description || record.detail || record.body || record.recap], ["Pressure", record.tension], ["Next step", record.nextStep], ["Voice", record.voice], ["Quirks", record.quirks], ["Relationships", record.relationships], ["Stats", record.statBlock]];
-        for (const [label, content] of fields) if (text(content)) out.push(`**${label}:** ${md(content)}`, "");
+    list("prompts", "Planning prompts still to develop", guidance);
+    if (records.length) section("records", "Pinned campaign records");
+    for (const { reference, record, id } of records) {
+      const blocks = section(id, (record?.name || record?.title || reference.name) + " (" + reference.type + ")", 3);
+      prose(blocks, attribution(reference), "attribution");
+      if (!record) { prose(blocks, "This linked record is unavailable. Review its link in the campaign."); continue; }
+      const fields = [["Role", record.role], ["Status", record.status], ["Overview", record.description], ["Details", record.detail], [record.referenceType === "pdf" ? "Extracted PDF text" : "Journal entry", record.body], ["Session notes", record.recap], ["Pressure", record.tension], ["Next step", record.nextStep], ["Voice", record.voice], ["Quirks", record.quirks], ["Relationships", record.relationships], ["Stats", record.statBlock], ["Tags", record.tags], ["Factions", record.factions]];
+      for (const [label, content] of fields) if (packetText(content)) blocks.push({ type: "field", label, text: packetText(content) });
+    }
+    const timing = readiness(prep);
+    return {
+      title: packetText(session?.title || prep.sessionRef.name) + " — Session Prep",
+      metadata: [
+        ["Campaign", packetText(campaign?.title || "Campaign")],
+        ["System", packetText(campaign?.system || "System neutral")],
+        ["Session", packetText(session?.number || prep.sessionRef.number || "Unnumbered") + " · " + packetText(session?.date || "Unscheduled")],
+        ["Time", timing.plannedMinutes + " minutes planned / " + timing.durationMinutes + " minutes available"]
+      ], sections
+    };
+  }
+
+  function exportMarkdown(campaign, session, value) {
+    const packet = packetSections(campaign, session, value);
+    const md = value => packetText(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/([\\\x60*_{}\[\]()#+.!|~-])/g, "\\$1");
+    const line = value => md(value).replace(/\n/g, " ");
+    const out = ["# " + line(packet.title), "", "**GM ONLY — PRIVATE PREPARATION**", "", ...packet.metadata.map(([label, content]) => label + ": " + line(content))];
+    for (const section of packet.sections) {
+      out.push("", "#".repeat(section.level) + " " + line(section.title), "");
+      for (const block of section.blocks) {
+        if (block.type === "list") out.push(...block.items.map(item => "- " + (typeof item.checked === "boolean" ? "[" + (item.checked ? "x" : " ") + "] " : "") + (item.label ? "**" + line(item.label) + ":** " : "") + md(item.text).replace(/\n/g, "\n  ") + (item.attribution ? "\n  " + md(item.attribution).replace(/\n/g, "\n  ") : "")), "");
+        else if (block.type === "references") out.push("**At hand:** " + block.items.map(item => line(item.text)).join("; "), "");
+        else out.push((block.type === "field" ? "**" + line(block.label) + ":** " : "") + md(block.text), "");
       }
     }
     return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
   }
 
-  return { createId, sessionReference, ensureSessionReference, ensureSessionReferences, referencesMatch, findSession, resolveSession: findSession, findLinkedSessionItem, recordReference, referenceKey, sameRecordReference, sourceRecords: SOURCES.listRecords, normalizeReferences, sceneReferenceFields, normalizeProvenance, provenanceFields, normalizePrep, findPrepForSession, ensurePrep, readiness, resolvePinnedRecord, resolveRecord: resolvePinnedRecord, describeProvenance, exportMarkdown };
+  function exportHTML(campaign, session, value) {
+    const packet = packetSections(campaign, session, value);
+    const html = value => packetText(value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
+    const link = item => item.target ? '<a href="#' + html(item.target) + '">' + html(item.text) + "</a>" : html(item.text);
+    const blockHTML = block => {
+      if (block.type === "references") return '<div class="references"><strong>At hand</strong><ul>' + block.items.map(item => "<li>" + link(item) + "</li>").join("") + "</ul></div>";
+      if (block.type === "list") return "<ul>" + block.items.map(item => "<li>" + (typeof item.checked === "boolean" ? '<span class="task-state">' + (item.checked ? "☑" : "☐") + "</span> " : "") + (item.label ? "<strong>" + html(item.label) + ":</strong> " : "") + link(item) + (item.attribution ? '<p class="attribution">' + html(item.attribution) + "</p>" : "") + "</li>").join("") + "</ul>";
+      return '<div class="' + (block.type === "attribution" ? "attribution" : block.type === "meta" ? "scene-meta" : block.type === "field" ? "field" : "prose") + '">' + (block.type === "field" ? "<strong>" + html(block.label) + "</strong>" : "") + "<p>" + html(block.text) + "</p></div>";
+    };
+    const css = "body{margin:0;color:#252b2c;background:#eceeea;font:16px/1.65 Georgia,serif}main{max-width:860px;margin:32px auto;padding:42px 48px;background:#fff}h1,h2,h3,p,li,dd{overflow-wrap:anywhere}h1,h2,h3{line-height:1.25;white-space:pre-wrap}h1{font-size:32px;margin:12px 0 24px}h2{font-size:23px;border-bottom:1px solid #c9d5d1;padding-bottom:9px;margin:36px 0 18px}h3{font-size:19px;margin:26px 0 12px}p{white-space:pre-wrap;margin:0 0 12px}.private{font:700 11px/1.5 Arial,sans-serif;letter-spacing:.13em;color:#78402a}.metadata{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 16px;font:13px/1.65 Arial,sans-serif;margin:0 0 24px}.metadata dt{font-weight:700}.metadata dd{margin:0;white-space:pre-wrap}a{color:#215e57;text-decoration-thickness:1px;text-underline-offset:3px}a:focus-visible{outline:2px solid #215e57;outline-offset:3px}nav{border:1px solid #c9d5d1;padding:14px 18px;font:13px/1.7 Arial,sans-serif}nav ul{display:flex;flex-wrap:wrap;gap:7px 18px;list-style:none;padding:0;margin:7px 0 0}li{white-space:pre-wrap;margin:5px 0}ul{padding-left:22px}.scene-meta{font:700 12px/1.6 Arial,sans-serif;color:#4c6560;margin:0 0 12px}.field>strong{display:block;font:700 12px/1.6 Arial,sans-serif;color:#3f514d;margin:16px 0 5px}.attribution{font:12px/1.7 Arial,sans-serif;color:#4d5b56;border-left:2px solid #b6c7bf;padding-left:12px;margin:14px 0}.attribution p{margin:0}.references{font:13px/1.65 Arial,sans-serif;background:#f3f6f3;padding:12px 16px;margin:16px 0}.references ul{margin:5px 0 0}.task-state{font-family:Arial,sans-serif}.footer{border-top:1px solid #c9d5d1;margin-top:36px;padding-top:12px;font:11px/1.6 Arial,sans-serif;color:#52615b}@media(max-width:620px){body{background:#fff}main{margin:0;padding:24px 20px}h1{font-size:27px}.metadata{grid-template-columns:1fr;gap:0}.metadata dd{margin-bottom:8px}}@media print{body{background:#fff;font-size:11pt;line-height:1.5}main{max-width:none;margin:0;padding:0}nav{display:none}h1{font-size:24pt}h2{font-size:17pt}h3{font-size:14pt}h1,h2,h3,.field>strong{break-after:avoid}p,li{orphans:3;widows:3}a{color:inherit;text-decoration:none}.references{background:none;border:1px solid #bbc6c1}.attribution{font-size:9pt}.metadata{font-size:10pt}@page{margin:17mm}}";
+    return '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; base-uri \'none\'; form-action \'none\'"><title>' + html(packet.title) + "</title><style>" + css + '</style></head><body><main><header><p class="private">GM ONLY — PRIVATE PREPARATION</p><h1>' + html(packet.title) + '</h1><dl class="metadata">' + packet.metadata.map(([label, content]) => "<dt>" + html(label) + "</dt><dd>" + html(content) + "</dd>").join("") + '</dl></header><nav aria-label="Run sheet contents"><strong>On this sheet</strong><ul>' + packet.sections.filter(section => section.level === 2).map(section => '<li><a href="#' + section.id + '">' + html(section.title) + "</a></li>").join("") + "</ul></nav>" + packet.sections.map(section => '<section id="' + section.id + '"><h' + section.level + ">" + html(section.title) + "</h" + section.level + ">" + section.blocks.map(blockHTML).join("") + "</section>").join("") + '<p class="footer">GM ONLY · Snapshot of session preparation and linked campaign material. Use your browser’s Print command to print or save as PDF.</p></main></body></html>\n';
+  }
+  return { createId, sessionReference, ensureSessionReference, ensureSessionReferences, referencesMatch, findSession, resolveSession: findSession, findLinkedSessionItem, recordReference, referenceKey, sameRecordReference, sourceRecords: SOURCES.listRecords, normalizeReferences, sceneReferenceFields, normalizeProvenance, provenanceFields, normalizePrep, findPrepForSession, ensurePrep, readiness, resolvePinnedRecord, resolveRecord: resolvePinnedRecord, describeProvenance, exportMarkdown, exportHTML };
 });

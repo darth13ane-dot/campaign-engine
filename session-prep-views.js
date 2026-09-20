@@ -3,6 +3,7 @@ let activeSessionPrepId = null;
 let prepSceneReferencePickerId = null;
 let prepSceneReferenceQuery = "";
 let prepReviewExpanded = false;
+let prepPacketPreview = null;
 
 function sessionPrepCore() { return window.CampaignSessionPrep; }
 function activeSessionPrep(campaign = activeCampaign()) {
@@ -181,7 +182,7 @@ function sessionPrepView(campaign) {
   const missingPins = prep.pinned.filter(entry => !prepResolveRecord(campaign, entry)).length;
   const directions = (Array.isArray(session.directions) ? session.directions : []).map(value => String(value || "")).filter(value => value.trim());
   return `<div class="session-prep-page" data-prep-id="${esc(prep.id)}">
-    ${header(session.title, `SESSION PREP · ${esc(campaign.system || "YOUR CAMPAIGN")}`, "Shape the situations, choices, and discoveries that make the next session worth playing.", `<div class="header-actions prep-header-actions"><button class="secondary-button" type="button" data-view-jump="sessions">Sessions</button>${window.CampaignPrepContinuity ? `<button class="secondary-button" type="button" data-open-prep-continuity="${esc(sessionActionRef(session))}">Bring forward</button>` : ""}${playerPacketAction(session)}<button class="secondary-button" type="button" data-prep-export>GM Markdown packet</button><button class="primary-button" type="button" data-start-session-desk="${esc(sessionActionRef(session))}">${liveLabel} <span>→</span></button></div>`)}
+    ${header(session.title, `SESSION PREP · ${esc(campaign.system || "YOUR CAMPAIGN")}`, "Shape the situations, choices, and discoveries that make the next session worth playing.", `<div class="header-actions prep-header-actions"><button class="secondary-button" type="button" data-view-jump="sessions">Sessions</button>${window.CampaignPrepContinuity ? `<button class="secondary-button" type="button" data-open-prep-continuity="${esc(sessionActionRef(session))}">Bring forward</button>` : ""}${playerPacketAction(session)}<button class="secondary-button" type="button" data-prep-packet>GM run sheet</button><button class="primary-button" type="button" data-start-session-desk="${esc(sessionActionRef(session))}">${liveLabel} <span>→</span></button></div>`)}
     <div class="prep-template-tools"><div><strong>Turn campaign notes into play</strong><p>Select source notes, shape a draft, and review scenes, choices, and clues for this session.</p></div><button class="primary-button" type="button" data-open-prep-notes="${esc(sessionActionRef(session))}">${prep.notesWorkbench ? "Resume work from notes" : "Build from notes"}</button></div>
     <div class="prep-template-tools"><div><strong>Build from a reusable structure</strong><p>Choose a planning template or save the shape of this session for another campaign.</p></div><div><button class="secondary-button" type="button" data-open-prep-templates="${esc(sessionActionRef(session))}">${prep.templateReview ? "Resume template review" : "Use a template"}</button><button class="secondary-button" type="button" data-capture-prep-template="${esc(sessionActionRef(session))}">Save this structure</button></div></div><div class="prep-context-bar"><span>Session ${esc(session.number || "—")}${session.date ? ` · ${esc(session.date)}` : ""}</span><span class="save-hint" data-save-status>Saved</span></div>
     ${session.recap || directions.length ? `<details class="card prep-existing-notes"><summary>Existing session notes${directions.length ? ` · ${directions.length} possible directions` : ""}</summary><div class="prep-existing-body">${session.recap ? `<p>${esc(session.recap)}</p>` : ""}${directions.length ? `<h3>Possible directions</h3><ul>${directions.map(direction => `<li>${esc(direction)}</li>`).join("")}</ul>` : ""}${prepNameIsUnique(campaign, { type: "session", name: session.title }) ? `<button class="secondary-button" type="button" ${deskEntryAction({ type: "session", name: session.title })}>Open session notes</button>` : `<p class="prep-help">Several sessions share this title. The notes shown here belong to this prepared session.</p>`}</div></details>` : ""}
@@ -196,6 +197,81 @@ function sessionPrepView(campaign) {
   </div>`;
 }
 
+function prepPacketNeedsRefresh(preview, message) {
+  preview.dialog.querySelector("iframe")?.remove();
+  preview.dialog.querySelectorAll("[data-gm-download]").forEach(button => { button.disabled = true; });
+  preview.dialog.querySelector("[data-gm-packet-status]").textContent = message;
+}
+function prepPacketCurrent(preview) {
+  if (playerPreviewActive() || workspaceReplacementPending() || workspaceLoadError || currentView !== "session-prep" || activeCampaign() !== preview.campaign || activeSessionPrep() !== preview.prep) throw new Error("Return to this session's GM preparation and open a fresh run sheet.");
+  const session = sessionPrepCore().findSession(preview.campaign, preview.prep.sessionRef);
+  if (!session || sessionPrepCore().exportHTML(preview.campaign, session, preview.prep) !== preview.html) throw new Error("The preparation or linked material changed. Close this preview and open a fresh run sheet.");
+}
+function openPrepPacket(campaign, session, prep) {
+  if (playerPreviewActive() || workspaceReplacementPending() || workspaceLoadError) return;
+  const html = sessionPrepCore().exportHTML(campaign, session, prep);
+  const markdown = sessionPrepCore().exportMarkdown(campaign, session, prep);
+  prepPacketPreview?.dialog.close();
+  const returnFocus = document.activeElement;
+  const dialog = document.createElement("dialog");
+  dialog.className = "prep-packet-dialog";
+  dialog.setAttribute("aria-label", "GM run sheet preview");
+  dialog.innerHTML = '<div class="prep-packet-controls"><div><strong>GM run sheet</strong><p>Private preparation. Download HTML, open it in a browser, then print or save as PDF.</p></div><div class="prep-packet-actions"><button class="secondary-button" type="button" data-gm-download="html">Download HTML</button><button class="secondary-button" type="button" data-gm-download="md">Download Markdown</button><button class="quiet-button" type="button" data-gm-packet-close autofocus>Back to prep</button></div></div><p class="prep-packet-status" data-gm-packet-status role="status">This snapshot includes your prepared plan and linked material.</p><iframe title="Private GM run sheet" sandbox="allow-same-origin"></iframe>';
+  const preview = { dialog, campaign, prep, html, observer: null };
+  prepPacketPreview = preview;
+  const frame = dialog.querySelector("iframe");
+  // Scripts remain disabled. The app handles local jumps and keyboard return.
+  frame.addEventListener("load", () => {
+    const document = frame.contentDocument;
+    if (!document) return;
+    document.addEventListener("click", event => {
+      const anchor = event.target.closest('a[href^="#"]');
+      const target = anchor && document.getElementById(anchor.getAttribute("href").slice(1));
+      if (!target) return;
+      event.preventDefault();
+      target.tabIndex = -1; target.focus({ preventScroll: true }); target.scrollIntoView({ block: "start" });
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") { event.preventDefault(); dialog.close(); }
+      if (event.key !== "Tab") return;
+      const links = Array.from(document.querySelectorAll("a[href]"));
+      const edge = event.shiftKey ? links[0] : links.at(-1);
+      if (document.activeElement !== edge) return;
+      event.preventDefault();
+      dialog.querySelector(event.shiftKey ? "[data-gm-packet-close]" : '[data-gm-download="html"]').focus();
+    });
+  });
+  frame.srcdoc = html;
+  dialog.querySelector("[data-gm-packet-close]").addEventListener("click", () => dialog.close());
+  dialog.querySelectorAll("[data-gm-download]").forEach(button => button.addEventListener("click", () => {
+    try {
+      if (prepPacketPreview !== preview || !dialog.open) return;
+      prepPacketCurrent(preview);
+      const format = button.dataset.gmDownload;
+      const blob = new Blob([format === "html" ? html : markdown], { type: format === "html" ? "text/html;charset=utf-8" : "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob), link = document.createElement("a");
+      link.href = url;
+      const name = (String(campaign.title || "campaign") + "-session-" + (session.number || "prep") + "-gm-packet").replace(/[^\p{L}\p{N} _-]/gu, "").trim().slice(0, 110);
+      link.download = name + "." + format;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast("GM run sheet download started.");
+    } catch (error) { prepPacketNeedsRefresh(preview, error.message); }
+  }));
+  dialog.addEventListener("close", () => {
+    preview.observer?.disconnect();
+    if (prepPacketPreview === preview) prepPacketPreview = null;
+    dialog.remove();
+    if (!playerPreviewActive() && returnFocus?.isConnected) returnFocus.focus();
+  });
+  document.body.appendChild(dialog); dialog.showModal();
+  preview.observer = new MutationObserver(() => {
+    if (!dialog.open) return;
+    try { prepPacketCurrent(preview); }
+    catch (error) { prepPacketNeedsRefresh(preview, error.message); }
+  });
+  preview.observer.observe(document.querySelector("#viewRoot"), { childList: true, subtree: true });
+}
 function prepUpdateSummary(prep, campaign = activeCampaign()) {
   const page = document.querySelector(".session-prep-page");
   if (!page || page.dataset.prepId !== prep.id) return;
@@ -294,10 +370,17 @@ sessionPrepRoot.addEventListener("click", event => {
     event.preventDefault(); event.stopImmediatePropagation();
     prepFollowReview(prep, campaign, button.dataset.prepReview); return;
   }
+  if (button.hasAttribute("data-prep-packet")) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    const session = sessionPrepCore().findSession(campaign, prep.sessionRef);
+    if (session) openPrepPacket(campaign, session, prep);
+    else showToast("This session could not be found.");
+    return;
+  }
   const add = button.dataset.prepAdd;
   const remove = button.dataset.prepRemove;
   const move = button.dataset.prepMove;
-  if (!add && !remove && !move && !button.hasAttribute("data-prep-unpin") && !button.hasAttribute("data-prep-export")) return;
+  if (!add && !remove && !move && !button.hasAttribute("data-prep-unpin")) return;
   event.preventDefault();
   event.stopImmediatePropagation();
   let focusId = null;
@@ -320,20 +403,6 @@ sessionPrepRoot.addEventListener("click", event => {
   } else if (button.hasAttribute("data-prep-unpin")) {
     const index = Number(button.dataset.prepUnpin);
     if (Number.isInteger(index) && index >= 0 && index < prep.pinned.length) prep.pinned.splice(index, 1);
-  } else if (button.hasAttribute("data-prep-export")) {
-    const session = sessionPrepCore().findSession(campaign, prep.sessionRef);
-    if (!session) { showToast("This session could not be found."); return; }
-    const blob = new Blob([sessionPrepCore().exportMarkdown(campaign, session, prep)], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${String(campaign.title || "campaign").replace(/[^\p{L}\p{N} _-]/gu, "").trim().slice(0, 65) || "campaign"}-session-${session.number || "prep"}-gm-packet.md`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    showToast("GM prep packet exported.");
-    return;
   }
   prep.updatedAt = new Date().toISOString();
   saveState();

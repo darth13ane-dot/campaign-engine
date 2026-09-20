@@ -51,7 +51,7 @@ function createDesktopSecurity({ getWindow, entryPath, ipcMain, shell }) {
     contents.on("will-navigate", (event, url) => { if (!isApplicationUrl(url)) event.preventDefault(); });
     contents.on("will-redirect", (event, url) => { if (!isApplicationUrl(url)) event.preventDefault(); });
     contents.on("will-frame-navigate", event => {
-      // The only embedded document is the sandboxed, script-free player packet.
+      // Embedded GM and player packets are sandboxed, script-free documents.
       const allowed = event.isMainFrame ? isApplicationUrl(event.url) : event.url === "about:srcdoc";
       if (!allowed) event.preventDefault();
     });
