@@ -126,7 +126,7 @@ Acceptance gates:
 4. Browser recovery and the desktop's native import and recovery handlers, preload APIs, safety-copy list, and process restart are exercised. Automated desktop checks supply file-picker results from test fixtures. Damaged primary/previous recovery preserves original bytes; future workspace schemas remain protected.
 5. GM recovery previews remain outside Player preview. Desktop and mobile layouts, offline use, and existing preparation, continuity, template, and player-packet workflows receive interaction checks.
 
-## Active milestone: v1.10.0 — Desktop trust and release checks
+## Delivered milestone: v1.10.0 — Desktop trust and release checks
 
 **Status: implemented in v1.10.0.** This foundation protects local campaign work and privileged desktop operations. All desktop requests verify the exact application main frame; navigation, permissions, and script loading have explicit policies. Custom connection programs receive a native launch review. Interface fonts and their licenses are bundled for offline use. Pull requests gain Windows tests and package verification. [DESKTOP_SECURITY.md](DESKTOP_SECURITY.md) records the boundaries and remaining work.
 
@@ -138,6 +138,18 @@ Acceptance gates:
 4. The exact custom program and arguments appear in a native launch review. Cancel starts no process; approval applies to one launch. Built-in Archivist behavior remains intact.
 5. Browser and packaged-runtime checks exercise normal planning and recovery alongside hostile inputs. Pull-request validation runs tests and Windows package checks without release secrets, and the tagged release's assets and update feeds are verified.
 
+## Active milestone: v1.11.0 — Larger-campaign responsiveness
+
+**Status: implemented in v1.11.0.** Synthetic workspaces expose repeated player projection and history costs. A per-pass source index, serialized history baselines and reuse of valid search indexes reduce those costs while retaining current permissions, stable identities, packet approvals and undo. Browser save failures expose a persistent download of the complete current workspace. [PERFORMANCE.md](PERFORMANCE.md) records measured gains and limits.
+
+Acceptance gates:
+
+1. Measure documented synthetic campaign sizes, record/page counts, history capture, projection, search and storage; keep a reusable benchmark that uses no private campaign data.
+2. Check sharing revocation, duplicate identities, Unicode and malformed references, retained packet fingerprints, nested record edits, inactive campaigns and history reset.
+3. Exercise real browser quota failure, preservation of existing saved bytes, download of unsaved changes, continuing close warnings, successful retry, and GM-only recovery controls at desktop/mobile widths.
+4. Save and reopen a representative large workspace through the packaged desktop APIs. Hold a write open to verify that its captured revision and later edits remain distinct; exercise undo and reviewed recovery.
+5. Verify existing preparation, player packet, first-use and recovery flows; publish passing Windows tests, matching packaged assets, a versioned release and working update manifests.
+
 ## Remaining trust, performance, and beta readiness
 
 Reliability work proceeds alongside the earlier milestones. This is the gate for inviting a broader pilot and making a commercial commitment.
@@ -147,7 +159,7 @@ Reliability work proceeds alongside the earlier milestones. This is the gate for
 | First use | v1.9.0 provides explicit starting choices, direct next-session preparation, and valid empty workspaces. Existing campaigns and edited examples are retained. Observe new GMs completing this workflow and improve it from their results. |
 | Schema and import | v1.9.0 shares workspace validation across browser and desktop storage, rejecting ambiguous campaign identities and malformed supported containers before import. Legacy envelopes and supported records round-trip; future workspace/session-workflow schemas remain protected. Extend explicit migrations and field validation as stored models evolve. |
 | Recovery | v1.9.0 exposes recovery copies and reviewed restore through the UI, with failed-write protection and exact preservation of damaged originals. Browser storage retains one previous workspace; desktop safety copies retain the twelve newest supported backups. Continue interruption, upgrade, and recovery exercises with representative large workspaces. |
-| Large campaigns | Measure startup, search, editing, save latency, and restore with documented campaign sizes and PDF libraries. Browser storage currently writes the full workspace to `localStorage`; establish supported limits and move larger libraries to a storage tier suited to them before promising scale. |
+| Large campaigns | v1.11.0 measures 0.55–24.57 MB synthetic workspaces and improves projection/history costs. The large desktop fixture survives saves, restart and recovery; 6.14 MB exceeds the tested browser quota. Measure real campaign shapes and slower devices, reduce complete-save costs, and migrate browser storage with interruption/recovery tests before extending capacity claims. |
 | Desktop security | v1.10.0 adds an application content policy, navigation and permission restrictions, a common sender check for all privileged IPC, and native review of custom programs. Preserve the sandbox, context isolation, disabled Node integration, and encrypted credentials. Continue dependency maintenance and test any migration from the bundled file page to a dedicated application protocol with origin-storage recovery. |
 | Release assurance | v1.10.0 adds pull-request and main-branch Windows tests and package verification. Exercise installation, upgrade, rollback, and portable updates with representative workspaces. Establish a signed distribution process. The downloaded v1.9.0 portable release reported `NotSigned`; signing hooks exist in CI. |
 | Supportability | Provide actionable errors and an explicit diagnostic export that excludes credentials and campaign content by default. Document supported operating systems, integration versions, recovery steps, and known failures. Check keyboard operation, readable layouts, and save/error announcements. |

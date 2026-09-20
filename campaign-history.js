@@ -44,15 +44,38 @@
   }
   function createTracker() {
     const baselines = new Map();
-    return {
-      reset(campaigns) { baselines.clear(); campaigns.forEach(c => baselines.set(c.id, snapshot(c))); },
-      capture(campaigns, label) {
-        for (const campaign of campaigns) {
-          const next = snapshot(campaign), previous = baselines.get(campaign.id);
-          if (previous) append(campaign, diff(previous, next), label);
-          baselines.set(campaign.id, next);
+    // Persisted records are JSON. Keep their serialized baselines so each save
+    // reads a record once and only materializes records that actually changed.
+    function encoded(campaign) {
+      ensureIds(campaign);
+      return new Map(COLLECTIONS.map(collection => [collection,
+        new Map((campaign[collection] || []).map(record => [identity(record), JSON.stringify(record)]))
+      ]));
+    }
+    function changesBetween(before, after) {
+      const changes = [];
+      for (const collection of COLLECTIONS) {
+        const old = before.get(collection), next = after.get(collection);
+        for (const id of new Set([...old.keys(), ...next.keys()])) {
+          if (old.get(id) === next.get(id)) continue;
+          const previous = old.has(id) ? JSON.parse(old.get(id)) : null;
+          const current = next.has(id) ? JSON.parse(next.get(id)) : null;
+          changes.push({ collection, id, title: title(current || previous), before: previous, after: current });
         }
-        for (const id of baselines.keys()) if (!campaigns.some(c => c.id === id)) baselines.delete(id);
+      }
+      return changes;
+    }
+    return {
+      reset(campaigns) { baselines.clear(); campaigns.forEach(c => baselines.set(c.id, encoded(c))); },
+      capture(campaigns, label) {
+        const retained = new Set();
+        for (const campaign of campaigns) {
+          const next = encoded(campaign), previous = baselines.get(campaign.id);
+          if (previous) append(campaign, changesBetween(previous, next), label);
+          baselines.set(campaign.id, next);
+          retained.add(campaign.id);
+        }
+        for (const id of baselines.keys()) if (!retained.has(id)) baselines.delete(id);
       }
     };
   }

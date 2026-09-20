@@ -1,4 +1,9 @@
 /* Start after all feature views and handlers are registered. */
+document.querySelector("#downloadUnsavedWorkspace").addEventListener("click", () => {
+  if (playerPreviewActive() || DESKTOP_API) return;
+  try { downloadBrowserWorkspace(); showToast("Current workspace downloaded, including unsaved changes."); }
+  catch (error) { showToast(`Workspace download failed: ${error.message}`); }
+});
 if ("serviceWorker" in navigator && ["http:", "https:"].includes(location.protocol)) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(() => {
     showToast("Offline caching is unavailable. Keep this page connected or use the Windows app.");
@@ -14,7 +19,7 @@ if (!DESKTOP_API) {
   window.addEventListener("pagehide", () => { workspaceSaver.flush().catch(() => {}); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") workspaceSaver.flush().catch(() => {}); });
   window.addEventListener("beforeunload", event => {
-    if (workspaceSaveStatus === "error" && workspaceSaver.dirty) { event.preventDefault(); event.returnValue = ""; }
+    if (workspaceSaveError && workspaceSaver.dirty) { event.preventDefault(); event.returnValue = ""; }
   });
 }
 async function startCampaignEngine() {

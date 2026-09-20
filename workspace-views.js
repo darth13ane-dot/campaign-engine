@@ -6,21 +6,27 @@ function invalidateCampaignSearch() { searchIndex = null; }
 function updateCampaignSearch() {
   const campaign = activeCampaign();
   if (!campaign || workspaceLoadError) return;
+  const query = document.querySelector("#searchInput").value;
+  const results = document.querySelector("#searchResults");
+  if (!window.CampaignSearch.terms(query).length) {
+    searchMatches = [];
+    results.innerHTML = `<p class="empty-copy">Search names, tags, scenes, notes, or rulebook text.</p>`;
+    return;
+  }
   const playerPreview = playerPreviewActive();
-  if (!searchIndex || searchIndexCampaign !== campaign.id || searchIndexPreview !== playerPreview) {
-    searchIndex = window.CampaignSearch.buildIndex(campaign, { playerPreview, visible: (record, collection) => playerCanSee(record, collection), projectRecord: (record, collection) => window.CampaignPlayerPacket.projectRecord(campaign, prepRecordRef(({ characters: "character", quests: "quest", locations: "location", sessions: "session", journal: "journal" })[collection], record)) });
-    searchIndexCampaign = campaign.id;
+  if (!searchIndex || searchIndexCampaign !== campaign || searchIndexPreview !== playerPreview) {
+    const projector = playerPreview ? window.CampaignPlayerPacket.createProjector(campaign) : null;
+    searchIndex = window.CampaignSearch.buildIndex(campaign, { playerPreview, visible: (record, collection) => playerCanSee(record, collection), projectRecord: (record, collection) => projector.projectRecord(prepRecordRef(({ characters: "character", quests: "quest", locations: "location", sessions: "session", journal: "journal" })[collection], record)) });
+    searchIndexCampaign = campaign;
     searchIndexPreview = playerPreview;
   }
-  const query = document.querySelector("#searchInput").value;
   const found = window.CampaignSearch.search(searchIndex, query, { type: document.querySelector("#searchFilter").value, limit: searchLimit });
   searchMatches = found.results;
-  const results = document.querySelector("#searchResults");
-  results.innerHTML = !query.trim() ? `<p class="empty-copy">Search names, tags, scenes, notes, or rulebook text.</p>` : `<p class="search-count">${found.total} results · showing ${found.results.length}</p>${found.results.map((entry, index) => `<button class="search-result" type="button" data-search-hit="${index}"><span>${esc(window.CampaignSearch.labels[entry.type])}${entry.page ? ` · page ${entry.page}` : ""}</span><strong>${esc(entry.title)}</strong><p>${esc(entry.excerpt)}</p></button>`).join("")}${found.total > found.results.length ? `<button class="secondary-button" type="button" data-more-search>Show more</button>` : ""}`;
+  results.innerHTML = `<p class="search-count">${found.total} results · showing ${found.results.length}</p>${found.results.map((entry, index) => `<button class="search-result" type="button" data-search-hit="${index}"><span>${esc(window.CampaignSearch.labels[entry.type])}${entry.page ? ` · page ${entry.page}` : ""}</span><strong>${esc(entry.title)}</strong><p>${esc(entry.excerpt)}</p></button>`).join("")}${found.total > found.results.length ? `<button class="secondary-button" type="button" data-more-search>Show more</button>` : ""}`;
 }
 document.querySelector("#searchButton").addEventListener("click", () => {
   if (!activeCampaign() || workspaceLoadError) return;
-  searchIndex = null; searchLimit = 30;
+  searchLimit = 30;
   const filter = document.querySelector("#searchFilter");
   filter.innerHTML = `<option value="all">All records</option>` + Object.entries(window.CampaignSearch.labels).filter(([type]) => !playerPreviewActive() || !["arc", "note", "reference", "prep", "packet"].includes(type)).map(([type, label]) => `<option value="${type}">${esc(label)}</option>`).join("");
   updateCampaignSearch(); searchModal.showModal(); document.querySelector("#searchInput").focus();

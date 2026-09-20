@@ -115,6 +115,7 @@ let desktopWorkspaceInfo = { mode: DESKTOP_API ? "loading" : "browser", savedAt:
 let workspaceImportInProgress = false;
 let nextHistoryLabel = "Campaign edit";
 let workspaceSaveStatus = "saved";
+let workspaceSaveError = null;
 let builderTab = "character";
 let builderSystem = "";
 const SYSTEM_LIBRARY = Object.fromEntries(SYSTEM_REGISTRY.all().map(definition => [
@@ -183,7 +184,9 @@ const workspaceSaver = window.CampaignPersistence.createSaveController({
   snapshot() {
     historyTracker.capture(state.campaigns, nextHistoryLabel);
     nextHistoryLabel = "Campaign edit";
-    return structuredClone(state);
+    // Both writers copy synchronously: JSON.stringify here, or the desktop
+    // context bridge/IPC serializer. Avoid a second full-workspace clone.
+    return state;
   },
   write(snapshot) {
     if (workspaceLoadError) throw new Error("Resolve the workspace recovery notice before saving.");
@@ -192,14 +195,27 @@ const workspaceSaver = window.CampaignPersistence.createSaveController({
   },
   onStatus({ status, error, dirty }) {
     workspaceSaveStatus = status;
+    if (error) workspaceSaveError = error;
+    else if (status === "saved") workspaceSaveError = null;
     DESKTOP_API?.setWorkspaceDirty?.(dirty);
     updateSaveStatus();
-    if (error) showToast(`Workspace save failed: ${error.message}. Retry saving before closing.`);
+    if (error) showToast(!DESKTOP_API && error.name === "QuotaExceededError"
+      ? "Browser storage is full. Download your current workspace before closing, then restore it in the Windows app."
+      : `Workspace save failed: ${error.message}. Retry saving before closing.`);
   }
 });
 function updateSaveStatus() {
   const copy = { pending: "Unsaved changes", saving: "Saving…", saved: "Saved", error: "Save failed · retry" }[workspaceSaveStatus];
   document.querySelectorAll("[data-save-status]").forEach(node => { node.textContent = copy; node.dataset.status = workspaceSaveStatus; });
+  const alert = document.querySelector("#workspaceSaveAlert");
+  if (alert) {
+    alert.hidden = !workspaceSaveError || Boolean(DESKTOP_API) || playerPreviewActive();
+    const message = workspaceSaveError?.name === "QuotaExceededError"
+      ? "Browser storage is full. Download your current workspace before closing, then restore the backup in the Windows app."
+      : "Your latest changes could not be saved. Download your current workspace before closing, or retry saving.";
+    const node = alert.querySelector("p");
+    if (node.textContent !== message) node.textContent = message;
+  }
 }
 function saveState(label = "Campaign edit") {
   if (workspaceLoadError) return;
