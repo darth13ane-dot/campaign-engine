@@ -2,15 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https:; connect-src 'self' https: http:; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#11141d" />
     <meta name="application-name" content="Campaign Engine" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <title>Campaign Engine</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <link rel="stylesheet" href="vendor/fonts/fonts.css" />
     <link rel="stylesheet" href="styles.css?v=20" />
     <link rel="stylesheet" href="workspace.css?v=3" />
     <link rel="stylesheet" href="workspace-entry.css?v=1" />
@@ -186,13 +185,8 @@
     <script src="player-packet-views.js?v=2"></script>
     <script src="features.js?v=12"></script>
     <script src="systems/pf2e/toolkit.js?v=1"></script>
-    <script>
-      if ("serviceWorker" in navigator && location.protocol !== "file:") {
-        window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js"));
-      }
-    </script>
     <script src="source-library.js?v=1"></script>
     <script src="workspace-views.js?v=4"></script>
-    <script src="bootstrap.js?v=1"></script>
+    <script src="bootstrap.js?v=2"></script>
   </body>
 </html>

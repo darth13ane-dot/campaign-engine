@@ -13,4 +13,5 @@ release-config.generated.json
 *.log
 *.tmp
 
-/vendor/
+/vendor/*
+!/vendor/fonts/

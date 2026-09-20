@@ -1,5 +1,13 @@
 # Sharing and desktop updates
 
+## Version 1.10.0 — Desktop trust and release checks
+
+Every desktop request now verifies the application window, main frame, and bundled page before accessing campaign files, saved keys, update controls, or connections. Save-and-close messages follow the same rule. Navigation keeps the app on its bundled page, external web links open through a restricted URL parser, and device and browser permission requests are denied.
+
+The application content policy blocks inline scripts, event handlers, and JavaScript string evaluation while retaining local PDF processing, player-document previews, offline caching, and configured integration connections. Interface fonts are bundled with their licenses for consistent offline use, removing font-service requests at startup. Custom connection programs require a native review of the exact program and arguments for each launch; cancellation starts no program. The built-in Archivist connection retains its normal sign-in workflow.
+
+Pull requests and changes to `main` now run Windows tests and package verification before tagged release builds. GitHub Actions use pinned current revisions, and public releases include application downloads and update metadata. [DESKTOP_SECURITY.md](DESKTOP_SECURITY.md) describes these boundaries and remaining readiness work.
+
 ## Version 1.9.0 — First use and workspace recovery
 
 New public installations open a welcome screen with explicit choices to create a campaign, restore a backup, explore an editable example, or connect Archivist. Campaign creation accepts the next session's number and title and opens Session Prep directly. Empty workspaces retain their settings and template library across restarts. Existing campaigns, including edited samples, are preserved when bundled data changes.

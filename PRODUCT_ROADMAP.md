@@ -112,7 +112,7 @@ Acceptance gates:
 6. Player preview excludes template authoring. Unsupported library formats retain their saved data and provide a recovery path. Workspace replacement prevents competing template edits.
 7. Domain, filesystem, browser, and packaged-runtime checks cover these behaviors, including narrow layouts and public snapshot exclusion.
 
-## Active milestone: v1.9.0 — First use and workspace recovery
+## Delivered milestone: v1.9.0 — First use and workspace recovery
 
 **Status: implemented in v1.9.0.** New public installations start with an empty workspace and explicit choices to create a campaign, restore a backup, explore an editable example, or connect Archivist. Creating a campaign opens preparation for its chosen next session. Empty workspaces retain settings and reusable templates; saved campaigns and edited samples survive startup unchanged by bundled examples.
 
@@ -126,6 +126,18 @@ Acceptance gates:
 4. Browser recovery and the desktop's native import and recovery handlers, preload APIs, safety-copy list, and process restart are exercised. Automated desktop checks supply file-picker results from test fixtures. Damaged primary/previous recovery preserves original bytes; future workspace schemas remain protected.
 5. GM recovery previews remain outside Player preview. Desktop and mobile layouts, offline use, and existing preparation, continuity, template, and player-packet workflows receive interaction checks.
 
+## Active milestone: v1.10.0 — Desktop trust and release checks
+
+**Status: implemented in v1.10.0.** This foundation protects local campaign work and privileged desktop operations. All desktop requests verify the exact application main frame; navigation, permissions, and script loading have explicit policies. Custom connection programs receive a native launch review. Interface fonts and their licenses are bundled for offline use. Pull requests gain Windows tests and package verification. [DESKTOP_SECURITY.md](DESKTOP_SECURITY.md) records the boundaries and remaining work.
+
+Acceptance gates:
+
+1. Every registered desktop request rejects foreign windows, child frames, missing frames, and navigated pages before accessing credentials, storage, updates, or processes. Legitimate workspace and close operations still succeed.
+2. Injected inline scripts, event handlers, remote scripts, and JavaScript string evaluation fail under the application policy. Bundled scripts, fonts, local PDF workers, player previews, exports, and offline caching remain usable.
+3. The app blocks navigation to remote or unrelated local pages, executable external schemes, webviews, and unneeded browser/device permissions. Ordinary web links open in the default browser.
+4. The exact custom program and arguments appear in a native launch review. Cancel starts no process; approval applies to one launch. Built-in Archivist behavior remains intact.
+5. Browser and packaged-runtime checks exercise normal planning and recovery alongside hostile inputs. Pull-request validation runs tests and Windows package checks without release secrets, and the tagged release's assets and update feeds are verified.
+
 ## Remaining trust, performance, and beta readiness
 
 Reliability work proceeds alongside the earlier milestones. This is the gate for inviting a broader pilot and making a commercial commitment.
@@ -136,8 +148,8 @@ Reliability work proceeds alongside the earlier milestones. This is the gate for
 | Schema and import | v1.9.0 shares workspace validation across browser and desktop storage, rejecting ambiguous campaign identities and malformed supported containers before import. Legacy envelopes and supported records round-trip; future workspace/session-workflow schemas remain protected. Extend explicit migrations and field validation as stored models evolve. |
 | Recovery | v1.9.0 exposes recovery copies and reviewed restore through the UI, with failed-write protection and exact preservation of damaged originals. Browser storage retains one previous workspace; desktop safety copies retain the twelve newest supported backups. Continue interruption, upgrade, and recovery exercises with representative large workspaces. |
 | Large campaigns | Measure startup, search, editing, save latency, and restore with documented campaign sizes and PDF libraries. Browser storage currently writes the full workspace to `localStorage`; establish supported limits and move larger libraries to a storage tier suited to them before promising scale. |
-| Desktop security | Add and verify a Content Security Policy, navigation restrictions, and sender validation for privileged IPC. Preserve the existing sandbox, context isolation, disabled Node integration, encrypted credentials, and restricted external-link handling. Review imported content and custom MCP command boundaries. |
-| Release assurance | Run appropriate checks on pull requests as well as releases; verify installation, upgrade, rollback, portable updates, and packaged assets. Establish a signed distribution process. The downloaded v1.7.0 portable release reported `NotSigned`; signing hooks exist in CI. |
+| Desktop security | v1.10.0 adds an application content policy, navigation and permission restrictions, a common sender check for all privileged IPC, and native review of custom programs. Preserve the sandbox, context isolation, disabled Node integration, and encrypted credentials. Continue dependency maintenance and test any migration from the bundled file page to a dedicated application protocol with origin-storage recovery. |
+| Release assurance | v1.10.0 adds pull-request and main-branch Windows tests and package verification. Exercise installation, upgrade, rollback, and portable updates with representative workspaces. Establish a signed distribution process. The downloaded v1.9.0 portable release reported `NotSigned`; signing hooks exist in CI. |
 | Supportability | Provide actionable errors and an explicit diagnostic export that excludes credentials and campaign content by default. Document supported operating systems, integration versions, recovery steps, and known failures. Check keyboard operation, readable layouts, and save/error announcements. |
 
 Architecture changes should follow these needs. The existing pure data modules are useful seams for extracting preparation, import validation, and export logic from the large renderer scripts. A framework rewrite has no acceptance value by itself.

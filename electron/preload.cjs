@@ -8,6 +8,11 @@ contextBridge.exposeInMainWorld("campaignEngineDesktop", {
   downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
   installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   openExternal: url => ipcRenderer.invoke("desktop:open-external", url),
+  onExternalLinkError: callback => {
+    const listener = (_, message) => callback(message);
+    ipcRenderer.on("desktop:external-link-error", listener);
+    return () => ipcRenderer.removeListener("desktop:external-link-error", listener);
+  },
   loadWorkspace: () => ipcRenderer.invoke("desktop:workspace-load"),
   initializeWorkspace: workspace => ipcRenderer.invoke("desktop:workspace-initialize", workspace),
   replaceWorkspace: (workspace, reason) => ipcRenderer.invoke("desktop:workspace-replace", workspace, reason),

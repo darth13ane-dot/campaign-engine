@@ -1,4 +1,10 @@
 /* Start after all feature views and handlers are registered. */
+if ("serviceWorker" in navigator && ["http:", "https:"].includes(location.protocol)) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(() => {
+    showToast("Offline caching is unavailable. Keep this page connected or use the Windows app.");
+  }));
+}
+DESKTOP_API?.onExternalLinkError?.(message => showToast(message));
 DESKTOP_API?.onPrepareToClose?.(async () => {
   document.querySelector(".app-shell").inert = true;
   try { await workspaceSaver.flush(); DESKTOP_API.finishClose({ ok: true }); }

@@ -1,0 +1,3 @@
+vendor/fonts/*.ttf binary
+# Preserve upstream license bytes, including their original line endings and spacing.
+vendor/fonts/*-OFL.txt -text whitespace=-blank-at-eol,cr-at-eol

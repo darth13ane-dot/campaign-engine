@@ -1,0 +1,11 @@
+[
+  "./vendor/fonts/fonts.css",
+  "./vendor/fonts/DMMono-Regular.ttf",
+  "./vendor/fonts/DMMono-Medium.ttf",
+  "./vendor/fonts/Fraunces.ttf",
+  "./vendor/fonts/Manrope.ttf",
+  "./vendor/fonts/DMMono-OFL.txt",
+  "./vendor/fonts/Fraunces-OFL.txt",
+  "./vendor/fonts/Manrope-OFL.txt",
+  "./vendor/fonts/sources.json"
+]
