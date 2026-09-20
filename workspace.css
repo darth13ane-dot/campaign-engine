@@ -34,6 +34,9 @@
 }
 
 .workspace-save-status { font-size: .72rem; white-space: nowrap; }
+.workspace-save-alert { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin: 20px 0 0; padding: 16px; border: 1px solid var(--gold); border-radius: 12px; background: var(--ink-raised); }
+.workspace-save-alert[hidden] { display: none; }
+.workspace-save-alert p { flex: 1 1 260px; margin: 0; overflow-wrap: anywhere; }
 [data-save-status][data-status="error"] { color: #ed988a; }
 [data-save-status][data-status="pending"], [data-save-status][data-status="saving"] { color: var(--muted); }
 .history-list, .sync-review-list { display: grid; gap: 16px; }

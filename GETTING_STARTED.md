@@ -20,6 +20,8 @@ Windows stores the workspace in its private AppData directory and maintains a pr
 
 The browser retains one previous workspace before a confirmed restore or campaign deletion. Download regular backups to retain additional versions and recover after browser data is cleared.
 
+If browser saving fails, use **Download current workspace** in the warning above the page before closing. This includes your latest unsaved changes; the save indicator clears after a successful save. For a storage-full warning, restore the downloaded backup in the Windows app to continue with a larger workspace. [Campaign size and performance](PERFORMANCE.md) describes measured examples and storage limits.
+
 ## Review and restore
 
 1. Choose **Restore backup** in Settings, or **Choose backup file** on the welcome screen.

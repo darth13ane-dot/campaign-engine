@@ -7,12 +7,13 @@
   "use strict";
   const definitions = { characters: "character", quests: "quest", locations: "location", journal: "journal", sessions: "session" };
   function projectCampaign(campaign) {
-    const text = value => PACKETS.redactText(campaign, String(value ?? "")).text;
+    const projector = PACKETS.createProjector(campaign);
+    const text = value => projector.redactText(String(value ?? "")).text;
     const result = { id: campaign.id, title: text(campaign.title), system: text(campaign.system), genre: text(campaign.genre), summary: "", connections: [], arcs: [], documents: [], builders: [], checklist: [] };
     for (const [collection, type] of Object.entries(definitions)) {
       result[collection] = (campaign[collection] || []).flatMap(record => {
         const reference = PREP.recordReference({ ...record, type, name: record.name || record.title });
-        const projected = PACKETS.projectRecord(campaign, reference);
+        const projected = projector.projectRecord(reference);
         if (!projected) return [];
         const identity = Object.fromEntries(["archivistId", "localId", "id"].filter(key => record[key]).map(key => [key, record[key]]));
         const base = { ...identity, knowledge: "players", tags: [] };

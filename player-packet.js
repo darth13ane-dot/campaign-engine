@@ -64,12 +64,29 @@
     for (const field of IDS) if (short(value[field])) reference[field] = short(value[field]);
     return reference;
   }
-  function resolveSource(campaign, value) {
+  function sourceLookup(campaign) {
+    return Object.fromEntries(Object.entries(TYPES).map(([type, definition]) => {
+      const fields = Object.fromEntries([...IDS, "name"].map(field => [field, new Map()]));
+      for (const record of rows(campaign?.[definition.collection])) {
+        for (const field of [...IDS, "name"]) {
+          const key = field === "name" ? nameKey(type === "character" ? record.name : record.title) : short(record[field]);
+          const matches = fields[field].get(key) || [];
+          matches.push(record); fields[field].set(key, matches);
+        }
+      }
+      return [type, fields];
+    }));
+  }
+  function matchingSources(campaign, type, field, key, lookup) {
+    if (lookup) return lookup[type][field].get(key) || [];
+    return rows(campaign?.[TYPES[type].collection]).filter(record => (field === "name" ? nameKey(type === "character" ? record.name : record.title) : short(record[field])) === key);
+  }
+  function resolveSource(campaign, value, lookup) {
     const reference = normalizeSourceRef(value);
     if (!reference) return null;
-    const definition = TYPES[reference.type], records = rows(campaign?.[definition.collection]);
+    const definition = TYPES[reference.type];
     const key = IDS.find(field => reference[field]);
-    const matches = records.filter(record => key ? short(record[key]) === reference[key] : nameKey(reference.type === "character" ? record.name : record.title) === nameKey(reference.name));
+    const matches = matchingSources(campaign, reference.type, key || "name", key ? reference[key] : nameKey(reference.name), lookup);
     if (matches.length !== 1) return null;
     const record = matches[0];
     if (key && IDS.some(field => reference[field] && short(record[field]) !== reference[field])) return null;
@@ -77,7 +94,7 @@
     return { record, reference: sourceReference(reference.type, record), definition };
   }
 
-  function analyzeText(campaign, value, depth = 0) {
+  function analyzeText(campaign, value, depth = 0, lookup) {
     const input = plain(value), dependencies = [];
     let output = "", index = 0;
     while (index < input.length) {
@@ -97,13 +114,13 @@
         const name = (colon < 0 ? token : token.slice(colon + 1)).trim();
         if (type && name) {
           const definition = TYPES[type];
-          const matches = rows(campaign?.[definition.collection]).filter(record => nameKey(type === "character" ? record.name : record.title) === nameKey(name));
+          const matches = matchingSources(campaign, type, "name", nameKey(name), lookup);
           const record = matches.length === 1 ? matches[0] : null;
           const reference = record ? sourceReference(type, record) : { type, name };
-          const resolved = record && resolveSource(campaign, reference);
+          const resolved = record && resolveSource(campaign, reference, lookup);
           dependencies.push({ reference, matches: matches.length, knowledge: record ? KNOWLEDGE.recordKnowledge(record, definition.collection) : "missing" });
           if (resolved) {
-            const label = analyzeText(campaign, reference.name, depth + 1);
+            const label = analyzeText(campaign, reference.name, depth + 1, lookup);
             replacement = label.text;
             dependencies.push(...label.dependencies);
           }
@@ -125,9 +142,21 @@
     const body = analyzeText(campaign, plain(source.record[source.definition.body]));
     return { ...source, heading: heading.text, body: body.text, redactions: heading.redactions + body.redactions, fingerprint: digest(canonical({ reference: source.reference, knowledge: KNOWLEDGE.recordKnowledge(source.record, source.definition.collection), heading: source.reference.name, body: plain(source.record[source.definition.body]), dependencies: [...heading.dependencies, ...body.dependencies] })) };
   }
-  function projectRecord(campaign, reference) {
-    const projected = sourceProjection(campaign, reference);
-    return projected ? { heading: projected.heading, body: projected.body } : null;
+  function projectRecord(campaign, reference, lookup) {
+    const source = resolveSource(campaign, reference, lookup);
+    if (!source) return null;
+    // Display projections need redaction, while reviewed packet exports also
+    // compute a fingerprint through sourceProjection above.
+    return { heading: analyzeText(campaign, source.reference.name, 0, lookup).text,
+      body: analyzeText(campaign, plain(source.record[source.definition.body]), 0, lookup).text };
+  }
+  // Use for one synchronous render/index pass; rebuild after any campaign edit.
+  function createProjector(campaign) {
+    const lookup = sourceLookup(campaign);
+    return {
+      projectRecord: reference => projectRecord(campaign, reference, lookup),
+      redactText(value) { const result = analyzeText(campaign, value, 0, lookup); return { text: result.text, redactions: result.redactions }; }
+    };
   }
 
   function neutralTitle(session) {
@@ -264,5 +293,5 @@
     return [`# ${markdownText(projection.title).replace(/\n/g, " ")}`, ...projection.sections.map(section => `${section.heading ? `## ${markdownText(section.heading).replace(/\n/g, " ")}\n\n` : ""}${markdownText(section.body)}`)].join("\n\n").trim() + "\n";
   }
 
-  return { normalizePacket, packetsForSession, findPacket, ensurePacket, createPacket, sourceChoices, createManualSection, createSourceSection, refreshSourceSection, projectRecord, redactText, validatePacket, previewPacket, approvePacket, previewHTML, exportHTML, exportMarkdown, renderHTML, digest };
+  return { normalizePacket, packetsForSession, findPacket, ensurePacket, createPacket, sourceChoices, createManualSection, createSourceSection, refreshSourceSection, projectRecord, createProjector, redactText, validatePacket, previewPacket, approvePacket, previewHTML, exportHTML, exportMarkdown, renderHTML, digest };
 });

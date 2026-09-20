@@ -11,7 +11,7 @@
     <title>Campaign Engine</title>
     <link rel="stylesheet" href="vendor/fonts/fonts.css" />
     <link rel="stylesheet" href="styles.css?v=20" />
-    <link rel="stylesheet" href="workspace.css?v=3" />
+    <link rel="stylesheet" href="workspace.css?v=4" />
     <link rel="stylesheet" href="workspace-entry.css?v=1" />
     <link rel="stylesheet" href="session-prep.css?v=3" />
     <link rel="stylesheet" href="prep-continuity.css?v=1" />
@@ -75,6 +75,9 @@
             <button class="avatar" type="button" aria-label="Account menu">DM</button>
           </div>
         </header>
+        <aside id="workspaceSaveAlert" class="workspace-save-alert" role="alert" hidden>
+          <p></p><button id="downloadUnsavedWorkspace" class="secondary-button" type="button">Download current workspace</button>
+        </aside>
         <section id="viewRoot" class="view-root" aria-live="polite"></section>
       </main>
     </div>
@@ -153,7 +156,7 @@
     <script src="archivist-details.js"></script>
     <script src="workspace-schema.js?v=1"></script>
     <script src="workspace-persistence.js?v=3"></script>
-    <script src="campaign-history.js?v=1"></script>
+    <script src="campaign-history.js?v=2"></script>
     <script src="campaign-search.js?v=3"></script>
     <script src="campaign-knowledge.js?v=1"></script>
     <script src="archivist-merge.js?v=5"></script>
@@ -161,8 +164,8 @@
     <script src="session-prep.js?v=4"></script>
     <script src="prep-template-starters.js?v=1"></script>
     <script src="prep-templates.js?v=1"></script>
-    <script src="player-packet.js?v=1"></script>
-    <script src="player-preview.js?v=1"></script>
+    <script src="player-packet.js?v=2"></script>
+    <script src="player-preview.js?v=2"></script>
     <script src="session-workflow.js?v=4"></script>
     <script src="prep-continuity.js?v=2"></script>
     <script src="foundry-api-bridge.js?v=6"></script>
@@ -177,7 +180,7 @@
     <script src="systems/call-of-cthulhu/definition.js?v=1"></script>
     <script src="systems/custom/definition.js?v=1"></script>
     <script src="systems/campaign-system-state.js?v=1"></script>
-    <script src="app.js?v=35"></script>
+    <script src="app.js?v=36"></script>
     <script src="workspace-entry.js?v=1"></script>
     <script src="session-prep-views.js?v=5"></script>
     <script src="prep-template-views.js?v=2"></script>
@@ -186,7 +189,7 @@
     <script src="features.js?v=12"></script>
     <script src="systems/pf2e/toolkit.js?v=1"></script>
     <script src="source-library.js?v=1"></script>
-    <script src="workspace-views.js?v=4"></script>
-    <script src="bootstrap.js?v=2"></script>
+    <script src="workspace-views.js?v=5"></script>
+    <script src="bootstrap.js?v=3"></script>
   </body>
 </html>

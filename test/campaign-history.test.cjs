@@ -24,3 +24,39 @@ test("captures added records and keeps history unchanged for scratchpad-only sav
   campaign.characters.push({ name: "New NPC" }); tracker.capture([campaign]);
   const copy = JSON.parse(JSON.stringify(campaign)); history.undo(copy, copy.history[0].id); assert.equal(copy.characters.length, 1);
 });
+
+test("history captures nested in-place edits, removals and additions across inactive campaigns without retaining live references", () => {
+  const campaigns = [fixture(), { ...fixture(), id: "inactive" }], tracker = history.createTracker();
+  campaigns[1].characters[0].custom = { nested: ["before", { value: 1 }], unknown: true };
+  tracker.reset(campaigns);
+  const before = campaigns.map(history.snapshot);
+  campaigns[0].quests.splice(0, 1);
+  campaigns[0].characters.push({ name: "Added", custom: { values: [1, 2] } });
+  campaigns[1].characters[0].custom.nested[1].value = 2;
+  campaigns[1].characters[0].name = "Renamed";
+  const expected = campaigns.map((campaign, i) => history.diff(before[i], history.snapshot(campaign)));
+  tracker.capture(campaigns, "Cross-campaign changes");
+  campaigns.forEach((campaign, i) => assert.deepEqual(campaign.history[0].changes, expected[i]));
+  const entry = campaigns[1].history[0];
+  campaigns[1].characters[0].custom.nested[1].value = 3;
+  assert.equal(entry.changes[0].after.custom.nested[1].value, 2);
+  assert.equal(entry.changes[0].before.custom.nested[1].value, 1);
+  tracker.capture(campaigns, "Later nested edit");
+  assert.equal(campaigns[0].history.length, 1);
+  history.undo(campaigns[1], campaigns[1].history[0].id);
+  history.undo(campaigns[1], entry.id);
+  assert.equal(campaigns[1].characters[0].name, "Vale");
+  assert.equal(campaigns[1].characters[0].custom.nested[1].value, 1);
+});
+
+test("removed campaigns and workspace resets discard old baselines without manufacturing imported history", () => {
+  const campaign = fixture(), tracker = history.createTracker();
+  tracker.reset([campaign]); tracker.capture([]);
+  const replacement = { ...fixture(), characters: [{ localId: campaign.characters[0].localId, name: "Replacement" }] };
+  tracker.capture([replacement]);
+  assert.equal(replacement.history, undefined);
+  replacement.characters[0].name = "Fresh import"; tracker.reset([replacement]); tracker.capture([replacement]);
+  assert.equal(replacement.history, undefined);
+  replacement.characters[0].name = "Local edit"; tracker.capture([replacement]);
+  assert.equal(replacement.history[0].changes[0].before.name, "Fresh import");
+});

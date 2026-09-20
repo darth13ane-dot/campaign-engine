@@ -86,13 +86,13 @@ test("duplicate prep titles retain their own identifiers and an unprepared sessi
 function searchViewHarness(campaign) {
   const elements = new Map();
   let preview = false;
-  const opened = [], openedPackets = [], messages = [];
+  const opened = [], openedPackets = [], messages = [], builds = [];
   function element(selector) {
     if (!elements.has(selector)) elements.set(selector, { value: selector === "#searchFilter" ? "all" : "", innerHTML: "", handlers: {}, addEventListener(type, callback) { this.handlers[type] = callback; }, focus() {} });
     return elements.get(selector);
   }
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../workspace-views.js"), "utf8"), {
-    window: { CampaignSearch: search, CampaignSessionPrep: prep, CampaignPlayerPacket: packets },
+  const context = vm.createContext({
+    window: { CampaignSearch: { ...search, buildIndex: (...args) => { builds.push(args[0]); return search.buildIndex(...args); } }, CampaignSessionPrep: prep, CampaignPlayerPacket: packets },
     document: { querySelector: element }, root: { addEventListener() {} },
     activeCampaign: () => campaign, playerPreviewActive: () => preview, workspaceLoadError: null,
     playerCanSee: (record, collection) => knowledge.isVisible(record, "players", collection),
@@ -102,13 +102,42 @@ function searchViewHarness(campaign) {
     prepRecordRef: (type, record) => prep.recordReference({ ...record, type, name: record.name || record.title }),
     showToast: message => messages.push(message)
   });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, "../workspace-views.js"), "utf8"), context);
   return {
-    opened, openedPackets, messages, element,
+    opened, openedPackets, messages, element, builds,
+    invalidate() { vm.runInContext("invalidateCampaignSearch()", context); },
+    replace(value) { campaign = value; },
     setPreview(value) { preview = value; },
     query(value) { element("#searchInput").value = value; element("#searchButton").handlers.click(); },
     click(index = 0) { element("#searchResults").handlers.click({ target: { closest: selector => selector === "[data-search-hit]" ? { dataset: { searchHit: String(index) } } : null } }); }
   };
 }
+
+test("search builds lazily, reuses unchanged indexes and refreshes after edits or same-ID workspace replacement", () => {
+  const value = preparedCampaign(), view = searchViewHarness(value);
+  view.query(""); view.query("  !!!  "); assert.equal(view.builds.length, 0);
+  view.query("secretopening"); view.query("secretopening"); assert.equal(view.builds.length, 1);
+  view.query(""); view.click(); assert.equal(view.opened.length, 0);
+  view.query("secretopening"); assert.equal(view.builds.length, 1);
+  value.sessionWorkflow.preps["prep-two"].opening = "replacementopening";
+  view.invalidate(); view.query("secretopening");
+  assert.match(view.element("#searchResults").innerHTML, /0 results/); assert.equal(view.builds.length, 2);
+  const restored = structuredClone(value); restored.sessionWorkflow.preps["prep-two"].opening = "restoredopening";
+  view.replace(restored); view.query("restoredopening");
+  assert.match(view.element("#searchResults").innerHTML, /1 results/); assert.equal(view.builds.length, 3);
+  view.setPreview(true); view.query("restoredopening");
+  assert.match(view.element("#searchResults").innerHTML, /0 results/); assert.equal(view.builds.length, 4);
+});
+
+test("cached player search withdraws a revoked source and its linked label on the next save invalidation", () => {
+  const value = { id: "campaign", journal: [{ localId: "notice", title: "Formerly shared", body: "Private after revocation", knowledge: "players" }], sessions: [{ localId: "session", title: "News", recap: "Read [[Journal: Formerly shared]].", knowledge: "players" }] };
+  const view = searchViewHarness(value); view.setPreview(true); view.query("formerly shared");
+  assert.match(view.element("#searchResults").innerHTML, /2 results/);
+  value.journal[0].knowledge = "gm"; view.invalidate(); view.query("formerly shared");
+  assert.match(view.element("#searchResults").innerHTML, /0 results/);
+  view.query("read"); assert.match(view.element("#searchResults").innerHTML, /Unshared reference/);
+  assert.doesNotMatch(view.element("#searchResults").innerHTML, /Formerly shared|Private after revocation/);
+});
 
 test("prep search opens the identified session after a rename despite duplicate titles", () => {
   const value = preparedCampaign();

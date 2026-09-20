@@ -1,5 +1,13 @@
 # Sharing and desktop updates
 
+## Version 1.11.0 — Larger-campaign responsiveness
+
+Player preview and player search now share an indexed record lookup within each render, preserving current sharing rules and redaction. The measured 4,000-record Chrome fixture reduced player-dashboard scripting from 563 ms to 27 ms and fresh player search from 378 ms to 26 ms. Record-history capture avoids repeatedly cloning unchanged records across every campaign, and autosave removes an extra whole-workspace copy. Existing packet approvals and record undo remain compatible.
+
+Search opens without indexing a blank query and retains an unchanged index between visits. Edits, workspace replacement and GM/player mode changes refresh it. A browser save failure now keeps a visible **Download current workspace** action that includes unsaved preparation; successful saving clears the warning. Browser capacity remains limited by `localStorage`.
+
+Verification includes 235 automated tests, browser preparation/player-packet/onboarding/recovery checks, and a packaged desktop exercise with four campaigns, 16,000 records, 800 sessions and 2,400 reference pages. Overlapping saves, inactive-campaign undo, restart and reviewed recovery preserve the data. [PERFORMANCE.md](PERFORMANCE.md) records fixtures, measurements, reproducible commands and observed storage limits.
+
 ## Version 1.10.0 — Desktop trust and release checks
 
 Every desktop request now verifies the application window, main frame, and bundled page before accessing campaign files, saved keys, update controls, or connections. Save-and-close messages follow the same rule. Navigation keeps the app on its bundled page, external web links open through a restricted URL parser, and device and browser permission requests are denied.

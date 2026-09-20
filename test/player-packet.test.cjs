@@ -45,6 +45,40 @@ function freeze(value) {
   return value;
 }
 
+test("source approval fingerprints remain compatible with v1.10.0", () => {
+  const value = { journal: [{ localId: "notice", title: "Town notice", knowledge: "players", body: "Meet [[Character: Vale]] at the ferry." }], characters: [{ archivistId: "vale", name: "Vale", knowledge: "players", description: "The ferryman." }] };
+  const source = packet.createSourceSection(value, { type: "journal", localId: "notice" });
+  assert.equal(source.sourceFingerprint, "8b342fdde9bbc22cd1ba808c6d0c6a38ee901cfe5e49ab9f538874c6a2924a08");
+});
+
+test("one-pass projections preserve identity ambiguity, Unicode labels and recursive redaction rules", () => {
+  const value = campaign();
+  value.journal.push({ id: "unicode", title: "Cafe\u0301", body: "A shared sign", knowledge: "players" });
+  value.journal.push({ id: "duplicate", localId: "notice", title: "Collision", body: "HIDDEN_COLLISION", knowledge: "gm" });
+  value.locations.push({ archivistId: "east-bank", title: "Second bank", detail: "HIDDEN_DUPLICATE", knowledge: "players" });
+  value.journal.push({ title: "Legacy", body: "Read [[Journal: Café]]. [[Journal: SECRET_MISSING]]", permission: "Player safe" });
+  value.journal.push({ id: "cycle", title: "Cycle [[Journal: Cycle [[Journal: x]]]]", knowledge: "players" });
+  const before = structuredClone(value), projector = packet.createProjector(value);
+  const references = [
+    { type: "characters", localId: "vale" }, { type: "character", localId: "villain" },
+    { type: "world", archivistId: "east-bank" }, { type: "journal", localId: "notice" },
+    { type: "journal", name: "CAFÉ" }, { type: "journal", name: "Legacy" },
+    { type: "journal", id: "unicode", localId: "wrong" }, { type: "__proto__", name: "Legacy" },
+    { type: "sessions", archivistId: "past-session" }
+  ];
+  for (const ref of references) assert.deepEqual(projector.projectRecord(ref), packet.projectRecord(value, ref));
+  for (const text of ["Read [[Journal: Café]].", "[[Journal: SECRET_MISSING", "[[Journal: [[SECRET_NESTED]] suffix]]", "[[World: East bank]]", "[[Journal: Legacy]]"]) {
+    assert.deepEqual(projector.redactText(text), packet.redactText(value, text));
+    assert.doesNotMatch(projector.redactText(text).text, /SECRET_|HIDDEN_/);
+  }
+  assert.deepEqual(value, before);
+  value.journal.find(record => record.id === "unicode").knowledge = "gm";
+  value.journal.push({ id: "replacement", title: "Legacy", body: "Private duplicate", knowledge: "gm" });
+  const changed = packet.createProjector(value);
+  assert.equal(changed.projectRecord({ type: "journal", name: "Legacy" }), null);
+  assert.equal(changed.redactText("[[Journal: Café]]").text, "[Unshared reference]");
+});
+
 test("packets begin empty with neutral titles and do not select or mutate campaign material", () => {
   for (const system of ["wfrp4e", "pf2e", "dnd5e", "custom-system"]) {
     const value = campaign(system), before = structuredClone(value);
