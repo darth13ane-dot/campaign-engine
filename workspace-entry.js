@@ -1,5 +1,4 @@
 /* First use and explicit recovery keep the current workspace intact until a save succeeds. */
-const WORKSPACE_RECOVERY_KEY = "campaign-engine-recovery-v1";
 let pendingWorkspaceRestore = null;
 let workspaceRecoveryCopies = [];
 let workspaceRecoveryError = "";
@@ -10,7 +9,7 @@ function workspaceRestoreControls() {
 }
 function workspaceWelcomeView() {
   if (workspaceLoadError) return `${header("Recover your workspace", "SAVED DATA NEEDS ATTENTION", "Your saved data is preserved. Choose a recovery copy or open a compatible backup to continue.")}
-    <section class="card workspace-entry-alert" role="alert"><h2>Workspace could not be opened</h2><p>${esc(workspaceLoadError)}</p><div class="workspace-actions">${workspaceRestoreControls()}<button class="secondary-button" type="button" data-workspace-retry>Retry loading</button>${DESKTOP_API ? `<button class="quiet-button" data-workspace-open-folder>Open data folder</button>` : `<button class="quiet-button" data-workspace-download-original>Download saved data</button>`}</div></section>`;
+    <section class="card workspace-entry-alert" role="alert"><h2>Workspace could not be opened</h2><p>${esc(workspaceLoadError)}</p><div class="workspace-actions">${workspaceRestoreControls()}<button class="secondary-button" type="button" data-workspace-retry>Retry loading</button>${workspaceLoadErrorCode === "BROWSER_WORKSPACE_CONFLICT" ? `<button class="secondary-button" type="button" data-workspace-resolve-conflict>Open saved workspace</button>` : ""}${DESKTOP_API ? `<button class="quiet-button" data-workspace-open-folder>Open data folder</button>` : `<button class="quiet-button" data-workspace-download-original>Download saved data</button>`}</div></section>`;
   return `<div class="workspace-welcome">${header("Prepare your next session", "WELCOME TO CAMPAIGN ENGINE", "Bring an ongoing campaign or start a new one. Turn your next session into situations, choices, and useful material for the table.")}
     <div class="workspace-start-options">
       <section class="card workspace-start-card"><span class="workspace-step">01 / YOUR CAMPAIGN</span><h2>Start with the next session</h2><p>Choose your game system, name the session, and start preparing. You can add the campaign's people, places, and history as you need them.</p><button class="primary-button" type="button" data-workspace-create>Create a campaign <span>→</span></button></section>
@@ -21,7 +20,7 @@ function workspaceWelcomeView() {
 function stageWorkspaceRestore(value, label) {
   if (playerPreviewActive()) throw new Error("Workspace recovery is available in GM view.");
   const workspace = prepareWorkspace(value);
-  pendingWorkspaceRestore = { workspace, label, baseline: JSON.stringify(workspacePayload()), storage: DESKTOP_API ? null : localStorage.getItem(STORAGE_KEY) };
+  pendingWorkspaceRestore = { workspace, label, baseline: JSON.stringify(workspacePayload()), storage: BROWSER_STORE?.revision };
   currentView = "workspace-restore";
 }
 function workspaceRestoreView() {
@@ -37,7 +36,7 @@ function workspaceRestoreView() {
 async function replaceWorkspaceSafely(value, reason) {
   if (playerPreviewActive()) throw new Error("Workspace recovery is available in GM view.");
   if (workspaceReplacementPending()) throw new Error("Wait for the current workspace update to finish.");
-  if (workspaceLoadErrorCode === "UNSUPPORTED_WORKSPACE_SCHEMA") throw new Error("Open the saved workspace with a compatible Campaign Engine version before replacing it. Its original data remains preserved.");
+  if (["UNSUPPORTED_WORKSPACE_SCHEMA", "UNSUPPORTED_BROWSER_STORAGE"].includes(workspaceLoadErrorCode)) throw new Error("Open the saved workspace with a compatible Campaign Engine version before replacing it. Its original data remains preserved.");
   const prepared = prepareWorkspace(value);
   workspaceImportInProgress = true;
   document.querySelector(".app-shell").inert = true;
@@ -48,30 +47,21 @@ async function replaceWorkspaceSafely(value, reason) {
       desktopWorkspaceInfo = result.info || desktopWorkspaceInfo;
       applyWorkspace(result.workspace);
     } else {
-      const previous = localStorage.getItem(STORAGE_KEY) ?? JSON.stringify(workspacePayload());
-      const priorRecovery = localStorage.getItem(WORKSPACE_RECOVERY_KEY);
-      localStorage.setItem(WORKSPACE_RECOVERY_KEY, previous);
-      // Storage failure leaves the current primary and renderer state intact.
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(prepared)); }
-      catch (error) {
-        try { if (priorRecovery == null) localStorage.removeItem(WORKSPACE_RECOVERY_KEY); else localStorage.setItem(WORKSPACE_RECOVERY_KEY, priorRecovery); }
-        catch { throw new Error(`${error.message}. The current workspace remains saved, but the previous recovery slot could not be restored.`); }
-        throw error;
-      }
-      workspaceOriginalBrowserData = null;
+      await BROWSER_STORE.replace(prepared, { allowDamaged: reason === "reviewed-restore" });
       applyWorkspace(prepared);
     }
     pendingWorkspaceRestore = null;
     if (typeof pendingArchivistReview !== "undefined") pendingArchivistReview = null;
     currentView = "dashboard"; detailTarget = null; activeFilter = "All";
     invalidateCampaignSearch();
-  } finally { workspaceImportInProgress = false; document.querySelector(".app-shell").inert = false; render(); }
+  } catch (error) { noticeBrowserConflict(error); throw error; }
+  finally { workspaceImportInProgress = false; document.querySelector(".app-shell").inert = false; render(); }
 }
 async function confirmWorkspaceRestore() {
   const pending = pendingWorkspaceRestore;
   if (!pending || workspaceReplacementPending()) return;
   try {
-    if (pending.baseline !== JSON.stringify(workspacePayload()) || (!DESKTOP_API && pending.storage !== localStorage.getItem(STORAGE_KEY))) throw new Error("The current workspace changed after this preview. Choose the backup again to review it against your latest work.");
+    if (pending.baseline !== JSON.stringify(workspacePayload()) || (!DESKTOP_API && pending.storage !== BROWSER_STORE.revision)) throw new Error("The current workspace changed after this preview. Choose the backup again to review it against your latest work.");
     await replaceWorkspaceSafely(pending.workspace, "reviewed-restore");
     showToast("Workspace restored. A recovery copy of the previous workspace is available.");
   } catch (error) { showToast(`Restore failed: ${error.message}`); }
@@ -81,34 +71,35 @@ async function openWorkspaceRecovery() {
   currentView = "workspace-recovery"; workspaceRecoveryLoading = true; workspaceRecoveryError = ""; render();
   try {
     if (DESKTOP_API?.listWorkspaceBackups) workspaceRecoveryCopies = await DESKTOP_API.listWorkspaceBackups();
-    else {
-      const raw = localStorage.getItem(WORKSPACE_RECOVERY_KEY);
-      workspaceRecoveryCopies = raw ? [{ id: "browser-previous", label: "Previous browser workspace", summary: window.CampaignWorkspaceSchema.summary(JSON.parse(raw)) }] : [];
-    }
+    else workspaceRecoveryCopies = await BROWSER_STORE.listCopies();
   } catch (error) { workspaceRecoveryCopies = []; workspaceRecoveryError = error.message; }
   finally { workspaceRecoveryLoading = false; render(); }
 }
 function workspaceRecoveryView() {
-  return `${header("Recovery copies", "WORKSPACE RECOVERY", DESKTOP_API ? "Preview a local safety copy or the previous automatic save. Your current workspace changes only after you confirm restoration." : "The browser retains the workspace from before the last restore or campaign deletion. Download regular backups to keep additional versions.", `<button class="secondary-button" data-workspace-back>Back to workspace</button>`)}
-    <section class="card workspace-restore-summary">${workspaceRecoveryLoading ? `<p role="status">Reading saved copies…</p>` : workspaceRecoveryError ? `<p role="alert">${esc(workspaceRecoveryError)}</p>` : !workspaceRecoveryCopies.length ? `<p>No recovery copies are available yet. Use a downloaded backup, or create a safety copy from Settings.</p>` : `<ul class="workspace-backup-list">${workspaceRecoveryCopies.map(copy => `<li><div><strong>${esc(copy.label || copy.id)}</strong><span>${copy.summary ? `${copy.summary.campaigns.length} campaigns · ${copy.summary.templates} custom templates` : esc(copy.error || "Copy unavailable")}</span>${copy.savedAt ? `<small>${esc(new Date(copy.savedAt).toLocaleString())}</small>` : ""}</div><button class="secondary-button" data-workspace-preview-copy="${esc(copy.id)}" ${copy.summary ? "" : "disabled"}>Preview copy</button></li>`).join("")}</ul>`}<div class="workspace-actions">${workspaceRestoreControls()}${DESKTOP_API ? `<button class="quiet-button" data-workspace-open-folder>Open data folder</button>` : `<button class="quiet-button" data-workspace-download-recovery>Download recovery data</button>`}</div></section>`;
+  return `${header("Recovery copies", "WORKSPACE RECOVERY", DESKTOP_API ? "Preview a local safety copy or the previous automatic save. Your current workspace changes only after you confirm restoration." : "The browser keeps the previous automatic save, original copies from the storage upgrade, and preserved recovery data. Download regular backups to keep additional versions.", `<button class="secondary-button" data-workspace-back>Back to workspace</button>`)}
+    <section class="card workspace-restore-summary">${workspaceRecoveryLoading ? `<p role="status">Reading saved copies…</p>` : workspaceRecoveryError ? `<p role="alert">${esc(workspaceRecoveryError)}</p>` : !workspaceRecoveryCopies.length ? `<p>No recovery copies are available yet. Use a downloaded backup, or create a safety copy from Settings.</p>` : `<ul class="workspace-backup-list">${workspaceRecoveryCopies.map(copy => `<li><div><strong>${esc(copy.label || copy.id)}</strong><span>${copy.summary ? `${copy.summary.campaigns.length} campaigns · ${copy.summary.templates} custom templates` : esc(copy.error || "Copy unavailable")}</span>${copy.savedAt ? `<small>${esc(new Date(copy.savedAt).toLocaleString())}</small>` : ""}</div><button class="secondary-button" data-workspace-preview-copy="${esc(copy.id)}" ${copy.summary ? "" : "disabled"}>Preview copy</button>${DESKTOP_API ? "" : `<button class="quiet-button" data-workspace-download-copy="${esc(copy.id)}">Download copy</button>`}</li>`).join("")}</ul>`}<div class="workspace-actions">${workspaceRestoreControls()}${DESKTOP_API ? `<button class="quiet-button" data-workspace-open-folder>Open data folder</button>` : `<button class="quiet-button" data-workspace-download-recovery>Download recovery data</button>`}</div></section>`;
 }
 async function previewWorkspaceCopy(id) {
   if (workspaceReplacementPending()) return;
   try {
     await flushDesktopSaves();
-    const value = DESKTOP_API ? await DESKTOP_API.readWorkspaceBackup(id) : JSON.parse(localStorage.getItem(WORKSPACE_RECOVERY_KEY));
+    const value = DESKTOP_API ? await DESKTOP_API.readWorkspaceBackup(id) : JSON.parse(await BROWSER_STORE.readRaw(id));
     stageWorkspaceRestore(value, workspaceRecoveryCopies.find(copy => copy.id === id)?.label || "Recovery copy"); render();
   } catch (error) { showToast(`Recovery copy could not be opened: ${error.message}`); }
 }
-function downloadPreservedWorkspace(recovery = false) {
+async function downloadPreservedWorkspace(recovery = false) {
   try {
-    const raw = recovery ? localStorage.getItem(WORKSPACE_RECOVERY_KEY) : workspaceOriginalBrowserData ?? localStorage.getItem(STORAGE_KEY);
+    if (DESKTOP_API || playerPreviewActive()) throw new Error("Browser workspace downloads are available in GM view.");
+    const raw = await BROWSER_STORE.readRaw(typeof recovery === "string" ? recovery : recovery ? "previous" : "primary");
     if (raw == null) throw new Error("No saved browser data is available to download.");
     const url = URL.createObjectURL(new Blob([raw], { type: "application/json" })), anchor = document.createElement("a");
     anchor.href = url; anchor.download = `campaign-engine-${recovery ? "recovery" : "preserved"}-data.json`; anchor.click(); URL.revokeObjectURL(url);
   } catch (error) { showToast(error.message); }
 }
 root.addEventListener("click", async event => {
+  if (event.target.closest("[data-workspace-resolve-conflict]")) await reloadBrowserWorkspace();
+  const downloadCopy = event.target.closest("[data-workspace-download-copy]");
+  if (downloadCopy && !playerPreviewActive()) await downloadPreservedWorkspace(downloadCopy.dataset.workspaceDownloadCopy);
   if (event.target.closest("[data-workspace-create]")) campaignModal.showModal();
   if (event.target.closest("[data-workspace-example]") && !workspaceLoadError && !state.campaigns.length) {
     const campaign = structuredClone(seed.campaigns[0]);
@@ -124,6 +115,6 @@ root.addEventListener("click", async event => {
   if (event.target.closest("[data-workspace-download-recovery]")) downloadPreservedWorkspace(true);
   if (event.target.closest("[data-workspace-retry]")) {
     if (DESKTOP_API) await initializeDesktopWorkspace();
-    else { workspaceLoadError = null; state = loadState(); hydrateCampaignState(); render(); }
+    else await initializeBrowserWorkspace();
   }
 });

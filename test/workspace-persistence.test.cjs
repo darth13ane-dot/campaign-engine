@@ -58,3 +58,16 @@ test("desktop close waits for saving and stays open after a failure", async () =
   await guard.finish({ ok: false }); assert.equal(closes, 0);
   guard.onClose({ preventDefault: () => prevented++ }); await guard.finish({ ok: true }); assert.equal(closes, 1);
 });
+
+test("reviewed reload waits for active writes and clears only discarded pending changes", async () => {
+  let finish; const writes = [];
+  let current = "first";
+  const saver = createSaveController({ snapshot: () => current, write: value => { writes.push(value); return writes.length === 1 ? new Promise(resolve => { finish = resolve; }) : undefined; }, delay: 10000 });
+  saver.request(); const saving = saver.flush();
+  assert.throws(() => saver.reset(), /pending workspace save/);
+  finish(); await saving;
+  current = "discarded local draft"; saver.request(); saver.reset();
+  await saver.flush(); assert.deepEqual(writes, ["first"]); assert.equal(saver.dirty, false);
+  current = "edit after reload"; saver.request(); await saver.flush();
+  assert.deepEqual(writes, ["first", "edit after reload"]);
+});

@@ -105,7 +105,7 @@ function archivistReviewView() {
 }
 async function applyArchivistReview() {
   if (!pendingArchivistReview || syncReviewApplying || workspaceReplacementPending() || workspaceLoadError) return;
-  syncReviewApplying = true; render();
+  syncReviewApplying = true; document.querySelector(".app-shell").inert = true; render();
   try {
     await flushDesktopSaves();
     const result = ARCHIVIST_MERGE.applyReview(pendingArchivistReview.plan, state.campaigns, pendingArchivistReview.choices);
@@ -127,13 +127,13 @@ async function applyArchivistReview() {
     if (DESKTOP_API?.replaceWorkspace) {
       const saved = await DESKTOP_API.replaceWorkspace(workspace, "before-archivist-bridge");
       desktopWorkspaceInfo = saved.info || desktopWorkspaceInfo;
-    } else localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+    } else await BROWSER_STORE.replace(workspace);
     applyWorkspace(workspace);
     pendingArchivistReview = null; invalidateCampaignSearch();
     archivistBridgeState.mergeStats = result.stats;
     currentView = "archivist"; showToast("Reviewed Archivist changes saved.");
-  } catch (error) { historyTracker.reset(state.campaigns); showToast(error.message); }
-  finally { syncReviewApplying = false; render(); }
+  } catch (error) { noticeBrowserConflict(error); historyTracker.reset(state.campaigns); showToast(error.message); }
+  finally { syncReviewApplying = false; document.querySelector(".app-shell").inert = false; render(); }
 }
 root.addEventListener("change", event => {
   if (event.target.matches("[data-sync-choice]") && pendingArchivistReview && !syncReviewApplying) pendingArchivistReview.choices[event.target.dataset.syncChoice] = event.target.value;

@@ -1,5 +1,13 @@
 # Sharing and desktop updates
 
+## Version 1.12.0 — Recoverable browser storage
+
+Browser workspaces now save in IndexedDB, with the previous automatic save retained in the same transaction. The first load migrates the earlier localStorage workspace and recovery copy, preserving both exact originals for download. Interrupted migration can resume. The app reports **Saved** only after the transaction commits, and offers a download of current work if saving fails.
+
+A second tab with stale data cannot overwrite a newer save or restore. Download its unsaved draft, then use **Reload saved workspace** to open the committed copy. Changes saved separately by an older app are retained in Recovery copies for review. Supported damaged workspace data remains downloadable and is preserved before a reviewed recovery; newer unsupported formats remain protected.
+
+Verification includes 247 automated tests, a 24.57 MB synthetic workspace with four campaigns and 2,400 reference pages, complete Chrome restart and offline editing, transaction abort and renderer-crash recovery, concurrent-tab save and restore conflicts, and desktop/mobile recovery controls. Preparation, carry-forward, templates, player packets, onboarding, and native Windows save/restart/recovery checks also pass. [BROWSER_STORAGE.md](BROWSER_STORAGE.md) explains migration, tab conflicts, and backup practice; [PERFORMANCE.md](PERFORMANCE.md) records the tested scope and remaining capacity limits.
+
 ## Version 1.11.0 — Larger-campaign responsiveness
 
 Player preview and player search now share an indexed record lookup within each render, preserving current sharing rules and redaction. The measured 4,000-record Chrome fixture reduced player-dashboard scripting from 563 ms to 27 ms and fresh player search from 378 ms to 26 ms. Record-history capture avoids repeatedly cloning unchanged records across every campaign, and autosave removes an extra whole-workspace copy. Existing packet approvals and record undo remain compatible.
