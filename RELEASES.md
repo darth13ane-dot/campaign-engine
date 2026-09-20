@@ -1,5 +1,11 @@
 # Sharing and desktop updates
 
+## Version 1.15.0 — PDF sources beside the session
+
+Imported PDF pages can now become selected sources in Build from notes, scene references, and live-desk pins. Search book titles or page text, review exact excerpts, and keep the original book/page identity through approved preparation, GM packets, and carry-forward. The live reader displays the linked page beside the situation and saved notes.
+
+Selected-page changes require another notes review. Missing or ambiguous books and pages remain unavailable, and legacy imports state when a page number is unknown. Optional AI requests include the selected excerpts only; the GM packet includes linked page text. [PREP_SOURCES.md](PREP_SOURCES.md) explains the workflow, physical PDF numbering, and extraction limits.
+
 ## Version 1.14.0 — Prepared scenes at the table
 
 Scenes can now retain their own campaign references from manual preparation, approved note drafts, and continuity. The live desk focuses one situation with its meaningful choice and source notes, and an inline reader opens the exact linked record beside it. Renames follow stable identities; missing sources remain visible. GM packets include scene-linked record details.

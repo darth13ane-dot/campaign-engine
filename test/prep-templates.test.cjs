@@ -306,14 +306,14 @@ test("pending review and applied prompt metadata survive JSON and prep normaliza
   assert.doesNotMatch(rebuilt.snapshot.target, /templateReview|continuityReview/);
 });
 
-test("read-only template operations leave frozen data untouched and browser API has only prep and starter dependencies", () => {
+test("read-only template operations leave frozen data untouched and browser API has pure prep, source and starter dependencies", () => {
   const value = freeze(campaign()), source = freeze(starter()), before = JSON.stringify(value);
   templates.buildReview(value, value.sessions[0], source);
   templates.captureStructure(plan(value));
   templates.promptProgress(plan(value));
   assert.equal(JSON.stringify(value), before);
   const context = vm.createContext({ structuredClone, crypto: require("node:crypto").webcrypto });
-  for (const file of ["session-prep.js", "prep-template-starters.js", "prep-templates.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), context, { filename: file });
+  for (const file of ["prep-sources.js", "session-prep.js", "prep-template-starters.js", "prep-templates.js"]) vm.runInContext(fs.readFileSync(path.join(__dirname, "..", file), "utf8"), context, { filename: file });
   assert.equal(context.CampaignSessionWorkflow, undefined);
   assert.equal(context.CampaignPlayerPacket, undefined);
   const browser = context.CampaignPrepTemplates;

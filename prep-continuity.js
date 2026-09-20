@@ -126,7 +126,7 @@
   function provenance(campaign, context, collection, row, recordRef) {
     const inherited = normalizeProvenance(row.provenance);
     if (inherited) return inherited;
-    let sourceRowId = text(row.id, 240) || (recordRef ? identity(recordRef) : `legacy:${shortKey(fingerprint(row))}`);
+    let sourceRowId = row.type === "reference" ? PREP.referenceKey(row) : text(row.id, 240) || (recordRef ? identity(recordRef) : `legacy:${shortKey(fingerprint(row))}`);
     let logicalCollection = collection === "beats" ? "scenes" : collection;
     // Prepared rows retain their IDs when copied into live play. Desk creation is
     // a lifecycle change, so it must not create another origin for the same row.
@@ -147,6 +147,7 @@
   }
   function samePinnedRecord(campaign, left, right) {
     if (left.type !== right.type) return false;
+    if (left.type === "reference") return PREP.referenceKey(left) === PREP.referenceKey(right);
     const resolved = PREP.resolvePinnedRecord(campaign, left);
     return Boolean(resolved && resolved === PREP.resolvePinnedRecord(campaign, right)) || PREP.referencesMatch(left, right);
   }

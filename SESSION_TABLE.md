@@ -36,4 +36,4 @@ Ended desks allow scene and record browsing. Gameplay controls, scratchpad edits
 
 Automated tests cover stable and ambiguous identities, normalization, selected notes, first-play copies, repeated starts, capture drafts, scene association, read-only ended state, GM packets, continuity, and player projection. Browser tests use isolated campaigns at 1440, 700, and 390 pixel widths, including a fully offline reload and the reproduced lost-note scenario. Native checks use isolated Windows profiles and packaged code.
 
-This release supplies linked campaign records and saved notes. Scene-specific PDF-page links and live system actions remain separate capabilities. Real table use and additional devices remain part of the broader preparation pilot.
+Version 1.15.0 also supports exact PDF-page links and searchable live pins; [PREP_SOURCES.md](PREP_SOURCES.md) describes their identity and extraction behavior. Live system actions remain a separate capability. Real table use and additional devices remain part of the broader preparation pilot.

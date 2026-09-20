@@ -1,7 +1,7 @@
 {
   "name": "campaign-engine",
   "productName": "Campaign Engine",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "description": "A local-first GM preparation and session-running workspace with campaign integrations.",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -75,6 +75,7 @@
           "archivist-details.js"
         ]
       },
+      "prep-sources.js",
       "session-prep.js",
       "session-prep-views.js",
       "session-prep.css",

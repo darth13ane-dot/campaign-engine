@@ -20,40 +20,42 @@ function prepRecordLists(campaign) {
   return { character: campaign.characters, quest: campaign.quests, location: campaign.locations, journal: campaign.journal, arc: campaign.arcs };
 }
 function prepRecordRef(type, record) {
-  const ref = { type, name: String(record.name || record.title || "") };
-  ["archivistId", "localId", "id"].forEach(key => { if (record[key]) ref[key] = record[key]; });
-  return ref;
+  return sessionPrepCore().recordReference({ ...record, type });
 }
 function prepRecordKey(ref) {
-  const identity = ["archivistId", "localId", "id"].find(key => ref[key]);
-  return `${ref.type}:${identity ? `${identity}:${ref[identity]}` : `name:${ref.name}`}`;
+  return sessionPrepCore().referenceKey(ref);
 }
 function prepResolveRecord(campaign, ref) {
   return sessionPrepCore().resolvePinnedRecord(campaign, ref);
 }
 function prepNameIsUnique(campaign, ref) {
+  if (ref.type === "reference") return false;
   const records = ref.type === "session" ? campaign.sessions : prepRecordLists(campaign)[ref.type];
   const name = String(ref.name || "").toLocaleLowerCase();
   return (records || []).filter(record => String(record.name || record.title || "").toLocaleLowerCase() === name).length === 1;
 }
 function prepPinnedRecordDetails(record, summary = "Saved details for this pinned record") {
   const fields = [["Role", record.role], ["Status", record.status], ["Overview", record.description], ["Details", record.detail], ["Journal entry", record.body], ["Session notes", record.recap], ["Pressure", record.tension], ["Next step", record.nextStep], ["Voice", record.voice], ["Quirks", record.quirks], ["Relationships", record.relationships], ["Stats", record.statBlock], ["Tags", record.tags], ["Factions", record.factions]];
+  if (record.referenceType === "pdf") fields.splice(0, fields.length, ["Extracted PDF text", record.body || "No selectable text on this page. Import a text-based or OCR-processed PDF to use it as source notes."]);
   const content = fields.filter(([, value]) => value != null && String(value).trim()).map(([label, value]) => {
     const text = Array.isArray(value) ? value.join(", ") : typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
     return `<p><strong>${esc(label)}</strong><br />${esc(text)}</p>`;
   }).join("");
   return `<details class="prep-existing-body"><summary>${esc(summary)}</summary>${content || `<p>No additional details are saved for this record.</p>`}</details>`;
 }
+function prepReferenceChoices(campaign, query = "", { sessions = false } = {}) {
+  const search = query.toLocaleLowerCase().trim();
+  const records = Object.entries({ ...prepRecordLists(campaign), ...(sessions ? { session: campaign.sessions } : {}) }).flatMap(([type, records]) => (records || []).map(record => prepRecordRef(type, record)))
+    .filter(ref => ref.name && (!search || `${ref.name} ${ENTRY_TYPES[ref.type] || ref.type}`.toLocaleLowerCase().includes(search)));
+  return [...records, ...sessionPrepCore().sourceRecords(campaign, query).map(item => item.ref)].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
 function prepAvailableRecords(campaign, prep, query = "") {
   const pinned = new Set(prep.pinned.map(prepRecordKey));
-  const search = query.toLocaleLowerCase().trim();
-  return Object.entries(prepRecordLists(campaign)).flatMap(([type, records]) => (records || []).map(record => prepRecordRef(type, record)))
-    .filter(ref => ref.name && !pinned.has(prepRecordKey(ref)) && (!search || `${ref.name} ${ENTRY_TYPES[ref.type] || ref.type}`.toLocaleLowerCase().includes(search)))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  return prepReferenceChoices(campaign, query).filter(ref => !pinned.has(prepRecordKey(ref)));
 }
 function prepPinOptions(campaign, prep, query = "") {
   const entries = prepAvailableRecords(campaign, prep, query);
-  return `<option value="">${entries.length ? "Choose a campaign record…" : "No matching records"}</option>${entries.map(entry => `<option value="${esc(encodeURIComponent(JSON.stringify(entry)))}">${esc(ENTRY_TYPES[entry.type] || entry.type)} · ${esc(entry.name)}</option>`).join("")}`;
+  return `<option value="">${entries.length ? `Choose a record or page${entries.length > 100 ? " · refine search for more" : ""}…` : "No matching records or pages"}</option>${entries.slice(0, 100).map(entry => `<option value="${esc(encodeURIComponent(JSON.stringify(entry)))}">${esc(ENTRY_TYPES[entry.type] || entry.type)} · ${esc(entry.name)} · ${esc(String(entry.archivistId || entry.localId || entry.id || "").slice(-8))}</option>`).join("")}`;
 }
 function prepField(collection, id, field) {
   return `data-prep-field="${esc(field)}"${collection ? ` data-prep-collection="${esc(collection)}" data-prep-row="${esc(id)}"` : ""}`;
@@ -85,17 +87,15 @@ function prepProvenanceMarkup(campaign, item) {
 }
 function prepSceneReferenceOptions(campaign, scene, query = "") {
   const linked = new Set((scene.references || []).map(prepRecordKey));
-  const search = query.trim().toLocaleLowerCase();
-  const entries = Object.entries({ ...prepRecordLists(campaign), session: campaign.sessions }).flatMap(([type, records]) => (records || []).map(record => prepRecordRef(type, record)))
-    .filter(ref => !linked.has(prepRecordKey(ref)) && (!search || `${ref.type} ${ref.name}`.toLocaleLowerCase().includes(search))).sort((a, b) => a.name.localeCompare(b.name));
+  const entries = prepReferenceChoices(campaign, query, { sessions: true }).filter(ref => !linked.has(prepRecordKey(ref)));
   return `<option value="">Choose a record${entries.length > 100 ? " · refine search for more" : ""}…</option>${entries.slice(0, 100).map(ref => `<option value="${esc(encodeURIComponent(JSON.stringify(ref)))}">${esc(ENTRY_TYPES[ref.type] || ref.type)} · ${esc(ref.name)} · ${esc(String(ref.archivistId || ref.localId || ref.id || "").slice(-8))}</option>`).join("")}`;
 }
 function prepSceneReferencesMarkup(campaign, scene) {
   const references = sessionPrepCore().normalizeReferences(scene.references);
-  return `<div class="prep-scene-references"><strong>At hand for this scene</strong><p class="prep-help">Link the people, places, notes, and rules details you want beside this situation during play.</p><div class="table-reference-chips">${references.map(ref => {
+  return `<div class="prep-scene-references"><strong>At hand for this scene</strong><p class="prep-help">Link people, places, notes, and PDF pages you want beside this situation during play.</p><div class="table-reference-chips">${references.map(ref => {
     const record = prepResolveRecord(campaign, ref);
     return `<span>${esc(record?.name || record?.title || ref.name)}${record ? "" : " · unavailable"}<button type="button" class="prep-icon-button" data-scene-unlink="${esc(sessionPrepCore().referenceKey(ref))}" data-scene-id="${esc(scene.id)}" aria-label="Unlink ${esc(ref.name)} from this scene">×</button></span>`;
-  }).join("")}</div>${prepSceneReferencePickerId === scene.id ? `<form data-scene-reference-form="${esc(scene.id)}"><label>Find a record<input type="search" data-scene-reference-search="${esc(scene.id)}" value="${esc(prepSceneReferenceQuery)}" placeholder="Search names or record types…" /></label><label>Record<select name="reference" required>${prepSceneReferenceOptions(campaign, scene, prepSceneReferenceQuery)}</select></label><div class="table-actions"><button class="secondary-button" type="submit">Link to this scene</button><button class="quiet-button" type="button" data-scene-close-picker>Close picker</button></div></form>` : `<button type="button" class="quiet-button" data-scene-link="${esc(scene.id)}">＋ Link a campaign record</button>`}</div>`;
+  }).join("")}</div>${prepSceneReferencePickerId === scene.id ? `<form data-scene-reference-form="${esc(scene.id)}"><label>Find a record<input type="search" data-scene-reference-search="${esc(scene.id)}" value="${esc(prepSceneReferenceQuery)}" placeholder="Name, book, or page text…" /></label><label>Record<select name="reference" required>${prepSceneReferenceOptions(campaign, scene, prepSceneReferenceQuery)}</select></label><div class="table-actions"><button class="secondary-button" type="submit">Link to this scene</button><button class="quiet-button" type="button" data-scene-close-picker>Close picker</button></div></form>` : `<button type="button" class="quiet-button" data-scene-link="${esc(scene.id)}">＋ Link a campaign record</button>`}</div>`;
 }
 function prepSceneMarkup(scene, index, total, campaign) {
   const kinds = { scene: "Scene", social: "Social", exploration: "Exploration", combat: "Combat", pressure: "Pressure" };
@@ -116,7 +116,7 @@ function prepPinnedMarkup(campaign, prep) {
     const current = record ? prepRecordRef(entry.type, record) : entry;
     const uniqueName = record && prepNameIsUnique(campaign, current);
     const excerpt = String(record?.description || record?.detail || record?.body || record?.tension || "").replace(/<[^>]+>/g, " ").slice(0, 180);
-    return `<article class="prep-pin"><div><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small>${uniqueName ? `<button type="button" class="prep-record-link" ${deskEntryAction(current)}>${esc(current.name)}</button>` : `<strong>${esc(current.name)}</strong>`}${excerpt ? `<p>${esc(excerpt)}</p>` : ""}${record && !uniqueName ? `<p class="prep-help">Several records share this name. Expand the saved details of your pinned record below.</p>${prepPinnedRecordDetails(record)}` : ""}${!record ? `<p class="prep-help">This record is unavailable. Its reference remains in this plan.</p>` : ""}${prepProvenanceMarkup(campaign, entry)}</div><button class="prep-icon-button prep-remove" type="button" data-prep-unpin="${index}" aria-label="Unpin ${esc(current.name)}" title="Unpin record">×</button></article>`;
+    return `<article class="prep-pin"><div><small>${esc(ENTRY_TYPES[entry.type] || entry.type)}</small>${uniqueName ? `<button type="button" class="prep-record-link" ${deskEntryAction(current)}>${esc(current.name)}</button>` : `<strong>${esc(current.name)}</strong>`}${excerpt ? `<p>${esc(excerpt)}</p>` : ""}${record && !uniqueName ? `<p class="prep-help">${entry.type === "reference" ? "Read the saved text of this linked PDF page below." : "Several records share this name. Expand the saved details of your pinned record below."}</p>${prepPinnedRecordDetails(record)}` : ""}${!record ? `<p class="prep-help">This record is unavailable. Its reference remains in this plan.</p>` : ""}${prepProvenanceMarkup(campaign, entry)}</div><button class="prep-icon-button prep-remove" type="button" data-prep-unpin="${index}" aria-label="Unpin ${esc(current.name)}" title="Unpin record">×</button></article>`;
   }).join("");
 }
 
