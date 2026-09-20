@@ -150,7 +150,7 @@ Acceptance gates:
 4. Save and reopen a representative large workspace through the packaged desktop APIs. Hold a write open to verify that its captured revision and later edits remain distinct; exercise undo and reviewed recovery.
 5. Verify existing preparation, player packet, first-use and recovery flows; publish passing Windows tests, matching packaged assets, a versioned release and working update manifests.
 
-## Active milestone: v1.12.0 — Recoverable browser storage
+## Delivered milestone: v1.12.0 — Recoverable browser storage
 
 **Status: implemented in v1.12.0.** Browser workspaces use IndexedDB transactions, preserving their previous automatic save and both exact originals during migration from localStorage. Saves report success only after transaction completion. Revision checks reject stale-tab writes; explicit reopening retains older-app branches for review. Large workspaces can reopen and remain editable offline. [BROWSER_STORAGE.md](BROWSER_STORAGE.md) explains the workflow and its limits.
 
@@ -166,13 +166,15 @@ Acceptance gates:
 
 Reliability work proceeds alongside the earlier milestones. This is the gate for inviting a broader pilot and making a commercial commitment.
 
+**Current maintenance release: v1.12.1.** The Windows application uses pinned Electron 44.4.3. Package checks verify the executable's actual runtime version, and native checks exercise preparation, PDF workers, player documents, connection approval, recovery, and an Electron 37/44 upgrade and rollback cycle with synthetic encrypted keys. [RUNTIME_MAINTENANCE.md](RUNTIME_MAINTENANCE.md) records the scope. Keep the runtime within upstream support while improving support diagnostics and collecting real GM feedback.
+
 | Area | Concrete work and acceptance gate |
 | --- | --- |
 | First use | v1.9.0 provides explicit starting choices, direct next-session preparation, and valid empty workspaces. Existing campaigns and edited examples are retained. Observe new GMs completing this workflow and improve it from their results. |
 | Schema and import | v1.9.0 shares workspace validation across browser and desktop storage, rejecting ambiguous campaign identities and malformed supported containers before import. Legacy envelopes and supported records round-trip; future workspace/session-workflow schemas remain protected. Extend explicit migrations and field validation as stored models evolve. |
 | Recovery | v1.9.0 exposes recovery copies and reviewed restore through the UI. v1.12.0 adds transactional browser saves, an automatic previous copy, exact migration originals, preserved damaged data, and stale-tab protection. Desktop safety copies retain the twelve newest supported backups. Continue device, upgrade, and interruption exercises, including browser eviction and external-backup recovery. |
 | Large campaigns | v1.11.0 measures 0.55–24.57 MB synthetic workspaces and improves projection/history costs. v1.12.0 saves the four-campaign fixture in Chrome and reopens it offline after a process restart; native saves and recovery also pass. Measure real campaign shapes and slower devices, reduce complete-save costs, and verify additional browsers before extending capacity claims. |
-| Desktop security | v1.10.0 adds an application content policy, navigation and permission restrictions, a common sender check for all privileged IPC, and native review of custom programs. Preserve the sandbox, context isolation, disabled Node integration, and encrypted credentials. Continue dependency maintenance and test any migration from the bundled file page to a dedicated application protocol with origin-storage recovery. |
+| Desktop security | v1.10.0 adds an application content policy, navigation and permission restrictions, a common sender check for all privileged IPC, and native review of custom programs. v1.12.1 moves to supported Electron 44 and checks the built executable's runtime. Preserve the sandbox, context isolation, disabled Node integration, and encrypted credentials. Continue dependency maintenance and test any migration to a dedicated application protocol with origin-storage recovery. |
 | Release assurance | v1.10.0 adds pull-request and main-branch Windows tests and package verification. Exercise installation, upgrade, rollback, and portable updates with representative workspaces. Establish a signed distribution process. The downloaded v1.9.0 portable release reported `NotSigned`; signing hooks exist in CI. |
 | Supportability | Provide actionable errors and an explicit diagnostic export that excludes credentials and campaign content by default. Document supported operating systems, integration versions, recovery steps, and known failures. Check keyboard operation, readable layouts, and save/error announcements. |
 

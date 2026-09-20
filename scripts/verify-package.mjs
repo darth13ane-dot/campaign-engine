@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const builderRequire = createRequire(require.resolve("electron-builder"));
@@ -28,4 +29,15 @@ if (process.env.CAMPAIGN_ENGINE_PRIVATE_BUILD !== "1") {
   assert.equal(context.window.ARCHIVIST_SNAPSHOT.campaigns.length, 0, "Public releases must exclude private campaigns.");
   assert.equal(Object.keys(context.window.ARCHIVIST_DETAILS.campaigns).length, 0, "Public releases must exclude private campaign details.");
 }
-console.log(`Verified packaged v${pkg.version}: all HTML/PDF/font runtime assets match source; ${process.env.CAMPAIGN_ENGINE_PRIVATE_BUILD === "1" ? "explicit private build" : "private snapshots excluded"}.`);
+assert.match(pkg.devDependencies.electron, /^\d+\.\d+\.\d+$/, "Pin the exact stable Electron version reviewed for this release.");
+assert.equal(process.platform, "win32", "Verify the packaged Windows runtime on Windows.");
+// Run only the runtime's Node entry point: never open the application or its
+// normal user profile while inspecting the built executable.
+const runtime = spawnSync(path.join(path.dirname(path.dirname(archive)), `${pkg.productName}.exe`), ["-e", "process.stdout.write(JSON.stringify(process.versions))"], {
+  env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", NODE_OPTIONS: "" },
+  encoding: "utf8", windowsHide: true, timeout: 15000
+});
+assert.equal(runtime.status, 0, `Unable to inspect the packaged runtime: ${runtime.error?.message || runtime.stderr}`);
+const versions = JSON.parse(runtime.stdout.trim());
+assert.equal(versions.electron, pkg.devDependencies.electron, "The packaged Electron runtime must match the reviewed dependency.");
+console.log(`Verified packaged v${pkg.version}: Electron ${versions.electron}, Chromium ${versions.chrome}, Node ${versions.node}; all HTML/PDF/font runtime assets match source; ${process.env.CAMPAIGN_ENGINE_PRIVATE_BUILD === "1" ? "explicit private build" : "private snapshots excluded"}.`);
